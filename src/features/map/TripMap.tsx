@@ -57,7 +57,6 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey }: TripMapProps) 
   const markersRef = useRef<any[]>([])
   const routesRef = useRef<RouteSegment[]>([])
   const routeLabelsRef = useRef<any[]>([])
-  const hasMapId = GOOGLE_MAPS_MAP_ID && GOOGLE_MAPS_MAP_ID.trim()
 
   useEffect(() => {
     if (!mapsLoaded || !mapContainerRef.current || mapRef.current) {
@@ -161,6 +160,10 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey }: TripMapProps) 
       for (let i = 0; i < validStops.length - 1; i++) {
         const origin = validStops[i].location
         const destination = validStops[i + 1].location
+
+        if (!origin || !destination) {
+          continue
+        }
 
         console.log(
           `Calculating route ${i + 1} from ${validStops[i].label} to ${validStops[i + 1].label}`

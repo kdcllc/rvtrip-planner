@@ -3,6 +3,7 @@ export type DailyForecast = {
   min: number
   max: number
   precipChance: number | null
+  isHistorical?: boolean
 }
 
 export type StopForecast = {

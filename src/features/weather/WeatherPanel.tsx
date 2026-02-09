@@ -18,7 +18,7 @@ export const WeatherPanel = ({
       <div className="panel-header">
         <div>
           <h2>Weather outlook</h2>
-          <p>Forecasts are pulled per stop using Open-Meteo.</p>
+          <p>NOAA forecast (16 days) + historical climate normals (month ahead).</p>
         </div>
         <span className="chip">Daily forecast</span>
       </div>
@@ -66,6 +66,7 @@ export const WeatherPanel = ({
                             ? 'No data'
                             : `${day.precipChance}% precip`}
                         </span>
+                        {day.isHistorical && <span className="historical-badge">avg</span>}
                       </div>
                     ))}
                   </div>

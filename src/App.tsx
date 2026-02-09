@@ -193,7 +193,7 @@ function App() {
           </div>
           <div className="hero-card-row">
             <span>Weather</span>
-            <strong>Open-Meteo</strong>
+            <strong>Hybrid (NOAA+Climate)</strong>
           </div>
         </div>
       </header>
