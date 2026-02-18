@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
 import { GOOGLE_MAPS_API_KEY } from './config'
 import { TripMap } from './features/map/TripMap'
@@ -18,8 +18,11 @@ function App() {
     Record<string, StopForecast>
   >({})
   const [weatherErrors, setWeatherErrors] = useState<Record<string, string>>({})
+  const [importError, setImportError] = useState('')
+  const [importStatus, setImportStatus] = useState('')
   const geocodingInFlight = useRef(false)
   const weatherInFlight = useRef<Set<string>>(new Set())
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(
     GOOGLE_MAPS_API_KEY,
@@ -55,6 +58,151 @@ function App() {
       prev.map((stop) => (stop.id === stopId ? { ...stop, ...updates } : stop)),
     )
   }, [])
+
+  const orderStops = useCallback((items: TripStop[]) => {
+    const startingPoints = items.filter((stop) => stop.label === 'Starting point')
+    const otherStops = items.filter((stop) => stop.label !== 'Starting point')
+    return [...startingPoints, ...otherStops]
+  }, [])
+
+  const exportTrips = useCallback(() => {
+    setImportError('')
+    setImportStatus('')
+
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      stops,
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const dateStamp = new Date().toISOString().slice(0, 10)
+    link.href = url
+    link.download = `trip-${dateStamp}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }, [stops])
+
+  const mergeStops = useCallback(
+    (existing: TripStop[], imported: TripStop[]) => {
+      const existingIds = new Set(existing.map((stop) => stop.id))
+      const next: TripStop[] = [...existing]
+
+      for (const stop of imported) {
+        if (existingIds.has(stop.id)) {
+          continue
+        }
+
+        existingIds.add(stop.id)
+        next.push(stop)
+      }
+
+      return orderStops(next)
+    },
+    [orderStops],
+  )
+
+  const handleImportFile = useCallback(
+    (file: File) => {
+      setImportError('')
+      setImportStatus('Importing...')
+
+      const reader = new FileReader()
+      reader.onerror = () => {
+        setImportStatus('')
+        setImportError('Unable to read that file.')
+      }
+      reader.onload = () => {
+        try {
+          const raw = JSON.parse(String(reader.result ?? ''))
+          const payloadStops = Array.isArray(raw)
+            ? raw
+            : Array.isArray(raw?.stops)
+              ? raw.stops
+              : null
+
+          if (!payloadStops) {
+            throw new Error('Invalid format')
+          }
+
+          const sanitizedStops: TripStop[] = payloadStops.map((stop: unknown) => {
+            if (!stop || typeof stop !== 'object') {
+              throw new Error('Invalid stop')
+            }
+
+            const stopData = stop as Record<string, unknown>
+
+            if (
+              typeof stopData.id !== 'string' ||
+              typeof stopData.label !== 'string' ||
+              typeof stopData.address !== 'string' ||
+              typeof stopData.startDate !== 'string' ||
+              typeof stopData.endDate !== 'string'
+            ) {
+              throw new Error('Invalid stop')
+            }
+
+            const location = stopData.location as
+              | { lat?: unknown; lng?: unknown }
+              | undefined
+            const hasLocation =
+              location &&
+              typeof location.lat === 'number' &&
+              typeof location.lng === 'number'
+            const note =
+              typeof stopData.note === 'string'
+                ? stopData.note.trim().slice(0, 500)
+                : ''
+
+            return {
+              id: stopData.id,
+              label: stopData.label,
+              address: stopData.address,
+              startDate: stopData.startDate,
+              endDate: stopData.endDate,
+              note: note ? note : undefined,
+              location: hasLocation ? { lat: location.lat, lng: location.lng } : undefined,
+              status: typeof stopData.status === 'string' ? stopData.status : 'idle',
+            }
+          })
+
+          setStops((prev) => mergeStops(prev, sanitizedStops))
+          setWeatherByStopId({})
+          setWeatherErrors({})
+          setImportStatus(`Imported ${sanitizedStops.length} stops.`)
+        } catch (error) {
+          setImportStatus('')
+          setImportError(
+            error instanceof Error
+              ? 'That file does not contain valid trip data.'
+              : 'Unable to import that file.',
+          )
+        }
+      }
+
+      reader.readAsText(file)
+    },
+    [mergeStops],
+  )
+
+  const onImportChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      if (!file) {
+        return
+      }
+
+      handleImportFile(file)
+      event.target.value = ''
+    },
+    [handleImportFile],
+  )
 
   useEffect(() => {
     if (!mapsLoaded || geocodingInFlight.current) {
@@ -181,6 +329,27 @@ function App() {
             Add each stop with dates, and the planner will map your route and
             pull forecasts for the days you are there.
           </p>
+          <div className="hero-actions">
+            <button className="ghost" type="button" onClick={exportTrips}>
+              Save trip
+            </button>
+            <input
+              ref={fileInputRef}
+              className="file-input"
+              type="file"
+              accept="application/json"
+              onChange={onImportChange}
+            />
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Load trip
+            </button>
+            {importStatus ? <span className="import-status">{importStatus}</span> : null}
+            {importError ? <span className="import-error">{importError}</span> : null}
+          </div>
         </div>
         <div className="hero-card">
           <div className="hero-card-row">

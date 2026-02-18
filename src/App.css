@@ -35,6 +35,28 @@
   max-width: 560px;
 }
 
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.file-input {
+  display: none;
+}
+
+.import-status {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.import-error {
+  font-size: 0.85rem;
+  color: #c2410c;
+}
+
 .hero-card {
   background: var(--color-surface);
   border-radius: 20px;
@@ -117,10 +139,34 @@
   color: inherit;
 }
 
+.trip-form textarea {
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: var(--color-surface-strong);
+  color: inherit;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
 .trip-form input[type='checkbox'] {
   width: 18px;
   height: 18px;
   padding: 0;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.note-count {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .address-field {
@@ -224,6 +270,13 @@
 .dates {
   font-weight: 600;
   margin: 6px 0 0;
+}
+
+.stop-note {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
 }
 
 .status {
