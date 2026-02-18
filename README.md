@@ -2,117 +2,108 @@
 
 Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
-## Setup
+**Live Demo:** https://st3i2mi47qegi24.z20.web.core.windows.net/
+
+## Features
+
+- Manual stop list with arrival and departure dates
+- Optional starting point that does not require dates
+- Google Maps route with numbered markers
+- Daily weather forecasts per stop (NOAA + historical climate data)
+- Export/import trip data as JSON
+- Address autocomplete and validation
+
+## Local Development Setup
 
 1. Install dependencies
-   - `npm install`
+   ```bash
+   npm install
+   ```
+
 2. Create a `.env` file based on `.env.example` and add your Google Maps API key
-   - `VITE_GOOGLE_MAPS_API_KEY=your_key_here`
-   - Optional: `VITE_GOOGLE_MAPS_MAP_ID=your_map_id` for Advanced Markers
+   ```bash
+   VITE_GOOGLE_MAPS_API_KEY=your_key_here
+   VITE_GOOGLE_MAPS_MAP_ID=your_map_id  # Optional for Advanced Markers
+   ```
+
 3. Start the development server
-   - `npm run dev`
+   ```bash
+   npm run dev
+   ```
 
 ## Getting a Google Maps API key
 
-1. Sign in to the Google Cloud Console and create or select a project.
-2. Enable the Maps JavaScript API, Places API, and Address Validation API for the project.
-3. (Recommended) Create a Map ID in Google Cloud Maps Platform if you want Advanced Markers.
-4. Create an API key.
-5. (Recommended) Restrict the key to your local development origin or domain.
-6. Copy the key into your `.env` file as `VITE_GOOGLE_MAPS_API_KEY`.
-Read [](file:///home/kdcllc/Downloads/trip-planner/src/App.css)
+1. Sign in to the [Google Cloud Console](https://console.cloud.google.com/) and create or select a project
+2. Enable the following APIs:
+   - Maps JavaScript API
+   - Places API
+   - Address Validation API
+   - Routes API
+3. (Recommended) Create a Map ID in Google Cloud Maps Platform for Advanced Markers
+4. Create an API key
+5. (Recommended) Restrict the key to your domain or development origin
+6. Copy the key into your `.env` file as `VITE_GOOGLE_MAPS_API_KEY`
 
-Ran terminal command:  grep -r "map-canvas\|map-wrap" src/ --include="*.css"
+## Deployment to Azure
 
-Ran terminal command:  npm run dev
+This application is deployed to Azure Static Web Apps using Azure Developer CLI (`azd`).
 
-Replacing 15 lines with 22 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/App.css), [](file:///home/kdcllc/Downloads/trip-planner/src/features/map/TripMap.tsx)
+### Prerequisites
 
+- [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
+- Azure subscription
 
+### Quick Deploy
+
+```bash
+# Login to Azure
+azd auth login
+
+# Deploy (provision + deploy in one command)
+azd up
 ```
 
+### Step-by-Step Deploy
+
+```bash
+# Create environment
+azd env new prod
+
+# Provision Azure resources
+azd provision
+
+# Deploy application
+azd deploy
 ```
 
+### Update Deployment
+
+After making code changes:
+
+```bash
+azd deploy
 ```
 
+### Resources Created
+
+- **Resource Group:** `rg-{environmentName}`
+- **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`)
+- **Location:** East US 2 (or your chosen region)
+- **Default URL:** `https://{name}.azurestaticapps.net`
+- **Custom Domain:** Supports HTTPS with managed certificates (see DEPLOYMENT.md)
+
+### GitHub Actions CI/CD
+
+To set up automated deployment from GitHub:
+
+```bash
+# Configure GitHub integration
+azd pipeline config
 ```
 
+Then add `VITE_GOOGLE_MAPS_API_KEY` as a GitHub repository secret.
 
-Replacing 5 lines with 6 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/features/map/TripMap.tsx)
-
-
-```
-
-```
-
-
-Replacing 20 lines with 42 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/features/map/TripMap.tsx)
-
-
-```
-
-```
-
-
-Replacing 4 lines with 8 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/features/map/TripMap.tsx)
-
-
-```
-
-```
-
-
-Checked [](file:///home/kdcllc/Downloads/trip-planner/src/features/map/TripMap.tsx), 13 problems found
-
-Searched for files matching `**/*.d.ts`, 1 match
-
-Read [](file:///home/kdcllc/Downloads/trip-planner/package.json)
-
-Read [](file:///home/kdcllc/Downloads/trip-planner/src/vite-env.d.ts)
-
-Read [](file:///home/kdcllc/Downloads/trip-planner/src/vite-env.d.ts)
-
-Replacing 2 lines with 8 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/vite-env.d.ts)
-
-
-```
-
-```
-
-
-Checked [](file:///home/kdcllc/Downloads/trip-planner/src), 38 problems found
-
-Replacing 8 lines with 11 lines in [](file:///home/kdcllc/Downloads/trip-planner/src/vite-env.d.ts)
-
-
-```
-
-```
-Fixed the map display issues:
-
-**Changes made:**
-
-1. **App.css** - Added explicit `height: 480px` and `width: 100%` to `.map-canvas` (Google Maps requires containers with explicit dimensions)
-
-2. **TripMap.tsx** - Made Map ID optional and added fallback markers:
-   - Only pass `mapId` if actually configured
-   - Use `AdvancedMarkerElement` when Map ID is set
-   - Fall back to regular `Marker` when no Map ID (the likely cause of your blank map)
-
-3. **useGoogleMaps.ts** - Improved script loading to handle edge cases
-
-4. **vite-env.d.ts** - Fixed TypeScript declarations
-
-The map should now render at  http://localhost:5174/. If you still don't see it, try adding a Map ID to your .env:
-
-1. Go to [Google Cloud Console > Maps](https://console.cloud.google.com/google/maps-apis/start)
-2. Create a Map ID
-3. In .env uncomment and set:
-   ```
-   VITE_GOOGLE_MAPS_MAP_ID=your_map_id_here
-   ```
-
-Made changes.
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md) or [QUICKSTART.md](QUICKSTART.md).
 ## Features
 
 - Manual stop list with arrival and departure dates

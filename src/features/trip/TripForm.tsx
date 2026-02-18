@@ -28,6 +28,7 @@ export const TripForm = ({
   const [address, setAddress] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [isStartPoint, setIsStartPoint] = useState(false)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -309,6 +310,7 @@ export const TripForm = ({
 
     const resolvedLabel = label.trim() || 'Starting point'
     const resolvedStartDate = isStartPoint ? endDate : startDate
+    const resolvedNote = note.trim().slice(0, 500)
 
     const newStop: TripStop = {
       id: createId(),
@@ -316,6 +318,7 @@ export const TripForm = ({
       address: address.trim(),
       startDate: resolvedStartDate,
       endDate,
+      note: resolvedNote ? resolvedNote : undefined,
       status: location ? 'ready' : 'idle',
       location: location ?? undefined,
     }
@@ -325,6 +328,7 @@ export const TripForm = ({
     setAddress('')
     setStartDate('')
     setEndDate('')
+    setNote('')
     setIsStartPoint(false)
     setLocation(null)
     setValidationStatus('idle')
@@ -437,6 +441,19 @@ export const TripForm = ({
               }}
             />
           </label>
+          <label>
+            <span className="label-row">
+              Note (optional)
+              <span className="note-count">{note.length}/500</span>
+            </span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value.slice(0, 500))}
+              maxLength={500}
+              rows={3}
+              placeholder="Add parking details, check-in info, or reminders."
+            />
+          </label>
         </div>
         {error ? <p className="form-error">{error}</p> : null}
         {!error && validationMessage ? (
@@ -474,6 +491,7 @@ export const TripForm = ({
                 <h3>{stop.label}</h3>
                 <p className="muted">{stop.address}</p>
                 <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                {stop.note ? <p className="stop-note">{stop.note}</p> : null}
                 <p className={`status status-${stop.status ?? 'idle'}`}>
                   {stop.status === 'geocoding' && 'Locating address'}
                   {stop.status === 'ready' && 'Map ready'}

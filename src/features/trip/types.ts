@@ -6,6 +6,7 @@ export type TripStop = {
   address: string
   startDate: string
   endDate: string
+  note?: string
   location?: {
     lat: number
     lng: number
