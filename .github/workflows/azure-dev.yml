@@ -1,4 +1,4 @@
-name: Azure Deployment
+name: Deploy to Azure Static Web Apps
 
 on:
   workflow_dispatch:
@@ -14,11 +14,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
-      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
       VITE_GOOGLE_MAPS_MAP_ID: ${{ secrets.VITE_GOOGLE_MAPS_MAP_ID }}
 
@@ -32,24 +27,19 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install azd
-        run: |
-          curl -fsSL https://aka.ms/install-azd.sh | bash
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Log in with Azure (Federated Credentials)
-        run: |
-          azd auth login \
-            --client-id "${{ secrets.AZURE_CLIENT_ID }}" \
-            --federated-credential-provider "github" \
-            --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+      - name: Build application
+        run: npm run build
 
-      - name: Provision Infrastructure
-        run: azd provision --no-prompt
-
-      - name: Deploy Application
-        run: azd deploy --no-prompt
-
-      - name: Azure Logout
-        run: azd auth logout
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          app_location: '/'
+          api_location: 'api'
+          output_location: 'dist'
         
