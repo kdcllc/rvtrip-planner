@@ -33,7 +33,9 @@ jobs:
           cache: 'npm'
 
       - name: Install azd
-        uses: Azure/setup-azd@v1
+        run: |
+          curl -fsSL https://aka.ms/install-azd.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Log in with Azure (Federated Credentials)
         run: |

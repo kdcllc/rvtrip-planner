@@ -24,4 +24,4 @@ dist-ssr
 *.sw?
 
 # Azure Developer CLI
-.azure/
+!.azure/
