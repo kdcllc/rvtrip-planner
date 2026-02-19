@@ -11,6 +11,57 @@ Azure Static Web Apps is a service that automatically builds and deploys full-st
 - ✅ Free tier (100 GB bandwidth/month)
 - ✅ Built-in CI/CD with GitHub Actions
 
+## Deployment Approaches
+
+This project supports two deployment approaches for GitHub Actions CI/CD:
+
+### 🚀 Token-Based Deployment (Current Active Approach)
+
+**Workflow:** `.github/workflows/azure-dev.yml`
+
+**How it works:**
+- Uses the `Azure/static-web-apps-deploy@v1` GitHub Action
+- Authenticates with a deployment token from Azure Static Web Apps
+- Directly uploads built files to Azure
+- Simple setup with minimal configuration
+
+**Advantages:**
+- ✅ Simple and straightforward setup
+- ✅ Fewer moving parts (no service principal needed)
+- ✅ Works perfectly for static web apps
+- ✅ Fast deployment process
+
+**Required GitHub Secrets:**
+- `AZURE_STATIC_WEB_APPS_TOKEN` - Deployment token from Azure
+- `VITE_GOOGLE_MAPS_API_KEY` - For building the app
+
+**Best for:** Most scenarios, especially when you only need to deploy a static web app.
+
+### 🔧 OIDC-Based Deployment with Azure Developer CLI
+
+**Workflow:** Previously used `azure-deploy.template.yml` (now removed)
+
+**How it works:**
+- Uses `azd` CLI with federated credentials (OIDC)
+- Authenticates via service principal with OpenID Connect
+- Runs `azd provision` and `azd deploy` commands
+- More infrastructure control
+
+**Advantages:**
+- ✅ No long-lived secrets (uses federated credentials)
+- ✅ More control over infrastructure provisioning
+- ✅ Azure best practice for enterprise scenarios
+- ✅ Can manage multiple Azure resources beyond static web apps
+
+**Required GitHub Configuration:**
+- Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+- Variables: `AZURE_ENV_NAME`, `AZURE_LOCATION`
+- Plus application secrets: `VITE_GOOGLE_MAPS_API_KEY`
+
+**Best for:** Complex infrastructure, multiple Azure services, or enterprise security requirements.
+
+**Note:** This approach is available in git history if needed. The token-based approach was chosen for simplicity.
+
 ## Prerequisites
 
 1. **Azure Developer CLI** - [Install azd](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
@@ -146,57 +197,122 @@ You can check the status in Azure Portal under "Custom domains."
 
 ## Phase 3: GitHub Actions CI/CD Setup
 
-After verifying manual deployment works, set up automated deployment from GitHub.
+After verifying manual deployment works, set up automated deployment from GitHub using the token-based approach.
 
-### Step 9: Configure GitHub Pipeline
+### Step 9: Get Azure Static Web App Deployment Token
+
+The GitHub Actions workflow needs a deployment token to authenticate with Azure Static Web Apps.
+
+**Option A: Via Azure Portal (Recommended)**
+
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Navigate to your Static Web App resource
+3. In the left menu, click **Overview**
+4. Click **Manage deployment token** in the top toolbar
+5. Copy the deployment token that appears
+
+**Option B: Via Azure CLI**
 
 ```bash
-azd pipeline config
+# First, list your static web apps to find the name and resource group
+az staticwebapp list --query "[].{name:name, resourceGroup:resourceGroup}" -o table
+
+# Then get the deployment token
+az staticwebapp secrets list \
+  --name <your-static-web-app-name> \
+  --resource-group <your-resource-group> \
+  --query "properties.apiKey" -o tsv
 ```
 
-This command will:
-1. Create a service principal with federated credentials (OIDC authentication)
-2. Generate `.github/workflows/azure-dev.yml` workflow file
-3. Automatically configure GitHub secrets:
-   - `AZURE_CLIENT_ID`
-   - `AZURE_TENANT_ID`
-   - `AZURE_SUBSCRIPTION_ID`
-   - `AZURE_ENV_NAME`
-   - `AZURE_LOCATION`
+**Note:** Keep this token secure - it provides deployment access to your Static Web App.
 
-You'll be prompted for:
-- GitHub repository URL (format: `owner/repo`)
-- Branch name (use `master`)
+### Step 10: Configure GitHub Secrets
 
-### Step 10: Add Google Maps API Key as GitHub Secret
+Add the required secrets to your GitHub repository.
 
-The automated workflow needs your Google Maps API key to build the app.
+**Steps:**
 
-**Via GitHub web interface:**
-1. Go to your repository on GitHub
-2. Navigate to Settings → Secrets and variables → Actions
-3. Click "New repository secret"
-4. Name: `VITE_GOOGLE_MAPS_API_KEY`
-5. Value: Your Google Maps API key (from `.env` file)
-6. Click "Add secret"
+1. Go to your repository on GitHub: `https://github.com/kdcllc/trip-planner`
+2. Navigate to **Settings** → **Secrets and variables** → **Actions**
+3. Click **"New repository secret"**
+4. Add the following secrets:
 
-**Optional:** If you're using a Map ID, also add `VITE_GOOGLE_MAPS_MAP_ID`.
+**Required Secrets:**
 
-### Step 11: Test Automated Deployment
+| Secret Name | Value | Description |
+|-------------|-------|-------------|
+| `AZURE_STATIC_WEB_APPS_TOKEN` | Token from Step 9 | Deployment token for Azure Static Web Apps |
+| `VITE_GOOGLE_MAPS_API_KEY` | Your Google Maps API key | Required for building the app (from `.env` file) |
 
-Commit and push changes to trigger deployment:
+**Optional Secrets:**
+
+| Secret Name | Value | Description |
+|-------------|-------|-------------|
+| `VITE_GOOGLE_MAPS_MAP_ID` | Your Google Maps Map ID | If using a custom map style |
+
+### Step 11: Verify Workflow Configuration
+
+The workflow is already configured in `.github/workflows/azure-dev.yml`. Let's verify it's correct:
+
+```yaml
+# Key parts of the workflow:
+name: Deploy to Azure Static Web Apps
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-node@v4
+  - run: npm ci
+  - run: npm run build
+  - uses: Azure/static-web-apps-deploy@v1
+    with:
+      azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
+      app_location: '/'
+      output_location: 'dist'
+```
+
+The workflow will automatically run when you push to the `master` branch.
+
+### Step 12: Test Automated Deployment
+
+Now test that the automated deployment works:
+
+**Option A: Push a change (Recommended)**
 
 ```bash
+# Make a small change (e.g., update README)
 git add .
-git commit -m "Update deployment configuration"
+git commit -m "Test automated deployment"
 git push origin master
 ```
 
-**Verify:**
-1. Go to GitHub → Actions tab
-2. You should see the workflow running
-3. Check that it completes successfully
-4. Visit your Static Web App URL to verify the latest changes deployed
+**Option B: Manual workflow trigger**
+
+1. Go to GitHub → **Actions** tab
+2. Click **"Deploy to Azure Static Web Apps"** workflow
+3. Click **"Run workflow"** button
+4. Select `master` branch
+5. Click **"Run workflow"**
+
+**Verify Deployment:**
+
+1. Go to GitHub → **Actions** tab
+2. You should see the workflow running with your commit message
+3. Watch the workflow steps:
+   - ✅ Checkout
+   - ✅ Install Node.js
+   - ✅ Install dependencies
+   - ✅ Build application
+   - ✅ Deploy to Azure Static Web Apps
+4. Once complete (green checkmark), visit your Static Web App URL
+5. Verify the latest changes are deployed
+
+**Troubleshooting:** If the deployment fails, check the "Troubleshooting" section below.
 
 ---
 
@@ -248,38 +364,105 @@ Set in `.env` file:
 - `VITE_GOOGLE_MAPS_API_KEY` - Your Google Maps API key
 - `VITE_GOOGLE_MAPS_MAP_ID` - (Optional) Google Maps Map ID
 
-### GitHub Actions
+### GitHub Actions (Token-Based Approach)
 Set as repository secrets:
-- `VITE_GOOGLE_MAPS_API_KEY` - Required for build
-- `VITE_GOOGLE_MAPS_MAP_ID` - Optional
+- `AZURE_STATIC_WEB_APPS_TOKEN` - **Required** - Deployment token from Azure
+- `VITE_GOOGLE_MAPS_API_KEY` - **Required** - For building the app
+- `VITE_GOOGLE_MAPS_MAP_ID` - Optional - For custom map styles
 
-Automatically configured by `azd pipeline config`:
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
+### GitHub Actions (OIDC Approach - Alternative)
+**Note:** Not currently used. Available in git history if needed.
+
+Would be automatically configured by `azd pipeline config`:
+- `AZURE_CLIENT_ID` (secret)
+- `AZURE_TENANT_ID` (secret)
+- `AZURE_SUBSCRIPTION_ID` (secret)
 - `AZURE_ENV_NAME` (variable)
 - `AZURE_LOCATION` (variable)
+- Plus: `VITE_GOOGLE_MAPS_API_KEY` (secret)
 
 ---
 
 ## Troubleshooting
 
-### Build Fails with "Missing API Key"
-Ensure `VITE_GOOGLE_MAPS_API_KEY` is set in GitHub secrets and exported in the workflow.
+### GitHub Actions: "azd auth login" Browser Authentication Error
 
-### Static Website Returns 404
-Check that static website hosting is enabled:
-```bash
-az storage blob service-properties show \
-  --account-name <storage-account-name> \
-  --query staticWebsite
+**Error Message:**
+```
+/usr/bin/xdg-open: 882: www-browser: not found
+azd was unable to open the next url. Please try it manually: https://login.microsoftonline.com/...
 ```
 
-### Deployment Script Fails
-The deployment script needs proper permissions. Check that the managed identity has the "Storage Blob Data Contributor" role on the storage account.
+**Cause:** This error occurs when the workflow attempts interactive browser authentication with `azd auth login` in a headless CI/CD environment (GitHub Actions runner).
 
-### CORS Issues
-Azure Blob Storage static websites don't support CORS configuration directly. If you need CORS for API calls from your app, consider using Azure CDN or Azure Static Web Apps instead.
+**Solution:**
+
+The active workflow (`.github/workflows/azure-dev.yml`) uses token-based authentication and should **not** encounter this error. If you're seeing this error:
+
+1. **Verify correct workflow is running:**
+   - Go to GitHub → Actions tab
+   - Check which workflow file is executing
+   - Should be: "Deploy to Azure Static Web Apps" from `azure-dev.yml`
+
+2. **Ensure required secrets are configured:**
+   - Go to GitHub → Settings → Secrets and variables → Actions
+   - Verify `AZURE_STATIC_WEB_APPS_TOKEN` secret exists
+   - Verify `VITE_GOOGLE_MAPS_API_KEY` secret exists
+
+3. **If you need the OIDC/azd approach:**
+   - The OIDC-based workflow was removed for simplicity
+   - Available in git history: `azure-deploy.template.yml`
+   - Requires running `azd pipeline config` locally to set up federated credentials
+   - Requires additional secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+
+### Build Fails with "Missing API Key"
+
+**Error:** Build fails with Google Maps API key errors.
+
+**Solution:**
+1. Go to GitHub → Settings → Secrets and variables → Actions
+2. Verify `VITE_GOOGLE_MAPS_API_KEY` secret exists
+3. Ensure the value is correct (copy from your `.env` file)
+4. Check the workflow file exports the secret in the `env:` section
+
+### Deployment Token Invalid or Expired
+
+**Error:** "Authentication failed" or "Invalid token" during deployment.
+
+**Solution:**
+1. Deployment tokens don't expire, but can be regenerated
+2. Get a fresh token from Azure Portal or CLI (see Step 9)
+3. Update the `AZURE_STATIC_WEB_APPS_TOKEN` GitHub secret
+4. Retry the deployment
+
+### Workflow Doesn't Trigger Automatically
+
+**Issue:** Pushing to master doesn't trigger the workflow.
+
+**Solution:**
+1. Check the workflow file exists: `.github/workflows/azure-dev.yml`
+2. Verify the workflow is enabled: GitHub → Actions → Select workflow → Enable if disabled
+3. Check branch name matches: workflow triggers on `master`, verify your default branch name
+4. Look for workflow errors: GitHub → Actions → Check for failed runs
+
+### Static Website Returns 404
+
+**Note:** This project uses Azure Static Web Apps (not Azure Blob Storage static websites).
+
+**Solution:**
+1. Verify deployment completed successfully in GitHub Actions
+2. Check Azure Portal → Static Web App → Overview for the correct URL
+3. Ensure `output_location: 'dist'` matches your build output directory
+4. Check SPA routing: Azure Static Web Apps automatically handles client-side routing
+
+### Local "azd auth login" Works but GitHub Actions Fails
+
+**Explanation:** Local `azd auth login` uses interactive browser authentication, which works on your machine but fails in GitHub Actions (headless environment).
+
+**Solution:**
+- For local development: `azd auth login` is correct (opens browser)
+- For GitHub Actions: Use token-based authentication (already configured in `azure-dev.yml`)
+- These are two different authentication methods for different environments
 
 ---
 
@@ -294,6 +477,8 @@ Azure Blob Storage static websites don't support CORS configuration directly. If
 
 ## Architecture
 
+### Current Token-Based Deployment
+
 ```
 ┌─────────────────────────────────────────────────┐
 │  GitHub Repository (kdcllc/trip-planner)       │
@@ -301,7 +486,7 @@ Azure Blob Storage static websites don't support CORS configuration directly. If
 │  ├── azure.yaml                                 │
 │  ├── infra/                                     │
 │  │   ├── main.bicep                             │
-│  │   └── core/storage/storage-account.bicep     │
+│  │   └── core/host/staticwebapp.bicep           │
 │  └── .github/workflows/azure-dev.yml            │
 └──────────────────┬──────────────────────────────┘
                    │
@@ -309,31 +494,55 @@ Azure Blob Storage static websites don't support CORS configuration directly. If
                    ▼
 ┌─────────────────────────────────────────────────┐
 │  GitHub Actions Workflow                        │
-│  ├── Build (npm run build)                      │
-│  └── Deploy (azd deploy)                        │
+│  ├── Checkout code                              │
+│  ├── Setup Node.js                              │
+│  ├── Install dependencies (npm ci)              │
+│  ├── Build application (npm run build)          │
+│  └── Deploy to Azure (token auth)               │
 └──────────────────┬──────────────────────────────┘
                    │
-                   │ OIDC Authentication
+                   │ Token Authentication
+                   │ (AZURE_STATIC_WEB_APPS_TOKEN)
                    ▼
 ┌─────────────────────────────────────────────────┐
-│  Azure Storage Account                          │
-│  ├── Static Website Hosting Enabled             │
-│  ├── $web Container (public read)               │
-│  │   ├── index.html                             │
-│  │   ├── assets/*.js                            │
-│  │   └── assets/*.css                           │
-│  └── Primary Web Endpoint (https://...)         │
+│  Azure Static Web Apps                          │
+│  ├── CDN + Global Distribution                  │
+│  ├── Automatic HTTPS                            │
+│  ├── Custom Domain Support                      │
+│  ├── SPA Routing (automatic)                    │
+│  └── Deployed Files:                            │
+│      ├── index.html                             │
+│      ├── assets/*.js (React + Vite)             │
+│      ├── assets/*.css                           │
+│      └── assets/* (images, fonts)               │
 └─────────────────────────────────────────────────┘
+        │
+        │ Public Internet
+        ▼
+    https://your-app.azurestaticapps.net
+    (or your custom domain)
 ```
 
-## Files Created
+## Files in This Project
 
-- `azure.yaml` - Azure Developer CLI configuration
-- `infra/main.bicep` - Main infrastructure template
+### Configuration Files
+- `azure.yaml` - Azure Developer CLI configuration (defines services and hooks)
+- `.github/workflows/azure-dev.yml` - **Active** GitHub Actions workflow (token-based deployment)
+- `DEPLOYMENT.md` - This deployment guide
+
+### Infrastructure as Code (Bicep)
+- `infra/main.bicep` - Main infrastructure template (provisions Azure Static Web App)
 - `infra/main.parameters.json` - Infrastructure parameters
-- `infra/core/storage/storage-account.bicep` - Storage account module
-- `.github/workflows/azure-dev.yml` - GitHub Actions workflow (generated by azd)
-- `DEPLOYMENT.md` - This file
+- `infra/core/host/staticwebapp.bicep` - Azure Static Web App module
+- `infra/core/storage/storage-account.bicep` - Storage account module (alternative deployment)
+
+### Build Configuration
+- `vite.config.ts` - Vite build configuration
+- `package.json` - Node.js dependencies and build scripts
+- `tsconfig.json` - TypeScript configuration
+
+### Removed Files
+- `.github/workflows/azure-deploy.template.yml` - ❌ Removed (OIDC-based template, available in git history if needed)
 
 ## Resources
 
