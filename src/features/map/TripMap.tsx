@@ -138,7 +138,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey }: TripMapProps) 
       const marker = new window.google.maps.marker.AdvancedMarkerElement({
         map,
         position: stop.location,
-        title: stop.label,
+        title: stop.source?.name ? `${stop.label} • ${stop.source.name}` : stop.label,
         content: (() => {
           const pin = document.createElement('div')
           pin.className = 'map-pin'

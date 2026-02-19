@@ -2,13 +2,26 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { GOOGLE_MAPS_API_KEY } from '../../config'
 import { formatDateRange } from '../../utils/date'
 import { createId } from '../../utils/id'
-import type { TripStop } from './types'
+import {
+  buildGoogleMapsDirectionsUrl,
+  openInGoogleMaps,
+  validateStopsForMaps,
+} from '../../utils/googleMaps'
+import { StopWeatherForecast } from '../weather/StopWeatherForecast'
+import type { StopForecast } from '../weather/types'
+import type { TripStop, TripStopSourceName } from './types'
 
 type TripFormProps = {
   stops: TripStop[]
   onAddStop: (stop: TripStop) => void
   onRemoveStop: (stopId: string) => void
   mapsLoaded: boolean
+  weatherByStopId?: Record<string, StopForecast>
+  weatherErrors?: Record<string, string>
+  selectedStopIds: Set<string>
+  onToggleStopSelection: (stopId: string) => void
+  onSelectAllStops: () => void
+  onClearStopSelection: () => void
 }
 
 type SuggestionItem = {
@@ -18,11 +31,41 @@ type SuggestionItem = {
   prediction: unknown
 }
 
+type SourceProvider = {
+  name: TripStopSourceName
+  homepage: string
+  domain: string
+}
+
+const SOURCE_PROVIDERS: SourceProvider[] = [
+  {
+    name: 'Campendium',
+    homepage: 'https://www.campendium.com',
+    domain: 'campendium.com',
+  },
+  {
+    name: 'Harvest Hosts',
+    homepage: 'https://www.harvesthosts.com',
+    domain: 'harvesthosts.com',
+  },
+  {
+    name: 'RV Parky',
+    homepage: 'https://www.rvparky.com',
+    domain: 'rvparky.com',
+  },
+]
+
 export const TripForm = ({
   stops,
   onAddStop,
   onRemoveStop,
   mapsLoaded,
+  weatherByStopId = {},
+  weatherErrors = {},
+  selectedStopIds,
+  onToggleStopSelection,
+  onSelectAllStops,
+  onClearStopSelection,
 }: TripFormProps) => {
   const [label, setLabel] = useState('')
   const [address, setAddress] = useState('')
@@ -32,6 +75,11 @@ export const TripForm = ({
   const [error, setError] = useState('')
   const [isStartPoint, setIsStartPoint] = useState(false)
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [sourceName, setSourceName] = useState<TripStopSourceName | ''>('')
+  const [sourceUrl, setSourceUrl] = useState('')
+  const [sourceSiteType, setSourceSiteType] = useState('')
+  const [sourceFees, setSourceFees] = useState('')
+  const [sourceAmenities, setSourceAmenities] = useState('')
   const [validationStatus, setValidationStatus] = useState<
     'idle' | 'validating' | 'valid' | 'invalid'
   >('idle')
@@ -41,6 +89,8 @@ export const TripForm = ({
   const [predictionStatus, setPredictionStatus] = useState<
     'idle' | 'loading' | 'empty' | 'blocked'
   >('idle')
+  const [mapsMessage, setMapsMessage] = useState('')
+  const [mapsError, setMapsError] = useState('')
   const addressInputRef = useRef<HTMLInputElement | null>(null)
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
   const debounceRef = useRef<number | null>(null)
@@ -273,6 +323,94 @@ export const TripForm = ({
     }
   }
 
+  const buildSearchQuery = () => {
+    const parts = [label.trim(), address.trim()].filter(Boolean)
+    return parts.join(' ')
+  }
+
+  const handleOpenAllInMaps = () => {
+    setMapsError('')
+    setMapsMessage('')
+
+    const validation = validateStopsForMaps(stops)
+    if (!validation.valid) {
+      setMapsError(validation.error || 'Cannot open in Google Maps')
+      return
+    }
+
+    try {
+      const url = buildGoogleMapsDirectionsUrl(stops)
+      openInGoogleMaps(url)
+      setMapsMessage(
+        `Opened route with ${validation.validStops.length} stop${validation.validStops.length === 1 ? '' : 's'} in Google Maps`
+      )
+    } catch (err) {
+      setMapsError(err instanceof Error ? err.message : 'Failed to open Google Maps')
+    }
+  }
+
+  const handleOpenSelectedInMaps = () => {
+    setMapsError('')
+    setMapsMessage('')
+
+    const selectedStops = stops.filter((stop) => selectedStopIds.has(stop.id))
+
+    if (selectedStops.length === 0) {
+      setMapsError('Please select at least one stop')
+      return
+    }
+
+    const validation = validateStopsForMaps(selectedStops)
+    if (!validation.valid) {
+      setMapsError(validation.error || 'Cannot open in Google Maps')
+      return
+    }
+
+    try {
+      const selectedIndices = stops
+        .map((stop, index) => (selectedStopIds.has(stop.id) ? index : -1))
+        .filter((index) => index !== -1)
+      const url = buildGoogleMapsDirectionsUrl(stops, selectedIndices)
+      openInGoogleMaps(url)
+      setMapsMessage(
+        `Opened route with ${validation.validStops.length} selected stop${validation.validStops.length === 1 ? '' : 's'} in Google Maps`
+      )
+    } catch (err) {
+      setMapsError(err instanceof Error ? err.message : 'Failed to open Google Maps')
+    }
+  }
+
+  const openCoverageMap = async (addressText: string) => {
+    const trimmedAddress = addressText.trim()
+    if (!trimmedAddress) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(trimmedAddress)
+    } catch (clipboardError) {
+      // If clipboard access is denied, still open the map.
+    }
+
+    window.open(
+      'https://www.t-mobile.com/coverage/coverage-map',
+      '_blank',
+      'noopener,noreferrer'
+    )
+  }
+
+  const openSourceLink = (provider: SourceProvider, mode: 'homepage' | 'search') => {
+    const query = buildSearchQuery()
+    const url =
+      mode === 'search' && query
+        ? `https://www.google.com/search?q=${encodeURIComponent(
+            `site:${provider.domain} ${query}`
+          )}`
+        : provider.homepage
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setSourceName(provider.name)
+  }
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError('')
@@ -311,6 +449,18 @@ export const TripForm = ({
     const resolvedLabel = label.trim() || 'Starting point'
     const resolvedStartDate = isStartPoint ? endDate : startDate
     const resolvedNote = note.trim().slice(0, 500)
+    const trimmedSourceUrl = sourceUrl.trim()
+    const trimmedSiteType = sourceSiteType.trim()
+    const trimmedFees = sourceFees.trim()
+    const trimmedAmenities = sourceAmenities.trim()
+    const hasSourceDetails =
+      Boolean(sourceName) ||
+      Boolean(trimmedSourceUrl) ||
+      Boolean(trimmedSiteType) ||
+      Boolean(trimmedFees) ||
+      Boolean(trimmedAmenities)
+    const resolvedSourceName =
+      sourceName || (hasSourceDetails ? 'Other' : '')
 
     const newStop: TripStop = {
       id: createId(),
@@ -319,6 +469,15 @@ export const TripForm = ({
       startDate: resolvedStartDate,
       endDate,
       note: resolvedNote ? resolvedNote : undefined,
+      source: resolvedSourceName
+        ? {
+            name: resolvedSourceName as TripStopSourceName,
+            url: trimmedSourceUrl || undefined,
+            siteType: trimmedSiteType || undefined,
+            fees: trimmedFees || undefined,
+            amenities: trimmedAmenities || undefined,
+          }
+        : undefined,
       status: location ? 'ready' : 'idle',
       location: location ?? undefined,
     }
@@ -331,6 +490,11 @@ export const TripForm = ({
     setNote('')
     setIsStartPoint(false)
     setLocation(null)
+    setSourceName('')
+    setSourceUrl('')
+    setSourceSiteType('')
+    setSourceFees('')
+    setSourceAmenities('')
     setValidationStatus('idle')
     setValidationMessage('')
     setLastValidatedAddress('')
@@ -454,6 +618,83 @@ export const TripForm = ({
               placeholder="Add parking details, check-in info, or reminders."
             />
           </label>
+          <div className="source-section">
+            <div className="source-header">
+              <div>
+                <p className="source-title">Campground source</p>
+                <p className="muted">
+                  Open official sites, then paste key details for this stop.
+                </p>
+              </div>
+              <div className="source-actions">
+                {SOURCE_PROVIDERS.map((provider) => (
+                  <div key={provider.name} className="source-action">
+                    <button
+                      className="ghost"
+                      type="button"
+                      onClick={() => openSourceLink(provider, 'homepage')}
+                    >
+                      Open {provider.name}
+                    </button>
+                    <button
+                      className="ghost"
+                      type="button"
+                      onClick={() => openSourceLink(provider, 'search')}
+                    >
+                      Search
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <label>
+              Source name
+              <select
+                value={sourceName}
+                onChange={(event) =>
+                  setSourceName(event.target.value as TripStopSourceName)
+                }
+              >
+                <option value="">None</option>
+                <option value="Campendium">Campendium</option>
+                <option value="Harvest Hosts">Harvest Hosts</option>
+                <option value="RV Parky">RV Parky</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label>
+              Listing URL
+              <input
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder="https://..."
+              />
+            </label>
+            <label>
+              Site type (boondocking, farm, RV park)
+              <input
+                value={sourceSiteType}
+                onChange={(event) => setSourceSiteType(event.target.value)}
+                placeholder="Boondocking"
+              />
+            </label>
+            <label>
+              Fees / requirements
+              <input
+                value={sourceFees}
+                onChange={(event) => setSourceFees(event.target.value)}
+                placeholder="$35/night, membership required"
+              />
+            </label>
+            <label>
+              Amenities / notes
+              <input
+                value={sourceAmenities}
+                onChange={(event) => setSourceAmenities(event.target.value)}
+                placeholder="Water, 30A, pets allowed"
+              />
+            </label>
+          </div>
         </div>
         {error ? <p className="form-error">{error}</p> : null}
         {!error && validationMessage ? (
@@ -479,6 +720,56 @@ export const TripForm = ({
         </button>
       </form>
 
+      {stops.length > 0 && (
+        <div className="maps-control-bar">
+          <div className="maps-controls-left">
+            <button
+              className="ghost small"
+              type="button"
+              onClick={onSelectAllStops}
+              disabled={selectedStopIds.size === stops.length}
+            >
+              Select all
+            </button>
+            <button
+              className="ghost small"
+              type="button"
+              onClick={onClearStopSelection}
+              disabled={selectedStopIds.size === 0}
+            >
+              Deselect all
+            </button>
+            <span className="selection-count">
+              {selectedStopIds.size > 0
+                ? `${selectedStopIds.size} of ${stops.length} selected`
+                : `${stops.length} stop${stops.length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+          <div className="maps-controls-right">
+            <button
+              className="ghost small"
+              type="button"
+              onClick={handleOpenAllInMaps}
+              title="Open all stops in Google Maps"
+            >
+              📍 Open All in Maps
+            </button>
+            <button
+              className="ghost small"
+              type="button"
+              onClick={handleOpenSelectedInMaps}
+              disabled={selectedStopIds.size === 0}
+              title="Open selected stops in Google Maps"
+            >
+              📍 Open Selected in Maps
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mapsError && <div className="maps-error">{mapsError}</div>}
+      {mapsMessage && <div className="maps-message">{mapsMessage}</div>}
+
       <div className="stop-list">
         {stops.length === 0 ? (
           <div className="empty-state">
@@ -486,23 +777,78 @@ export const TripForm = ({
           </div>
         ) : (
           stops.map((stop) => (
-            <article key={stop.id} className="stop-card">
-              <div>
-                <h3>{stop.label}</h3>
-                <p className="muted">{stop.address}</p>
-                <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
-                {stop.note ? <p className="stop-note">{stop.note}</p> : null}
-                <p className={`status status-${stop.status ?? 'idle'}`}>
-                  {stop.status === 'geocoding' && 'Locating address'}
-                  {stop.status === 'ready' && 'Map ready'}
-                  {stop.status === 'error' && 'Could not locate'}
-                  {(!stop.status || stop.status === 'idle') && 'Waiting to map'}
-                </p>
-              </div>
-              <button className="ghost" type="button" onClick={() => onRemoveStop(stop.id)}>
-                Remove
-              </button>
-            </article>
+            <div key={stop.id} className="stop-item">
+              <article className="stop-card">
+                <div className="stop-card-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedStopIds.has(stop.id)}
+                    onChange={() => onToggleStopSelection(stop.id)}
+                    aria-label={`Select ${stop.label}`}
+                  />
+                </div>
+                <div>
+                  <h3>{stop.label}</h3>
+                  <p className="muted">{stop.address}</p>
+                  <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                  {stop.address ? (
+                    <button
+                      className="coverage-link"
+                      type="button"
+                      onClick={() => void openCoverageMap(stop.address)}
+                    >
+                      Check T-Mobile coverage
+                    </button>
+                  ) : null}
+                  {stop.source ? (
+                    <div className="stop-source">
+                      <span className="source-badge">{stop.source.name}</span>
+                      {stop.source.url ? (
+                        <a
+                          className="source-link"
+                          href={stop.source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View listing
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {stop.source?.siteType ? (
+                    <p className="source-detail">Type: {stop.source.siteType}</p>
+                  ) : null}
+                  {stop.source?.fees ? (
+                    <p className="source-detail">Fees: {stop.source.fees}</p>
+                  ) : null}
+                  {stop.source?.amenities ? (
+                    <p className="source-detail">
+                      Amenities: {stop.source.amenities}
+                    </p>
+                  ) : null}
+                  {stop.note ? <p className="stop-note">{stop.note}</p> : null}
+                  <p className={`status status-${stop.status ?? 'idle'}`}>
+                    {stop.status === 'geocoding' && 'Locating address'}
+                    {stop.status === 'ready' && 'Map ready'}
+                    {stop.status === 'error' && 'Could not locate'}
+                    {(!stop.status || stop.status === 'idle') && 'Waiting to map'}
+                  </p>
+                </div>
+                <button
+                  className="ghost stop-remove"
+                  type="button"
+                  aria-label="Remove stop"
+                  onClick={() => onRemoveStop(stop.id)}
+                >
+                  x
+                </button>
+              </article>
+              <StopWeatherForecast
+                stop={stop}
+                forecast={weatherByStopId[stop.id]}
+                error={weatherErrors[stop.id]}
+              />
+            </div>
           ))
         )}
       </div>
