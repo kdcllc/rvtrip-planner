@@ -10,6 +10,8 @@ import {
 import { StopWeatherForecast } from '../weather/StopWeatherForecast'
 import type { StopForecast } from '../weather/types'
 import type { TripStop, TripStopSourceName } from './types'
+import { CampsiteSearch } from './CampsiteSearch'
+import type { MapBounds } from '../../utils/campsiteSearch'
 
 type TripFormProps = {
   stops: TripStop[]
@@ -22,6 +24,7 @@ type TripFormProps = {
   onToggleStopSelection: (stopId: string) => void
   onSelectAllStops: () => void
   onClearStopSelection: () => void
+  mapBounds?: MapBounds
 }
 
 type SuggestionItem = {
@@ -39,21 +42,106 @@ type SourceProvider = {
 
 const SOURCE_PROVIDERS: SourceProvider[] = [
   {
-    name: 'Campendium',
-    homepage: 'https://www.campendium.com',
-    domain: 'campendium.com',
-  },
-  {
     name: 'Harvest Hosts',
     homepage: 'https://www.harvesthosts.com',
     domain: 'harvesthosts.com',
   },
-  {
-    name: 'RV Parky',
-    homepage: 'https://www.rvparky.com',
-    domain: 'rvparky.com',
-  },
 ]
+
+type SiteType = {
+  value: string
+  label: string
+}
+
+const ALL_SITE_TYPES: SiteType[] = [
+  { value: 'Free Parking', label: 'Free Parking' },
+  { value: 'Boondocking', label: 'Boondocking' },
+  { value: 'Fresh Water Refill', label: 'Fresh Water Refill' },
+  { value: 'Dump Station', label: 'Dump Station' },
+  { value: 'RV Park', label: 'RV Park' },
+  { value: 'Harvest Host', label: 'Harvest Host' },
+  { value: 'Campground', label: 'Campground' },
+  { value: 'BLM Land', label: 'BLM Land' },
+  { value: 'National Forest', label: 'National Forest' },
+  { value: 'State Park', label: 'State Park' },
+  { value: 'National Park', label: 'National Park' },
+  { value: 'Truck Stop', label: 'Truck Stop' },
+  { value: 'Rest Area', label: 'Rest Area' },
+  { value: 'Parking Lot', label: 'Parking Lot' },
+  { value: 'RV Resort', label: 'RV Resort' },
+  { value: 'Resort', label: 'Resort' },
+  { value: 'Beach/Lakeside', label: 'Beach/Lakeside' },
+  { value: 'Farm Stay', label: 'Farm Stay' },
+  { value: 'Winery', label: 'Winery' },
+  { value: 'Marina', label: 'Marina' },
+  { value: 'Cabin Rental', label: 'Cabin Rental' },
+  { value: 'Glamping', label: 'Glamping' },
+  { value: 'Dude Ranch', label: 'Dude Ranch' },
+  { value: 'Hotel/Motel', label: 'Hotel/Motel' },
+  { value: 'Airbnb/VRBO', label: 'Airbnb/VRBO' },
+  { value: 'Hostel', label: 'Hostel' },
+  { value: 'Trailhead Parking', label: 'Trailhead Parking' },
+  { value: 'Day Use Area', label: 'Day Use Area' },
+  { value: 'Private Property', label: 'Private Property' },
+  { value: 'Other', label: 'Other' },
+]
+
+const SITE_TYPES_BY_SOURCE: Record<TripStopSourceName, SiteType[]> = {
+  'RV Life': [
+    { value: 'RV Park', label: 'RV Park' },
+    { value: 'Campground', label: 'Campground' },
+    { value: 'RV Resort', label: 'RV Resort' },
+    { value: 'State Park', label: 'State Park' },
+    { value: 'National Park', label: 'National Park' },
+    { value: 'Free Parking', label: 'Free Parking' },
+    { value: 'Other', label: 'Other' },
+  ],
+  'Hipcamp': [
+    { value: 'Campground', label: 'Campground' },
+    { value: 'RV Park', label: 'RV Park' },
+    { value: 'Glamping', label: 'Glamping' },
+    { value: 'Cabin Rental', label: 'Cabin Rental' },
+    { value: 'Farm Stay', label: 'Farm Stay' },
+    { value: 'Beach/Lakeside', label: 'Beach/Lakeside' },
+    { value: 'State Park', label: 'State Park' },
+    { value: 'National Park', label: 'National Park' },
+    { value: 'Private Property', label: 'Private Property' },
+    { value: 'Other', label: 'Other' },
+  ],
+  'Campendium': [
+    { value: 'RV Park', label: 'RV Park' },
+    { value: 'Campground', label: 'Campground' },
+    { value: 'Boondocking', label: 'Boondocking' },
+    { value: 'BLM Land', label: 'BLM Land' },
+    { value: 'National Forest', label: 'National Forest' },
+    { value: 'State Park', label: 'State Park' },
+    { value: 'National Park', label: 'National Park' },
+    { value: 'RV Resort', label: 'RV Resort' },
+    { value: 'Free Parking', label: 'Free Parking' },
+    { value: 'Cabin Rental', label: 'Cabin Rental' },
+    { value: 'Glamping', label: 'Glamping' },
+    { value: 'Resort', label: 'Resort' },
+    { value: 'Other', label: 'Other' },
+  ],
+  'Harvest Hosts': [
+    { value: 'Farm Stay', label: 'Farm Stay' },
+    { value: 'Winery', label: 'Winery' },
+    { value: 'Dude Ranch', label: 'Dude Ranch' },
+    { value: 'Other', label: 'Other' },
+  ],
+  'RV Parky': [
+    { value: 'RV Park', label: 'RV Park' },
+    { value: 'RV Resort', label: 'RV Resort' },
+    { value: 'Truck Stop', label: 'Truck Stop' },
+    { value: 'Rest Area', label: 'Rest Area' },
+    { value: 'Parking Lot', label: 'Parking Lot' },
+    { value: 'Hotel/Motel', label: 'Hotel/Motel' },
+    { value: 'Marina', label: 'Marina' },
+    { value: 'Free Parking', label: 'Free Parking' },
+    { value: 'Other', label: 'Other' },
+  ],
+  'Other': ALL_SITE_TYPES,
+}
 
 export const TripForm = ({
   stops,
@@ -66,6 +154,7 @@ export const TripForm = ({
   onToggleStopSelection,
   onSelectAllStops,
   onClearStopSelection,
+  mapBounds,
 }: TripFormProps) => {
   const [label, setLabel] = useState('')
   const [address, setAddress] = useState('')
@@ -120,6 +209,13 @@ export const TripForm = ({
     }
 
     if (trimmedAddress.length < 3) {
+      setPredictions([])
+      setPredictionStatus('idle')
+      return
+    }
+
+    // Don't fetch suggestions if address is already validated and hasn't changed
+    if (validationStatus === 'valid' && trimmedAddress === lastValidatedAddress) {
       setPredictions([])
       setPredictionStatus('idle')
       return
@@ -202,7 +298,7 @@ export const TripForm = ({
         window.clearTimeout(debounceRef.current)
       }
     }
-  }, [address, mapsLoaded])
+  }, [address, mapsLoaded, validationStatus, lastValidatedAddress])
 
   const selectPrediction = async (item: SuggestionItem) => {
     setAddress(item.mainText)
@@ -323,11 +419,6 @@ export const TripForm = ({
     }
   }
 
-  const buildSearchQuery = () => {
-    const parts = [label.trim(), address.trim()].filter(Boolean)
-    return parts.join(' ')
-  }
-
   const handleOpenAllInMaps = () => {
     setMapsError('')
     setMapsMessage('')
@@ -399,15 +490,16 @@ export const TripForm = ({
     )
   }
 
-  const openSourceLink = (provider: SourceProvider, mode: 'homepage' | 'search') => {
-    const query = buildSearchQuery()
-    const url =
-      mode === 'search' && query
-        ? `https://www.google.com/search?q=${encodeURIComponent(
-            `site:${provider.domain} ${query}`
-          )}`
-        : provider.homepage
-    window.open(url, '_blank', 'noopener,noreferrer')
+  const openSourceLink = (provider: SourceProvider) => {
+    window.open(provider.homepage, '_blank', 'noopener,noreferrer')
+    
+    // Copy address to clipboard
+    if (address.trim()) {
+      navigator.clipboard.writeText(address.trim()).catch(() => {
+        // Silent fail if clipboard access is denied
+      })
+    }
+    
     setSourceName(provider.name)
   }
 
@@ -618,6 +710,7 @@ export const TripForm = ({
               placeholder="Add parking details, check-in info, or reminders."
             />
           </label>
+          <CampsiteSearch address={address} mapBounds={mapBounds} location={location} />
           <div className="source-section">
             <div className="source-header">
               <div>
@@ -628,22 +721,14 @@ export const TripForm = ({
               </div>
               <div className="source-actions">
                 {SOURCE_PROVIDERS.map((provider) => (
-                  <div key={provider.name} className="source-action">
-                    <button
-                      className="ghost"
-                      type="button"
-                      onClick={() => openSourceLink(provider, 'homepage')}
-                    >
-                      Open {provider.name}
-                    </button>
-                    <button
-                      className="ghost"
-                      type="button"
-                      onClick={() => openSourceLink(provider, 'search')}
-                    >
-                      Search
-                    </button>
-                  </div>
+                  <button
+                    key={provider.name}
+                    className="ghost"
+                    type="button"
+                    onClick={() => openSourceLink(provider)}
+                  >
+                    Open {provider.name}
+                  </button>
                 ))}
               </div>
             </div>
@@ -651,11 +736,16 @@ export const TripForm = ({
               Source name
               <select
                 value={sourceName}
-                onChange={(event) =>
-                  setSourceName(event.target.value as TripStopSourceName)
-                }
+                onChange={(event) => {
+                  const newSourceName = event.target.value as TripStopSourceName
+                  setSourceName(newSourceName)
+                  // Reset site type when changing source
+                  setSourceSiteType('')
+                }}
               >
                 <option value="">None</option>
+                <option value="RV Life">RV Life</option>
+                <option value="Hipcamp">Hipcamp</option>
                 <option value="Campendium">Campendium</option>
                 <option value="Harvest Hosts">Harvest Hosts</option>
                 <option value="RV Parky">RV Parky</option>
@@ -671,12 +761,32 @@ export const TripForm = ({
               />
             </label>
             <label>
-              Site type (boondocking, farm, RV park)
-              <input
+              Site type
+              <select
                 value={sourceSiteType}
                 onChange={(event) => setSourceSiteType(event.target.value)}
-                placeholder="Boondocking"
-              />
+              >
+                <option value="">
+                  {sourceName
+                    ? 'Select a site type...'
+                    : 'Select source first or choose type...'}
+                </option>
+                {sourceName && SITE_TYPES_BY_SOURCE[sourceName as TripStopSourceName]
+                  ? SITE_TYPES_BY_SOURCE[sourceName as TripStopSourceName].map(
+                      (type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ),
+                    )
+                  : !sourceName
+                    ? ALL_SITE_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))
+                    : null}
+              </select>
             </label>
             <label>
               Fees / requirements

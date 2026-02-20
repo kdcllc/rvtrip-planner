@@ -1,12 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { GOOGLE_MAPS_MAP_ID } from '../../config'
 import type { TripStop } from '../trip/types'
+import type { MapBounds } from '../../utils/campsiteSearch'
 
 type TripMapProps = {
   stops: TripStop[]
   mapsLoaded: boolean
   mapsError: string | null
   apiKey: string
+  onBoundsChange?: (bounds: MapBounds) => void
 }
 
 type RouteSegment = {
@@ -51,7 +53,7 @@ const formatDuration = (duration?: string) => {
   return `${minutes}m`
 }
 
-export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey }: TripMapProps) => {
+export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }: TripMapProps) => {
   const mapRef = useRef<any>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const markersRef = useRef<any[]>([])
@@ -304,6 +306,43 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey }: TripMapProps) 
       map.fitBounds(bounds, 60)
     }
   }, [mapsLoaded, stops])
+
+  // Track map bounds for campsite search
+  useEffect(() => {
+    if (!mapsLoaded || !mapRef.current || !onBoundsChange) {
+      return
+    }
+
+    const map = mapRef.current
+    const emitBounds = () => {
+      const bounds = map.getBounds()
+      if (!bounds) {
+        return
+      }
+
+      const ne = bounds.getNorthEast()
+      const sw = bounds.getSouthWest()
+      
+      onBoundsChange({
+        neLat: ne.lat(),
+        neLng: ne.lng(),
+        swLat: sw.lat(),
+        swLng: sw.lng(),
+      })
+    }
+
+    // Emit initial bounds when map bounds change
+    window.google?.maps?.event?.addListenerOnce(map, 'bounds_changed', emitBounds)
+
+    // Emit bounds on idle (after user stops panning/zooming)
+    const idleListener = window.google?.maps?.event?.addListener(map, 'idle', emitBounds)
+
+    return () => {
+      if (idleListener) {
+        window.google?.maps?.event?.removeListener(idleListener)
+      }
+    }
+  }, [mapsLoaded, onBoundsChange])
 
   return (
     <div className="map-wrap">

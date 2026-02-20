@@ -17,6 +17,7 @@ import {
   createNewTrip,
   getCurrentTrip,
 } from './utils/tripStorage'
+import type { MapBounds } from './utils/campsiteSearch'
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -33,6 +34,7 @@ function App() {
   const [importError, setImportError] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
+  const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
   const geocodingInFlight = useRef(false)
   const weatherInFlight = useRef<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -605,6 +607,7 @@ function App() {
             onToggleStopSelection={toggleStopSelection}
             onSelectAllStops={selectAllStops}
             onClearStopSelection={clearStopSelection}
+            mapBounds={mapBounds}
           />
         </section>
 
@@ -614,6 +617,7 @@ function App() {
             mapsLoaded={mapsLoaded}
             mapsError={mapsError}
             apiKey={GOOGLE_MAPS_API_KEY}
+            onBoundsChange={setMapBounds}
           />
         </section>
       </main>

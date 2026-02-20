@@ -120,6 +120,7 @@
 
 .form-grid {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -183,12 +184,6 @@
 
 .source-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.source-action {
-  display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -207,6 +202,10 @@
 
 .address-field {
   position: relative;
+}
+
+.address-field input {
+  width: 100%;
 }
 
 .address-suggestions {
@@ -883,4 +882,33 @@
 .trip-selector-create-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.campsite-search-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(240, 253, 250, 0.7);
+  border: 1px solid var(--color-border);
+}
+
+.campsite-search-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.campsite-search-title {
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: inherit;
+}
+
+.campsite-search-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }

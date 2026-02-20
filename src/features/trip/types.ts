@@ -1,6 +1,8 @@
 export type TripStopStatus = 'idle' | 'geocoding' | 'ready' | 'error'
 
 export type TripStopSourceName =
+  | 'RV Life'
+  | 'Hipcamp'
   | 'Campendium'
   | 'Harvest Hosts'
   | 'RV Parky'
