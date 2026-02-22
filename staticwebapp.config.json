@@ -29,6 +29,6 @@
     "X-Frame-Options": "DENY",
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com; img-src 'self' data: https:; style-src 'self' https://maps.googleapis.com https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com https://routes.googleapis.com https://api.weather.gov https://climate-api.open-meteo.com https://www.fueleconomy.gov; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com; img-src 'self' data: https:; style-src 'self' https://maps.googleapis.com https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://www.googleapis.com https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com https://routes.googleapis.com https://api.weather.gov https://climate-api.open-meteo.com https://www.fueleconomy.gov; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
   }
 }
