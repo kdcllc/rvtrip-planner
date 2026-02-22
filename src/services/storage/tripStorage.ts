@@ -1,5 +1,5 @@
-import type { Trip, TripsState, TripStop } from '../features/trip/types'
-import { createId } from './id'
+import type { Trip, TripsState, TripStop } from '../../domain/trip/types'
+import { createId } from '../../utils/id'
 
 const STORAGE_KEY = 'trip-planner-trips'
 const LEGACY_STORAGE_KEY = 'exported-trips'

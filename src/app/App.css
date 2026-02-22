@@ -133,15 +133,33 @@
 
 .trip-form input,
 .trip-form select {
+  appearance: none;
   border-radius: 12px;
   border: 1px solid var(--color-border);
   padding: 10px 12px;
   font-size: 0.95rem;
   background: var(--color-surface-strong);
   color: inherit;
+  font-family: inherit;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.trip-form input:focus,
+.trip-form select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+.trip-form select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b7280' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
 }
 
 .trip-form textarea {
+  appearance: none;
   border-radius: 12px;
   border: 1px solid var(--color-border);
   padding: 10px 12px;
@@ -151,12 +169,21 @@
   resize: vertical;
   min-height: 80px;
   font-family: inherit;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.trip-form textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface);
 }
 
 .trip-form input[type='checkbox'] {
+  appearance: auto;
   width: 18px;
   height: 18px;
   padding: 0;
+  cursor: pointer;
 }
 
 .source-section {
@@ -260,6 +287,20 @@
   color: #1b1b1b;
   font-weight: 700;
   cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.primary:hover {
+  background-color: #d97706;
+}
+
+.primary:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.primary:active {
+  transform: scale(0.98);
 }
 
 .ghost {
@@ -270,6 +311,41 @@
   font-size: 0.8rem;
   cursor: pointer;
   color: var(--color-text-muted);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.ghost:hover {
+  background-color: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.ghost:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.danger {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.danger:hover {
+  background-color: #b91c1c;
+}
+
+.danger:focus {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.danger:active {
+  transform: scale(0.98);
 }
 
 .form-error {
@@ -300,18 +376,146 @@
   border-bottom: none;
 }
 
+.stop-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.stop-reorder-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stop-reorder-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+  border: 1px solid var(--color-border);
+}
+
+.stop-reorder-button:hover:not(:disabled) {
+  opacity: 1;
+  background-color: var(--color-accent-soft);
+}
+
+.stop-reorder-button:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .stop-remove {
-  position: absolute;
-  top: 10px;
-  right: 10px;
   width: 28px;
   height: 28px;
   padding: 0;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 0.85rem;
+  font-size: 1.2rem;
   line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.stop-remove:hover {
+  opacity: 1;
+}
+
+.stop-edit-button {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+  border: 1px solid var(--color-border);
+}
+
+.stop-edit-button:hover {
+  opacity: 1;
+  background-color: var(--color-accent-soft);
+}
+
+.stop-card--editing {
+  padding: 20px;
+  min-height: auto;
+}
+
+.stop-card--editing .stop-card-checkbox {
+  opacity: 0.5;
+}
+
+.stop-edit-form {
+  width: 100%;
+}
+
+.stop-edit-form .form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stop-edit-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.stop-edit-form input,
+.stop-edit-form select,
+.stop-edit-form textarea {
+  appearance: none;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: var(--color-surface);
+  color: inherit;
+  font-family: inherit;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.stop-edit-form select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b7280' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+}
+
+.stop-edit-form input:focus,
+.stop-edit-form select:focus,
+.stop-edit-form textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface-strong);
+}
+
+.stop-edit-form textarea {
+  resize: vertical;
+}
+
+.stop-edit-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.stop-edit-actions .primary {
+  flex: 1;
+}
+
+.stop-edit-actions .ghost {
+  flex: 0 0 auto;
 }
 
 .stop-weather {
@@ -383,6 +587,12 @@
   color: #0e7490;
 }
 
+.manual-badge {
+  background: rgba(107, 114, 128, 0.15);
+  color: #4b5563;
+  border: 1px solid rgba(107, 114, 128, 0.25);
+}
+
 .source-link {
   font-size: 0.8rem;
   color: var(--color-accent-dark);
@@ -398,6 +608,32 @@
   margin-top: 6px;
   font-size: 0.85rem;
   color: var(--color-text-muted);
+}
+
+.stop-travel-info {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(14, 116, 144, 0.08);
+  border-radius: 12px;
+  border-left: 3px solid #0e7490;
+}
+
+.travel-detail {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.travel-detail:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+.travel-detail strong {
+  font-weight: 600;
+  color: #0e7490;
 }
 
 .status {
@@ -590,9 +826,29 @@
 
 .forecast-row {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
+  grid-template-columns: auto 1.2fr 1fr 1fr;
   gap: 12px;
   font-size: 0.9rem;
+  align-items: center;
+}
+
+.weather-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.weather-icon--sm {
+  font-size: 1rem;
+}
+
+.weather-icon--md {
+  font-size: 1.25rem;
+}
+
+.weather-icon--lg {
+  font-size: 1.5rem;
 }
 
 .temp-range {
@@ -845,6 +1101,7 @@
 }
 
 .trip-selector-input {
+  appearance: none;
   flex: 1;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -853,6 +1110,7 @@
   background: var(--color-surface-strong);
   color: inherit;
   font-family: inherit;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .trip-selector-input:focus {

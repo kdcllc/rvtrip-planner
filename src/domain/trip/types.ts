@@ -22,6 +22,8 @@ export type TripStop = {
   address: string
   startDate: string
   endDate: string
+  checkInTime?: string
+  checkOutTime?: string
   note?: string
   source?: TripStopSource
   location?: {
@@ -29,6 +31,9 @@ export type TripStop = {
     lng: number
   }
   status?: TripStopStatus
+  manualEntry?: boolean
+  distanceFromPreviousMeters?: number
+  estimatedFuelCost?: number
 }
 
 export type Trip = {
@@ -37,6 +42,9 @@ export type Trip = {
   stops: TripStop[]
   createdAt: string
   updatedAt: string
+  vehicleSettings?: {
+    mpg: number
+  }
 }
 
 export type TripsState = {

@@ -1,22 +1,31 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { GOOGLE_MAPS_API_KEY } from '../../config'
-import { formatDateRange } from '../../utils/date'
+import { useEffect, useRef, useState } from 'react'
+import { GOOGLE_MAPS_API_KEY } from '../../config/env'
+import { formatDateRange, formatTime } from '../../utils/date'
 import { createId } from '../../utils/id'
+import { formatDistance } from '../../utils/distance'
 import {
   buildGoogleMapsDirectionsUrl,
   openInGoogleMaps,
   validateStopsForMaps,
-} from '../../utils/googleMaps'
+} from '../../services/maps/googleMaps'
+import { requiresCheckInOut } from '../../utils/siteType'
 import { StopWeatherForecast } from '../weather/StopWeatherForecast'
-import type { StopForecast } from '../weather/types'
-import type { TripStop, TripStopSourceName } from './types'
-import { CampsiteSearch } from './CampsiteSearch'
-import type { MapBounds } from '../../utils/campsiteSearch'
+import type { StopForecast } from '../../domain/weather/types'
+import type { TripStop, TripStopSourceName } from '../../domain/trip/types'
+import { StopDrawer } from './StopDrawer'
+import {
+  type StopFormValues,
+  type StopFormValidationState,
+  type SuggestionItem,
+} from './StopFormFields'
+import type { MapBounds } from '../../services/campsiteSearch'
 
 type TripFormProps = {
   stops: TripStop[]
   onAddStop: (stop: TripStop) => void
   onRemoveStop: (stopId: string) => void
+  onUpdateStop: (stopId: string, updates: Partial<TripStop>) => void
+  onReorderStop: (stopId: string, direction: 'up' | 'down') => void
   mapsLoaded: boolean
   weatherByStopId?: Record<string, StopForecast>
   weatherErrors?: Record<string, string>
@@ -27,126 +36,18 @@ type TripFormProps = {
   mapBounds?: MapBounds
 }
 
-type SuggestionItem = {
-  id: string
-  mainText: string
-  secondaryText: string
-  prediction: unknown
-}
-
-type SourceProvider = {
-  name: TripStopSourceName
-  homepage: string
-  domain: string
-}
-
-const SOURCE_PROVIDERS: SourceProvider[] = [
-  {
-    name: 'Harvest Hosts',
-    homepage: 'https://www.harvesthosts.com',
-    domain: 'harvesthosts.com',
-  },
-]
-
-type SiteType = {
-  value: string
-  label: string
-}
-
-const ALL_SITE_TYPES: SiteType[] = [
-  { value: 'Free Parking', label: 'Free Parking' },
-  { value: 'Boondocking', label: 'Boondocking' },
-  { value: 'Fresh Water Refill', label: 'Fresh Water Refill' },
-  { value: 'Dump Station', label: 'Dump Station' },
-  { value: 'RV Park', label: 'RV Park' },
-  { value: 'Harvest Host', label: 'Harvest Host' },
-  { value: 'Campground', label: 'Campground' },
-  { value: 'BLM Land', label: 'BLM Land' },
-  { value: 'National Forest', label: 'National Forest' },
-  { value: 'State Park', label: 'State Park' },
-  { value: 'National Park', label: 'National Park' },
-  { value: 'Truck Stop', label: 'Truck Stop' },
-  { value: 'Rest Area', label: 'Rest Area' },
-  { value: 'Parking Lot', label: 'Parking Lot' },
-  { value: 'RV Resort', label: 'RV Resort' },
-  { value: 'Resort', label: 'Resort' },
-  { value: 'Beach/Lakeside', label: 'Beach/Lakeside' },
-  { value: 'Farm Stay', label: 'Farm Stay' },
-  { value: 'Winery', label: 'Winery' },
-  { value: 'Marina', label: 'Marina' },
-  { value: 'Cabin Rental', label: 'Cabin Rental' },
-  { value: 'Glamping', label: 'Glamping' },
-  { value: 'Dude Ranch', label: 'Dude Ranch' },
-  { value: 'Hotel/Motel', label: 'Hotel/Motel' },
-  { value: 'Airbnb/VRBO', label: 'Airbnb/VRBO' },
-  { value: 'Hostel', label: 'Hostel' },
-  { value: 'Trailhead Parking', label: 'Trailhead Parking' },
-  { value: 'Day Use Area', label: 'Day Use Area' },
-  { value: 'Private Property', label: 'Private Property' },
-  { value: 'Other', label: 'Other' },
-]
-
-const SITE_TYPES_BY_SOURCE: Record<TripStopSourceName, SiteType[]> = {
-  'RV Life': [
-    { value: 'RV Park', label: 'RV Park' },
-    { value: 'Campground', label: 'Campground' },
-    { value: 'RV Resort', label: 'RV Resort' },
-    { value: 'State Park', label: 'State Park' },
-    { value: 'National Park', label: 'National Park' },
-    { value: 'Free Parking', label: 'Free Parking' },
-    { value: 'Other', label: 'Other' },
-  ],
-  'Hipcamp': [
-    { value: 'Campground', label: 'Campground' },
-    { value: 'RV Park', label: 'RV Park' },
-    { value: 'Glamping', label: 'Glamping' },
-    { value: 'Cabin Rental', label: 'Cabin Rental' },
-    { value: 'Farm Stay', label: 'Farm Stay' },
-    { value: 'Beach/Lakeside', label: 'Beach/Lakeside' },
-    { value: 'State Park', label: 'State Park' },
-    { value: 'National Park', label: 'National Park' },
-    { value: 'Private Property', label: 'Private Property' },
-    { value: 'Other', label: 'Other' },
-  ],
-  'Campendium': [
-    { value: 'RV Park', label: 'RV Park' },
-    { value: 'Campground', label: 'Campground' },
-    { value: 'Boondocking', label: 'Boondocking' },
-    { value: 'BLM Land', label: 'BLM Land' },
-    { value: 'National Forest', label: 'National Forest' },
-    { value: 'State Park', label: 'State Park' },
-    { value: 'National Park', label: 'National Park' },
-    { value: 'RV Resort', label: 'RV Resort' },
-    { value: 'Free Parking', label: 'Free Parking' },
-    { value: 'Cabin Rental', label: 'Cabin Rental' },
-    { value: 'Glamping', label: 'Glamping' },
-    { value: 'Resort', label: 'Resort' },
-    { value: 'Other', label: 'Other' },
-  ],
-  'Harvest Hosts': [
-    { value: 'Farm Stay', label: 'Farm Stay' },
-    { value: 'Winery', label: 'Winery' },
-    { value: 'Dude Ranch', label: 'Dude Ranch' },
-    { value: 'Other', label: 'Other' },
-  ],
-  'RV Parky': [
-    { value: 'RV Park', label: 'RV Park' },
-    { value: 'RV Resort', label: 'RV Resort' },
-    { value: 'Truck Stop', label: 'Truck Stop' },
-    { value: 'Rest Area', label: 'Rest Area' },
-    { value: 'Parking Lot', label: 'Parking Lot' },
-    { value: 'Hotel/Motel', label: 'Hotel/Motel' },
-    { value: 'Marina', label: 'Marina' },
-    { value: 'Free Parking', label: 'Free Parking' },
-    { value: 'Other', label: 'Other' },
-  ],
-  'Other': ALL_SITE_TYPES,
+type DrawerState = {
+  isOpen: boolean
+  mode: 'add' | 'edit'
+  stopId?: string
 }
 
 export const TripForm = ({
   stops,
   onAddStop,
   onRemoveStop,
+  onUpdateStop,
+  onReorderStop,
   mapsLoaded,
   weatherByStopId = {},
   weatherErrors = {},
@@ -156,72 +57,82 @@ export const TripForm = ({
   onClearStopSelection,
   mapBounds,
 }: TripFormProps) => {
-  const [label, setLabel] = useState('')
-  const [address, setAddress] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [note, setNote] = useState('')
-  const [error, setError] = useState('')
-  const [isStartPoint, setIsStartPoint] = useState(false)
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
-  const [sourceName, setSourceName] = useState<TripStopSourceName | ''>('')
-  const [sourceUrl, setSourceUrl] = useState('')
-  const [sourceSiteType, setSourceSiteType] = useState('')
-  const [sourceFees, setSourceFees] = useState('')
-  const [sourceAmenities, setSourceAmenities] = useState('')
-  const [validationStatus, setValidationStatus] = useState<
-    'idle' | 'validating' | 'valid' | 'invalid'
-  >('idle')
-  const [validationMessage, setValidationMessage] = useState('')
-  const [lastValidatedAddress, setLastValidatedAddress] = useState('')
-  const [predictions, setPredictions] = useState<SuggestionItem[]>([])
-  const [predictionStatus, setPredictionStatus] = useState<
-    'idle' | 'loading' | 'empty' | 'blocked'
-  >('idle')
-  const [mapsMessage, setMapsMessage] = useState('')
-  const [mapsError, setMapsError] = useState('')
-  const addressInputRef = useRef<HTMLInputElement | null>(null)
-  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
-  const debounceRef = useRef<number | null>(null)
+  // Add form state (for inline form - now removed, kept for reference)
+  // All form state is now managed by drawer component
 
+  // Drawer state
+  const [drawerState, setDrawerState] = useState<DrawerState>({
+    isOpen: false,
+    mode: 'add',
+  })
+
+  // Drawer form state
+  const [drawerFormValues, setDrawerFormValues] = useState<Partial<StopFormValues>>({
+    label: '',
+    address: '',
+    startDate: '',
+    endDate: '',
+    checkInTime: '',
+    checkOutTime: '',
+    note: '',
+    manualAddress: false,
+    sourceName: '',
+    sourceUrl: '',
+    sourceSiteType: '',
+    sourceFees: '',
+    sourceAmenities: '',
+    location: null,
+  })
+
+  const [drawerValidationState, setDrawerValidationState] = useState<StopFormValidationState>({
+    status: 'idle',
+    message: '',
+    lastValidatedAddress: '',
+    predictionStatus: 'idle',
+  })
+
+  const [drawerPredictions, setDrawerPredictions] = useState<SuggestionItem[]>([])
+  const [drawerError, setDrawerError] = useState('')
+  const drawerSessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
+  const drawerDebounceRef = useRef<number | null>(null)
+
+  // Initialize session tokens
   useEffect(() => {
     if (!mapsLoaded || !window.google?.maps?.places) {
       return
     }
 
-    sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
-  }, [mapsLoaded])
+    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+  }, [mapsLoaded, drawerState.isOpen])
 
+  // Drawer autocomplete effect
   useEffect(() => {
-    if (!mapsLoaded) {
+    if (!mapsLoaded || !drawerState.isOpen) {
       return
     }
 
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current)
-    }
-
-    const trimmedAddress = address.trim()
-    if (!trimmedAddress) {
-      setPredictions([])
-      setPredictionStatus('idle')
+    // Skip autocomplete if manual address mode is enabled
+    if (drawerFormValues.manualAddress) {
       return
     }
 
-    if (trimmedAddress.length < 3) {
-      setPredictions([])
-      setPredictionStatus('idle')
+    if (drawerDebounceRef.current) {
+      window.clearTimeout(drawerDebounceRef.current)
+    }
+
+    const trimmedAddress = (drawerFormValues.address || '').trim()
+    if (!trimmedAddress || trimmedAddress.length < 3) {
       return
     }
 
-    // Don't fetch suggestions if address is already validated and hasn't changed
-    if (validationStatus === 'valid' && trimmedAddress === lastValidatedAddress) {
-      setPredictions([])
-      setPredictionStatus('idle')
+    if (
+      drawerValidationState.status === 'valid' &&
+      trimmedAddress === drawerValidationState.lastValidatedAddress
+    ) {
       return
     }
 
-    debounceRef.current = window.setTimeout(() => {
+    drawerDebounceRef.current = window.setTimeout(() => {
       const places = google.maps.places as unknown as {
         AutocompleteSuggestion?: {
           fetchAutocompleteSuggestions?: (options: unknown) => Promise<{
@@ -231,15 +142,22 @@ export const TripForm = ({
       }
 
       if (!places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
-        setPredictionStatus('blocked')
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          predictionStatus: 'blocked',
+        }))
         return
       }
 
-      setPredictionStatus('loading')
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        predictionStatus: 'loading',
+      }))
+
       const sessionToken =
-        sessionTokenRef.current ??
+        drawerSessionTokenRef.current ??
         new google.maps.places.AutocompleteSessionToken()
-      sessionTokenRef.current = sessionToken
+      drawerSessionTokenRef.current = sessionToken
 
       places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: trimmedAddress,
@@ -284,27 +202,41 @@ export const TripForm = ({
             })
             .filter((item): item is SuggestionItem => item !== null)
 
-          setPredictions(items)
-          setPredictionStatus(items.length === 0 ? 'empty' : 'idle')
+          setDrawerPredictions(items)
+          setDrawerValidationState((prev) => ({
+            ...prev,
+            predictionStatus: items.length === 0 ? 'empty' : 'idle',
+          }))
         })
         .catch(() => {
-          setPredictions([])
-          setPredictionStatus('blocked')
+          setDrawerPredictions([])
+          setDrawerValidationState((prev) => ({
+            ...prev,
+            predictionStatus: 'blocked',
+          }))
         })
     }, 250)
 
     return () => {
-      if (debounceRef.current) {
-        window.clearTimeout(debounceRef.current)
+      if (drawerDebounceRef.current) {
+        window.clearTimeout(drawerDebounceRef.current)
       }
     }
-  }, [address, mapsLoaded, validationStatus, lastValidatedAddress])
+  }, [drawerFormValues.address, drawerFormValues.manualAddress, mapsLoaded, drawerState.isOpen, drawerValidationState])
 
-  const selectPrediction = async (item: SuggestionItem) => {
-    setAddress(item.mainText)
-    setPredictions([])
-    setValidationStatus('idle')
-    setValidationMessage('')
+  // Drawer prediction selection
+  const selectDrawerPrediction = async (item: SuggestionItem) => {
+    setDrawerFormValues((prev) => ({
+      ...prev,
+      address: item.mainText,
+      location: null,
+    }))
+    setDrawerPredictions([])
+    setDrawerValidationState((prev) => ({
+      ...prev,
+      status: 'idle',
+      message: '',
+    }))
 
     const prediction = item.prediction as
       | {
@@ -313,8 +245,11 @@ export const TripForm = ({
       | undefined
 
     if (!prediction?.toPlace) {
-      setValidationStatus('invalid')
-      setValidationMessage('Address details unavailable.')
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'invalid',
+        message: 'Address details unavailable.',
+      }))
       return
     }
 
@@ -325,48 +260,79 @@ export const TripForm = ({
       const placeLocation = place.location
 
       if (formattedAddress) {
-        setAddress(formattedAddress)
-        setLastValidatedAddress(formattedAddress)
+        setDrawerFormValues((prev) => ({
+          ...prev,
+          address: formattedAddress,
+        }))
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          lastValidatedAddress: formattedAddress,
+        }))
       } else {
-        setLastValidatedAddress(item.mainText)
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          lastValidatedAddress: item.mainText,
+        }))
       }
 
       if (placeLocation) {
-        setLocation({
-          lat: placeLocation.lat(),
-          lng: placeLocation.lng(),
-        })
-        setValidationStatus('valid')
-        setValidationMessage('Address selected.')
+        setDrawerFormValues((prev) => ({
+          ...prev,
+          location: {
+            lat: placeLocation.lat(),
+            lng: placeLocation.lng(),
+          },
+        }))
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'valid',
+          message: 'Address selected.',
+        }))
       } else {
-        setValidationStatus('invalid')
-        setValidationMessage('Address could not be located.')
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'invalid',
+          message: 'Address could not be located.',
+        }))
       }
 
-      sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
-    } catch (placeError) {
-      setValidationStatus('invalid')
-      setValidationMessage('Address details unavailable.')
+      drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+    } catch {
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'invalid',
+        message: 'Address details unavailable.',
+      }))
     }
   }
 
-  const validateAddress = async (addressText: string) => {
+  // Address validation for drawer
+  const validateAddress = async (addressText: string): Promise<boolean> => {
     if (!addressText.trim()) {
       return false
     }
 
-    if (validationStatus === 'valid' && addressText === lastValidatedAddress) {
+    if (
+      drawerValidationState.status === 'valid' &&
+      addressText === drawerValidationState.lastValidatedAddress
+    ) {
       return true
     }
 
     if (!GOOGLE_MAPS_API_KEY) {
-      setValidationStatus('invalid')
-      setValidationMessage('Missing Google Maps API key.')
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'invalid',
+        message: 'Missing Google Maps API key.',
+      }))
       return false
     }
 
-    setValidationStatus('validating')
-    setValidationMessage('Validating address...')
+    setDrawerValidationState((prev) => ({
+      ...prev,
+      status: 'validating',
+      message: 'Validating address...',
+    }))
 
     try {
       const response = await fetch(
@@ -385,8 +351,11 @@ export const TripForm = ({
       )
 
       if (!response.ok) {
-        setValidationStatus('invalid')
-        setValidationMessage('Address validation failed. Try again.')
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'invalid',
+          message: 'Address validation failed. Try again.',
+        }))
         return false
       }
 
@@ -396,64 +365,64 @@ export const TripForm = ({
       const isValid = Boolean(geocode?.latitude && geocode?.longitude)
 
       if (!isValid) {
-        setValidationStatus('invalid')
-        setValidationMessage('Address could not be validated.')
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'invalid',
+          message: 'Address could not be validated.',
+        }))
         return false
       }
 
-      if (formattedAddress) {
-        setAddress(formattedAddress)
-        setLastValidatedAddress(formattedAddress)
-      } else {
-        setLastValidatedAddress(addressText)
-      }
+      setDrawerFormValues((prev) => ({
+        ...prev,
+        address: formattedAddress || addressText,
+        location: { lat: geocode.latitude, lng: geocode.longitude },
+      }))
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'valid',
+        message: 'Address confirmed.',
+        lastValidatedAddress: formattedAddress || addressText,
+      }))
+      setDrawerPredictions([])
 
-      setLocation({ lat: geocode.latitude, lng: geocode.longitude })
-      setValidationStatus('valid')
-      setValidationMessage('Address confirmed.')
       return true
-    } catch (validationError) {
-      setValidationStatus('invalid')
-      setValidationMessage('Address validation failed. Try again.')
+    } catch {
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'invalid',
+        message: 'Address validation failed. Try again.',
+      }))
       return false
     }
   }
 
   const handleOpenAllInMaps = () => {
-    setMapsError('')
-    setMapsMessage('')
-
     const validation = validateStopsForMaps(stops)
     if (!validation.valid) {
-      setMapsError(validation.error || 'Cannot open in Google Maps')
+      console.warn('Cannot open in Google Maps:', validation.error)
       return
     }
 
     try {
       const url = buildGoogleMapsDirectionsUrl(stops)
       openInGoogleMaps(url)
-      setMapsMessage(
-        `Opened route with ${validation.validStops.length} stop${validation.validStops.length === 1 ? '' : 's'} in Google Maps`
-      )
     } catch (err) {
-      setMapsError(err instanceof Error ? err.message : 'Failed to open Google Maps')
+      console.error('Failed to open Google Maps:', err)
     }
   }
 
   const handleOpenSelectedInMaps = () => {
-    setMapsError('')
-    setMapsMessage('')
-
     const selectedStops = stops.filter((stop) => selectedStopIds.has(stop.id))
 
     if (selectedStops.length === 0) {
-      setMapsError('Please select at least one stop')
+      console.warn('Please select at least one stop')
       return
     }
 
     const validation = validateStopsForMaps(selectedStops)
     if (!validation.valid) {
-      setMapsError(validation.error || 'Cannot open in Google Maps')
+      console.warn('Cannot open in Google Maps:', validation.error)
       return
     }
 
@@ -463,11 +432,8 @@ export const TripForm = ({
         .filter((index) => index !== -1)
       const url = buildGoogleMapsDirectionsUrl(stops, selectedIndices)
       openInGoogleMaps(url)
-      setMapsMessage(
-        `Opened route with ${validation.validStops.length} selected stop${validation.validStops.length === 1 ? '' : 's'} in Google Maps`
-      )
     } catch (err) {
-      setMapsError(err instanceof Error ? err.message : 'Failed to open Google Maps')
+      console.error('Failed to open Google Maps:', err)
     }
   }
 
@@ -479,7 +445,7 @@ export const TripForm = ({
 
     try {
       await navigator.clipboard.writeText(trimmedAddress)
-    } catch (clipboardError) {
+    } catch {
       // If clipboard access is denied, still open the map.
     }
 
@@ -490,106 +456,280 @@ export const TripForm = ({
     )
   }
 
-  const openSourceLink = (provider: SourceProvider) => {
-    window.open(provider.homepage, '_blank', 'noopener,noreferrer')
-    
-    // Copy address to clipboard
-    if (address.trim()) {
-      navigator.clipboard.writeText(address.trim()).catch(() => {
-        // Silent fail if clipboard access is denied
-      })
+  // Drawer form field change handler
+  const handleDrawerFieldChange = (field: keyof StopFormValues, value: string | boolean | { lat: number; lng: number } | null) => {
+    setDrawerFormValues((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+
+    // Reset validation on field change  
+    if (field === 'address') {
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'idle',
+        message: '',
+        lastValidatedAddress: '',
+      }))
     }
-    
-    setSourceName(provider.name)
+
+    // Clear predictions when manual address mode is enabled
+    if (field === 'manualAddress' && value === true) {
+      setDrawerPredictions([])
+    }
   }
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setError('')
+  // Open drawer for adding a stop
+  const openAddDrawer = () => {
+    setDrawerFormValues({
+      label: '',
+      address: '',
+      startDate: '',
+      endDate: '',
+      checkInTime: '',
+      checkOutTime: '',
+      note: '',
+      sourceName: '',
+      sourceUrl: '',
+      sourceSiteType: '',
+      sourceFees: '',
+      sourceAmenities: '',
+      location: null,
+    })
+    setDrawerValidationState({
+      status: 'idle',
+      message: '',
+      lastValidatedAddress: '',
+      predictionStatus: 'idle',
+    })
+    setDrawerPredictions([])
+    setDrawerError('')
+    setDrawerState({
+      isOpen: true,
+      mode: 'add',
+    })
+    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+  }
 
-    if (!address.trim()) {
-      setError('Add an address for this stop.')
+  // Open drawer for editing a stop
+  const openEditDrawer = (stop: TripStop) => {
+    setDrawerFormValues({
+      label: stop.label,
+      address: stop.address,
+      startDate: stop.startDate,
+      endDate: stop.endDate,
+      checkInTime: stop.checkInTime || '',
+      checkOutTime: stop.checkOutTime || '',
+      note: stop.note || '',
+      manualAddress: stop.manualEntry || false,
+      sourceName: stop.source?.name || '',
+      sourceUrl: stop.source?.url || '',
+      sourceSiteType: stop.source?.siteType || '',
+      sourceFees: stop.source?.fees || '',
+      sourceAmenities: stop.source?.amenities || '',
+      location: stop.location || null,
+    })
+    setDrawerValidationState({
+      status: stop.location ? 'valid' : 'idle',
+      message: '',
+      lastValidatedAddress: stop.address,
+      predictionStatus: 'idle',
+    })
+    setDrawerPredictions([])
+    setDrawerError('')
+    setDrawerState({
+      isOpen: true,
+      mode: 'edit',
+      stopId: stop.id,
+    })
+    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+  }
+
+  // Close drawer
+  const closeDrawer = () => {
+    setDrawerState({ isOpen: false, mode: 'add' })
+    setDrawerFormValues({
+      label: '',
+      address: '',
+      startDate: '',
+      endDate: '',
+      checkInTime: '',
+      checkOutTime: '',
+      note: '',
+      manualAddress: false,
+      sourceName: '',
+      sourceUrl: '',
+      sourceSiteType: '',
+      sourceFees: '',
+      sourceAmenities: '',
+      location: null,
+    })
+    setDrawerValidationState({
+      status: 'idle',
+      message: '',
+      lastValidatedAddress: '',
+      predictionStatus: 'idle',
+    })
+    setDrawerPredictions([])
+    setDrawerError('')
+  }
+
+  // Save drawer changes (for both add and edit modes)
+  const saveDrawerChanges = async () => {
+    setDrawerError('')
+
+    const isStartingPoint = drawerFormValues.label === 'Starting point'
+
+    if (!(drawerFormValues.address || '').trim()) {
+      setDrawerError('Add an address for this stop.')
       return
     }
 
-    if (!isStartPoint && !label.trim()) {
-      setError('Add a title for each stop.')
+    if (!isStartingPoint && !(drawerFormValues.label || '').trim()) {
+      setDrawerError('Add a title for each stop.')
       return
     }
 
-    if (!isStartPoint && (!startDate || !endDate)) {
-      setError('Add arrival and departure dates for each stop.')
+    if (!isStartingPoint && (!drawerFormValues.startDate || !drawerFormValues.endDate)) {
+      setDrawerError('Add arrival and departure dates for each stop.')
       return
     }
 
-    if (isStartPoint && !endDate) {
-      setError('Add a departure date for the starting point.')
+    if (isStartingPoint && !drawerFormValues.endDate) {
+      setDrawerError('Add a departure date for the starting point.')
       return
     }
 
-    if (startDate && endDate && startDate > endDate) {
-      setError('Arrival date must be on or before the departure date.')
+    if (
+      drawerFormValues.startDate &&
+      drawerFormValues.endDate &&
+      drawerFormValues.startDate > drawerFormValues.endDate
+    ) {
+      setDrawerError('Arrival date must be on or before the departure date.')
       return
     }
 
-    const isValidated = await validateAddress(address)
-    if (!isValidated) {
-      setError('Please choose a validated address before adding this stop.')
-      return
+    // Validate check-out time is after check-in time on the same day
+    if (
+      drawerFormValues.checkInTime &&
+      drawerFormValues.checkOutTime &&
+      drawerFormValues.startDate === drawerFormValues.endDate &&
+      requiresCheckInOut(drawerFormValues.sourceSiteType)
+    ) {
+      if (drawerFormValues.checkOutTime <= drawerFormValues.checkInTime) {
+        setDrawerError('Check-out time must be after check-in time.')
+        return
+      }
     }
 
-    const resolvedLabel = label.trim() || 'Starting point'
-    const resolvedStartDate = isStartPoint ? endDate : startDate
-    const resolvedNote = note.trim().slice(0, 500)
-    const trimmedSourceUrl = sourceUrl.trim()
-    const trimmedSiteType = sourceSiteType.trim()
-    const trimmedFees = sourceFees.trim()
-    const trimmedAmenities = sourceAmenities.trim()
+    // Skip validation if manual address mode is enabled
+    if (!drawerFormValues.manualAddress) {
+      const isValidated = await validateAddress(drawerFormValues.address || '')
+      if (!isValidated) {
+        setDrawerError('Please choose a validated address before saving.')
+        return
+      }
+    } else {
+      // For manual addresses, attempt best-effort geocoding in background
+      // but don't block saving if it fails
+      validateAddress(drawerFormValues.address || '').catch(() => {
+        // Silently fail - manual entry allows bypassing validation
+      })
+    }
+
+    const resolvedLabel =
+      (drawerFormValues.label || '').trim() || 'Starting point'
+    const resolvedStartDate = isStartingPoint
+      ? drawerFormValues.endDate || ''
+      : drawerFormValues.startDate || ''
+    const resolvedNote = (drawerFormValues.note || '').trim().slice(0, 500)
+    const trimmedSourceUrl = (drawerFormValues.sourceUrl || '').trim()
+    const trimmedSiteType = (drawerFormValues.sourceSiteType || '').trim()
+    const trimmedFees = (drawerFormValues.sourceFees || '').trim()
+    const trimmedAmenities = (drawerFormValues.sourceAmenities || '').trim()
+    const trimmedCheckInTime = (drawerFormValues.checkInTime || '').trim()
+    const trimmedCheckOutTime = (drawerFormValues.checkOutTime || '').trim()
     const hasSourceDetails =
-      Boolean(sourceName) ||
+      Boolean(drawerFormValues.sourceName) ||
       Boolean(trimmedSourceUrl) ||
       Boolean(trimmedSiteType) ||
       Boolean(trimmedFees) ||
       Boolean(trimmedAmenities)
     const resolvedSourceName =
-      sourceName || (hasSourceDetails ? 'Other' : '')
+      drawerFormValues.sourceName || (hasSourceDetails ? 'Other' : '')
 
-    const newStop: TripStop = {
-      id: createId(),
-      label: resolvedLabel,
-      address: address.trim(),
-      startDate: resolvedStartDate,
-      endDate,
-      note: resolvedNote ? resolvedNote : undefined,
-      source: resolvedSourceName
-        ? {
-            name: resolvedSourceName as TripStopSourceName,
-            url: trimmedSourceUrl || undefined,
-            siteType: trimmedSiteType || undefined,
-            fees: trimmedFees || undefined,
-            amenities: trimmedAmenities || undefined,
-          }
-        : undefined,
-      status: location ? 'ready' : 'idle',
-      location: location ?? undefined,
+    if (drawerState.mode === 'edit' && drawerState.stopId) {
+      // Update existing stop
+      const updates: Partial<TripStop> = {
+        label: resolvedLabel,
+        address: (drawerFormValues.address || '').trim(),
+        startDate: resolvedStartDate || '',
+        endDate: drawerFormValues.endDate || '',
+        checkInTime:
+          trimmedCheckInTime && requiresCheckInOut(trimmedSiteType)
+            ? trimmedCheckInTime
+            : undefined,
+        checkOutTime:
+          trimmedCheckOutTime && requiresCheckInOut(trimmedSiteType)
+            ? trimmedCheckOutTime
+            : undefined,
+        note: resolvedNote ? resolvedNote : undefined,
+        manualEntry: drawerFormValues.manualAddress || undefined,
+        source: resolvedSourceName
+          ? {
+              name: resolvedSourceName as TripStopSourceName,
+              url: trimmedSourceUrl || undefined,
+              siteType: trimmedSiteType || undefined,
+              fees: trimmedFees || undefined,
+              amenities: trimmedAmenities || undefined,
+            }
+          : undefined,
+        location: drawerFormValues.location ?? undefined,
+        status: drawerFormValues.location ? 'ready' : 'idle',
+      }
+      onUpdateStop(drawerState.stopId, updates)
+    } else {
+      // Add new stop
+      const newStop: TripStop = {
+        id: createId(),
+        label: resolvedLabel,
+        address: (drawerFormValues.address || '').trim(),
+        startDate: resolvedStartDate || '',
+        endDate: drawerFormValues.endDate || '',
+        checkInTime:
+          trimmedCheckInTime && requiresCheckInOut(trimmedSiteType)
+            ? trimmedCheckInTime
+            : undefined,
+        checkOutTime:
+          trimmedCheckOutTime && requiresCheckInOut(trimmedSiteType)
+            ? trimmedCheckOutTime
+            : undefined,
+        note: resolvedNote ? resolvedNote : undefined,
+        manualEntry: drawerFormValues.manualAddress || undefined,
+        source: resolvedSourceName
+          ? {
+              name: resolvedSourceName as TripStopSourceName,
+              url: trimmedSourceUrl || undefined,
+              siteType: trimmedSiteType || undefined,
+              fees: trimmedFees || undefined,
+              amenities: trimmedAmenities || undefined,
+            }
+          : undefined,
+        status: drawerFormValues.location ? 'ready' : 'idle',
+        location: drawerFormValues.location ?? undefined,
+      }
+      onAddStop(newStop)
     }
 
-    onAddStop(newStop)
-    setLabel('')
-    setAddress('')
-    setStartDate('')
-    setEndDate('')
-    setNote('')
-    setIsStartPoint(false)
-    setLocation(null)
-    setSourceName('')
-    setSourceUrl('')
-    setSourceSiteType('')
-    setSourceFees('')
-    setSourceAmenities('')
-    setValidationStatus('idle')
-    setValidationMessage('')
-    setLastValidatedAddress('')
+    closeDrawer()
+  }
+
+  // Delete stop (called from drawer)
+  const handleDrawerDelete = () => {
+    if (drawerState.stopId) {
+      onRemoveStop(drawerState.stopId)
+      closeDrawer()
+    }
   }
 
   return (
@@ -602,233 +742,14 @@ export const TripForm = ({
         <span className="chip">{stops.length} planned</span>
       </div>
 
-      <form className="trip-form" onSubmit={onSubmit}>
-        <div className="form-grid">
-          <label>
-            Stop title
-            <input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder={isStartPoint ? 'Starting point' : 'Grand Canyon Village'}
-              disabled={isStartPoint}
-            />
-          </label>
-          <label>
-            Starting point
-            <input
-              type="checkbox"
-              checked={isStartPoint}
-              onChange={(event) => {
-                const checked = event.target.checked
-                setIsStartPoint(checked)
-                if (checked && endDate) {
-                  setStartDate(endDate)
-                }
-              }}
-            />
-          </label>
-          <label>
-            Address
-            <div className="address-field">
-              <input
-                ref={addressInputRef}
-                value={address}
-                onChange={(event) => {
-                  setAddress(event.target.value)
-                  setLocation(null)
-                  setValidationStatus('idle')
-                  setValidationMessage('')
-                  setLastValidatedAddress('')
-                  setPredictionStatus('idle')
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => {
-                    if (predictions.length === 0) {
-                      void validateAddress(address)
-                    }
-                  }, 150)
-                }}
-                placeholder="Grand Canyon Village, AZ"
-              />
-              {predictions.length > 0 ? (
-                <div className="address-suggestions" role="listbox">
-                  {predictions.map((prediction) => (
-                    <button
-                      key={prediction.id}
-                      className="address-suggestion"
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault()
-                      }}
-                      onClick={() => selectPrediction(prediction)}
-                    >
-                      <span className="suggestion-primary">{prediction.mainText}</span>
-                      {prediction.secondaryText ? (
-                        <span className="suggestion-secondary">
-                          {prediction.secondaryText}
-                        </span>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </label>
-          <label>
-            Arrival
-            <input
-              type="date"
-              value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
-              disabled={isStartPoint}
-            />
-          </label>
-          <label>
-            {isStartPoint ? 'Departure (used for weather)' : 'Departure'}
-            <input
-              type="date"
-              value={endDate}
-              onChange={(event) => {
-                const nextDate = event.target.value
-                setEndDate(nextDate)
-                if (isStartPoint) {
-                  setStartDate(nextDate)
-                }
-              }}
-            />
-          </label>
-          <label>
-            <span className="label-row">
-              Note (optional)
-              <span className="note-count">{note.length}/500</span>
-            </span>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value.slice(0, 500))}
-              maxLength={500}
-              rows={3}
-              placeholder="Add parking details, check-in info, or reminders."
-            />
-          </label>
-          <CampsiteSearch address={address} mapBounds={mapBounds} location={location} />
-          <div className="source-section">
-            <div className="source-header">
-              <div>
-                <p className="source-title">Campground source</p>
-                <p className="muted">
-                  Open official sites, then paste key details for this stop.
-                </p>
-              </div>
-              <div className="source-actions">
-                {SOURCE_PROVIDERS.map((provider) => (
-                  <button
-                    key={provider.name}
-                    className="ghost"
-                    type="button"
-                    onClick={() => openSourceLink(provider)}
-                  >
-                    Open {provider.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label>
-              Source name
-              <select
-                value={sourceName}
-                onChange={(event) => {
-                  const newSourceName = event.target.value as TripStopSourceName
-                  setSourceName(newSourceName)
-                  // Reset site type when changing source
-                  setSourceSiteType('')
-                }}
-              >
-                <option value="">None</option>
-                <option value="RV Life">RV Life</option>
-                <option value="Hipcamp">Hipcamp</option>
-                <option value="Campendium">Campendium</option>
-                <option value="Harvest Hosts">Harvest Hosts</option>
-                <option value="RV Parky">RV Parky</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label>
-              Listing URL
-              <input
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder="https://..."
-              />
-            </label>
-            <label>
-              Site type
-              <select
-                value={sourceSiteType}
-                onChange={(event) => setSourceSiteType(event.target.value)}
-              >
-                <option value="">
-                  {sourceName
-                    ? 'Select a site type...'
-                    : 'Select source first or choose type...'}
-                </option>
-                {sourceName && SITE_TYPES_BY_SOURCE[sourceName as TripStopSourceName]
-                  ? SITE_TYPES_BY_SOURCE[sourceName as TripStopSourceName].map(
-                      (type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ),
-                    )
-                  : !sourceName
-                    ? ALL_SITE_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))
-                    : null}
-              </select>
-            </label>
-            <label>
-              Fees / requirements
-              <input
-                value={sourceFees}
-                onChange={(event) => setSourceFees(event.target.value)}
-                placeholder="$35/night, membership required"
-              />
-            </label>
-            <label>
-              Amenities / notes
-              <input
-                value={sourceAmenities}
-                onChange={(event) => setSourceAmenities(event.target.value)}
-                placeholder="Water, 30A, pets allowed"
-              />
-            </label>
-          </div>
-        </div>
-        {error ? <p className="form-error">{error}</p> : null}
-        {!error && validationMessage ? (
-          <p
-            className={
-              validationStatus === 'invalid' ? 'form-error' : 'muted'
-            }
-          >
-            {validationMessage}
-          </p>
-        ) : null}
-        {!error && predictionStatus === 'blocked' ? (
-          <p className="form-error">
-            Autocomplete is blocked. Check Places API, billing, and API key
-            restrictions.
-          </p>
-        ) : null}
-        {!error && predictionStatus === 'empty' ? (
-          <p className="muted">No address suggestions yet.</p>
-        ) : null}
-        <button className="primary" type="submit">
-          Add stop
-        </button>
-      </form>
+      <button 
+        className="primary" 
+        type="button" 
+        onClick={openAddDrawer}
+        style={{ width: '100%' }}
+      >
+        Add stop
+      </button>
 
       {stops.length > 0 && (
         <div className="maps-control-bar">
@@ -877,91 +798,165 @@ export const TripForm = ({
         </div>
       )}
 
-      {mapsError && <div className="maps-error">{mapsError}</div>}
-      {mapsMessage && <div className="maps-message">{mapsMessage}</div>}
-
       <div className="stop-list">
         {stops.length === 0 ? (
           <div className="empty-state">
             <p>No stops yet. Start by adding your first destination.</p>
           </div>
         ) : (
-          stops.map((stop) => (
-            <div key={stop.id} className="stop-item">
-              <article className="stop-card">
-                <div className="stop-card-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={selectedStopIds.has(stop.id)}
-                    onChange={() => onToggleStopSelection(stop.id)}
-                    aria-label={`Select ${stop.label}`}
-                  />
-                </div>
-                <div>
-                  <h3>{stop.label}</h3>
-                  <p className="muted">{stop.address}</p>
-                  <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
-                  {stop.address ? (
-                    <button
-                      className="coverage-link"
-                      type="button"
-                      onClick={() => void openCoverageMap(stop.address)}
-                    >
-                      Check T-Mobile coverage
-                    </button>
-                  ) : null}
-                  {stop.source ? (
-                    <div className="stop-source">
-                      <span className="source-badge">{stop.source.name}</span>
-                      {stop.source.url ? (
-                        <a
-                          className="source-link"
-                          href={stop.source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          View listing
-                        </a>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {stop.source?.siteType ? (
-                    <p className="source-detail">Type: {stop.source.siteType}</p>
-                  ) : null}
-                  {stop.source?.fees ? (
-                    <p className="source-detail">Fees: {stop.source.fees}</p>
-                  ) : null}
-                  {stop.source?.amenities ? (
-                    <p className="source-detail">
-                      Amenities: {stop.source.amenities}
+          stops.map((stop, index) => {
+            const isStartingPoint = stop.label === 'Starting point'
+            const isLast = index === stops.length - 1
+            const canMoveUp = index > 0 && !(isStartingPoint && stops[index + 1]?.label !== 'Starting point')
+            const canMoveDown = !isLast && !(isStartingPoint && stops[index + 1]?.label !== 'Starting point')
+
+            return (
+              <div key={stop.id} className="stop-item">
+                <article className="stop-card">
+                  <div className="stop-card-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedStopIds.has(stop.id)}
+                      onChange={() => onToggleStopSelection(stop.id)}
+                      aria-label={`Select ${stop.label}`}
+                    />
+                  </div>
+
+                  <div>
+                    <h3>{stop.label}</h3>
+                    <p className="muted">{stop.address}</p>
+                    <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                    {(stop.checkInTime || stop.checkOutTime) && (
+                      <p className="times">
+                        {stop.checkInTime && `Check-in: ${formatTime(stop.checkInTime)}`}
+                        {stop.checkInTime && stop.checkOutTime && ' • '}
+                        {stop.checkOutTime && `Check-out: ${formatTime(stop.checkOutTime)}`}
+                      </p>
+                    )}
+                    {(stop.distanceFromPreviousMeters || stop.estimatedFuelCost) && (
+                      <div className="stop-travel-info">
+                        {stop.distanceFromPreviousMeters && (
+                          <p className="travel-detail">
+                            <strong>Distance:</strong> {formatDistance(stop.distanceFromPreviousMeters)}
+                          </p>
+                        )}
+                        {stop.estimatedFuelCost !== undefined && stop.estimatedFuelCost > 0 && (
+                          <p className="travel-detail">
+                            <strong>Est. Fuel Cost:</strong> ${stop.estimatedFuelCost.toFixed(2)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {stop.address ? (
+                      <button
+                        className="coverage-link"
+                        type="button"
+                        onClick={() => void openCoverageMap(stop.address)}
+                      >
+                        Check T-Mobile coverage
+                      </button>
+                    ) : null}
+                    {stop.source ? (
+                      <div className="stop-source">
+                        <span className="source-badge">{stop.source.name}</span>
+                        {stop.source.url ? (
+                          <a
+                            className="source-link"
+                            href={stop.source.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View listing
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {stop.source?.siteType ? (
+                      <p className="source-detail">Type: {stop.source.siteType}</p>
+                    ) : null}
+                    {stop.source?.fees ? (
+                      <p className="source-detail">Fees: {stop.source.fees}</p>
+                    ) : null}
+                    {stop.source?.amenities ? (
+                      <p className="source-detail">
+                        Amenities: {stop.source.amenities}
+                      </p>
+                    ) : null}
+                    {stop.manualEntry ? (
+                      <div className="stop-source">
+                        <span className="source-badge manual-badge">Manual</span>
+                      </div>
+                    ) : null}
+                    {stop.note ? <p className="stop-note">{stop.note}</p> : null}
+                    <p className={`status status-${stop.status ?? 'idle'}`}>
+                      {stop.status === 'geocoding' && 'Locating address'}
+                      {stop.status === 'ready' && 'Map ready'}
+                      {stop.status === 'error' && 'Could not locate'}
+                      {(!stop.status || stop.status === 'idle') && 'Waiting to map'}
                     </p>
-                  ) : null}
-                  {stop.note ? <p className="stop-note">{stop.note}</p> : null}
-                  <p className={`status status-${stop.status ?? 'idle'}`}>
-                    {stop.status === 'geocoding' && 'Locating address'}
-                    {stop.status === 'ready' && 'Map ready'}
-                    {stop.status === 'error' && 'Could not locate'}
-                    {(!stop.status || stop.status === 'idle') && 'Waiting to map'}
-                  </p>
-                </div>
-                <button
-                  className="ghost stop-remove"
-                  type="button"
-                  aria-label="Remove stop"
-                  onClick={() => onRemoveStop(stop.id)}
-                >
-                  x
-                </button>
-              </article>
-              <StopWeatherForecast
-                stop={stop}
-                forecast={weatherByStopId[stop.id]}
-                error={weatherErrors[stop.id]}
-              />
-            </div>
-          ))
+                  </div>
+
+                  <div className="stop-actions">
+                    <button
+                      className="ghost stop-edit-button"
+                      type="button"
+                      aria-label="Edit stop"
+                      onClick={() => openEditDrawer(stop)}
+                    >
+                      Edit
+                    </button>
+                    <div className="stop-reorder-controls">
+                      <button
+                        className="ghost stop-reorder-button"
+                        type="button"
+                        aria-label="Move stop up"
+                        onClick={() => onReorderStop(stop.id, 'up')}
+                        disabled={!canMoveUp}
+                        title={canMoveUp ? 'Move up' : 'Cannot move up'}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="ghost stop-reorder-button"
+                        type="button"
+                        aria-label="Move stop down"
+                        onClick={() => onReorderStop(stop.id, 'down')}
+                        disabled={!canMoveDown}
+                        title={canMoveDown ? 'Move down' : 'Cannot move down'}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </div>
+                </article>
+                <StopWeatherForecast
+                  stop={stop}
+                  forecast={weatherByStopId[stop.id]}
+                  error={weatherErrors[stop.id]}
+                />
+              </div>
+            )
+          })
         )}
       </div>
+
+      {/* Drawer modal for add/edit */}
+      <StopDrawer
+        isOpen={drawerState.isOpen}
+        stop={drawerState.stopId ? stops.find((s) => s.id === drawerState.stopId) ?? null : null}
+        mode={drawerState.mode}
+        mapsLoaded={mapsLoaded}
+        predictions={drawerPredictions}
+        validationState={drawerValidationState}
+        error={drawerError}
+        formValues={drawerFormValues}
+        mapBounds={mapBounds}
+        onFieldChange={handleDrawerFieldChange}
+        onSelectPrediction={selectDrawerPrediction}
+        onSave={saveDrawerChanges}
+        onCancel={closeDrawer}
+        onDelete={drawerState.mode === 'edit' ? handleDrawerDelete : undefined}
+      />
     </div>
   )
 }

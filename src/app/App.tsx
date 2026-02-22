@@ -1,23 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
-import { GOOGLE_MAPS_API_KEY } from './config'
-import { TripMap } from './features/map/TripMap'
-import { useGoogleMaps } from './features/map/useGoogleMaps'
-import { TripForm } from './features/trip/TripForm'
-import type { TripStop, TripStopSourceName, TripsState } from './features/trip/types'
-import { TripSelector } from './features/trip/TripSelector'
+import { GOOGLE_MAPS_API_KEY } from '../config/env'
+import { TripMap } from '../features/map/TripMap'
+import { useGoogleMaps } from '../features/map/hooks/useGoogleMaps'
+import { TripForm } from '../features/trip/TripForm'
+import type { TripStop, TripStopSourceName, TripsState } from '../domain/trip/types'
+import { TripSelector } from '../features/trip/TripSelector'
+import { VehicleSettingsModal } from '../features/trip/VehicleSettingsModal'
 import {
   fetchStopForecast,
   makeForecastCacheKey,
-} from './features/weather/weatherApi'
-import type { StopForecast } from './features/weather/types'
+} from '../services/weather/weatherService'
+import type { StopForecast } from '../domain/weather/types'
 import {
   loadTripsFromStorage,
   saveTripsToStorage,
   createNewTrip,
   getCurrentTrip,
-} from './utils/tripStorage'
-import type { MapBounds } from './utils/campsiteSearch'
+} from '../services/storage/tripStorage'
+import type { MapBounds } from '../services/campsiteSearch'
+import {
+  generateICalendar,
+  downloadICalendar,
+} from '../services/calendar/calendarService'
+import { gasPriceService } from '../services/gas/gasPriceService'
+import { calculateTripDistances } from '../utils/distance'
+import { calculateStopCosts } from '../utils/costCalculation'
+import { useVehicleSettings } from '../hooks/useVehicleSettings'
+import type { GasPriceLookupResult } from '../domain/gas/types'
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -31,20 +41,35 @@ function App() {
     Record<string, StopForecast>
   >({})
   const [weatherErrors, setWeatherErrors] = useState<Record<string, string>>({})
+  const [gasPriceByState, setGasPriceByState] = useState<
+    Record<string, GasPriceLookupResult>
+  >({})
   const [importError, setImportError] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
   const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
+  const [showVehicleSettings, setShowVehicleSettings] = useState(false)
   const geocodingInFlight = useRef(false)
   const weatherInFlight = useRef<Set<string>>(new Set())
+  const gasPriceInFlight = useRef<Set<string>>(new Set())
+  const distanceCalculationInFlight = useRef(false)
+  const previousLocationsRef = useRef<string>('')
+  const previousMpgRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { mpg: vehicleMpg } = useVehicleSettings()
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(
     GOOGLE_MAPS_API_KEY,
   )
 
   const currentTrip = getCurrentTrip(tripsState)
-  const currentStops = currentTrip?.stops ?? []
+  const currentStops = useMemo(() => currentTrip?.stops ?? [], [currentTrip])
+
+  const tripTotalFuelCost = useMemo(() => {
+    return currentStops.reduce((total, stop) => {
+      return total + (stop.estimatedFuelCost ?? 0)
+    }, 0)
+  }, [currentStops])
 
   // Auto-save trips state to localStorage
   useEffect(() => {
@@ -141,6 +166,59 @@ function App() {
     []
   )
 
+  const reorderStops = useCallback(
+    (stopId: string, direction: 'up' | 'down') => {
+      if (!currentTrip) return
+
+      setTripsState((prev) => {
+        const tripIndex = prev.trips.findIndex((t) => t.id === prev.currentTripId)
+        if (tripIndex === -1) return prev
+
+        const trip = prev.trips[tripIndex]
+        const stops = [...trip.stops]
+        const currentIndex = stops.findIndex((s) => s.id === stopId)
+        
+        if (currentIndex === -1) return prev
+
+        // Calculate target index based on direction
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+        
+        // Validate target index is within bounds
+        if (targetIndex < 0 || targetIndex >= stops.length) return prev
+
+        // Don't allow reordering if it would separate starting points from the beginning
+        const isStartingPoint = stops[currentIndex].label === 'Starting point'
+        const targetIsStartingPoint = stops[targetIndex].label === 'Starting point'
+        
+        // Starting points must stay at the beginning
+        if (isStartingPoint && direction === 'down' && !targetIsStartingPoint) {
+          return prev
+        }
+        if (!isStartingPoint && direction === 'up' && targetIsStartingPoint) {
+          return prev
+        }
+
+        // Swap the stops
+        const temp = stops[currentIndex]
+        stops[currentIndex] = stops[targetIndex]
+        stops[targetIndex] = temp
+
+        const updatedTrips = [...prev.trips]
+        updatedTrips[tripIndex] = {
+          ...trip,
+          stops,
+          updatedAt: new Date().toISOString(),
+        }
+
+        return {
+          ...prev,
+          trips: updatedTrips,
+        }
+      })
+    },
+    [currentTrip]
+  )
+
   const orderStops = useCallback((items: TripStop[]) => {
     const startingPoints = items.filter((stop) => stop.label === 'Starting point')
     const otherStops = items.filter((stop) => stop.label !== 'Starting point')
@@ -175,6 +253,42 @@ function App() {
     link.remove()
     URL.revokeObjectURL(url)
   }, [currentTrip])
+
+  const exportCalendar = useCallback(() => {
+    setImportError('')
+    setImportStatus('')
+
+    if (!currentTrip) {
+      setImportError('No trip to export. Create a trip first.')
+      return
+    }
+
+    // Determine which stops to export: selected if any, otherwise all
+    const stopsToExport =
+      selectedStopIds.size > 0
+        ? currentTrip.stops.filter((stop) => selectedStopIds.has(stop.id))
+        : currentTrip.stops
+
+    if (stopsToExport.length === 0) {
+      setImportError('No stops to export.')
+      return
+    }
+
+    try {
+      const icalContent = generateICalendar(stopsToExport, currentTrip.name)
+      const dateStamp = new Date().toISOString().slice(0, 10)
+      const filename = `trip-${currentTrip.name}-${dateStamp}`
+      downloadICalendar(icalContent, filename)
+      setImportStatus(
+        `Exported ${stopsToExport.length} stop${stopsToExport.length === 1 ? '' : 's'} to calendar`
+      )
+      setTimeout(() => setImportStatus(''), 3000)
+    } catch (error) {
+      setImportError(
+        `Failed to export calendar: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }, [currentTrip, selectedStopIds])
 
   const mergeStops = useCallback(
     (existing: TripStop[], imported: TripStop[]) => {
@@ -252,6 +366,14 @@ function App() {
               typeof stopData.note === 'string'
                 ? stopData.note.trim().slice(0, 500)
                 : ''
+            const checkInTime =
+              typeof stopData.checkInTime === 'string'
+                ? stopData.checkInTime.trim()
+                : ''
+            const checkOutTime =
+              typeof stopData.checkOutTime === 'string'
+                ? stopData.checkOutTime.trim()
+                : ''
             const rawSource = stopData.source
             const source =
               rawSource && typeof rawSource === 'object'
@@ -298,6 +420,8 @@ function App() {
               address: stopData.address,
               startDate: stopData.startDate,
               endDate: stopData.endDate,
+              checkInTime: checkInTime || undefined,
+              checkOutTime: checkOutTime || undefined,
               note: note ? note : undefined,
               source: sanitizedSource,
               location: hasLocation ? { lat: location.lat, lng: location.lng } : undefined,
@@ -337,7 +461,7 @@ function App() {
 
       reader.readAsText(file)
     },
-    [currentTrip, mergeStops],
+    [allowedSourceNames, currentTrip, mergeStops],
   )
 
   const onImportChange = useCallback(
@@ -451,7 +575,11 @@ function App() {
           }
 
           if (!result.results[0]) {
-            updateStop(stop.id, { status: 'error' })
+            // For manual entries, don't show error status
+            // They're allowed to have no coordinates
+            updateStop(stop.id, { 
+              status: stop.manualEntry ? 'idle' : 'error' 
+            })
             continue
           }
 
@@ -460,9 +588,12 @@ function App() {
             location: { lat: location.lat(), lng: location.lng() },
             status: 'ready',
           })
-        } catch (error) {
+        } catch {
           if (!cancelled) {
-            updateStop(stop.id, { status: 'error' })
+            // For manual entries, don't show error status
+            updateStop(stop.id, { 
+              status: stop.manualEntry ? 'idle' : 'error' 
+            })
           }
         }
       }
@@ -538,6 +669,209 @@ function App() {
     })
   }, [forecastCandidates, weatherByStopId])
 
+  // Calculate distances for all consecutive stop pairs
+  useEffect(() => {
+    if (!currentTrip || currentStops.length < 2 || !mapsLoaded) {
+      return
+    }
+
+    // Prevent concurrent distance calculations for the same trip
+    if (distanceCalculationInFlight.current) {
+      return
+    }
+
+    // Check if locations have actually changed
+    const currentLocationsHash = currentStops
+      .map((stop) =>
+        stop.location ? `${stop.location.lat},${stop.location.lng}` : 'none'
+      )
+      .join('|')
+    
+    if (currentLocationsHash === previousLocationsRef.current) {
+      return
+    }
+
+    const stopsNeedingDistance = currentStops.some(
+      (stop) => stop.location && !stop.distanceFromPreviousMeters
+    )
+
+    if (!stopsNeedingDistance) {
+      previousLocationsRef.current = currentLocationsHash
+      return
+    }
+
+    previousLocationsRef.current = currentLocationsHash
+    distanceCalculationInFlight.current = true
+
+    const calculateDistancesAsync = async () => {
+      try {
+        const updatedStops = await calculateTripDistances(
+          currentStops,
+          GOOGLE_MAPS_API_KEY
+        )
+        
+        // Update trip with new distance data
+        setTripsState((prev) => {
+          const tripIndex = prev.trips.findIndex(
+            (t) => t.id === prev.currentTripId
+          )
+          if (tripIndex === -1) return prev
+
+          const updatedTrips = [...prev.trips]
+          updatedTrips[tripIndex] = {
+            ...updatedTrips[tripIndex],
+            stops: updatedStops,
+            updatedAt: new Date().toISOString(),
+          }
+
+          return {
+            ...prev,
+            trips: updatedTrips,
+          }
+        })
+      } catch (error) {
+        console.error('Error calculating distances:', error)
+      } finally {
+        distanceCalculationInFlight.current = false
+      }
+    }
+
+    void calculateDistancesAsync()
+  }, [currentTrip, currentStops, mapsLoaded])
+
+  // Create a stable key for cost calculation trigger
+  // Only changes when stops with distances change or MPG changes
+  const costCalculationKey = useMemo(() => {
+    return {
+      tripId: currentTrip?.id,
+      stopDistances: currentStops
+        .map((stop) => stop.distanceFromPreviousMeters ?? 'none')
+        .join('|'),
+      mpg: vehicleMpg,
+    }
+  }, [currentTrip?.id, currentStops, vehicleMpg])
+
+  // Extract start state for gas price lookup
+  const startState = useMemo(() => {
+    if (!currentStops.length) return null
+
+    const firstStop = currentStops[0]
+    if (!firstStop.location) return null
+
+    // Try to extract state from address
+    const addressParts = firstStop.address.split(',')
+    if (addressParts.length >= 2) {
+      const statePart = addressParts[addressParts.length - 2].trim()
+      // Extract state code (e.g., "NC" from "NC 28110")
+      const stateMatch = statePart.match(/[A-Z]{2}/)
+      return stateMatch ? stateMatch[0] : null
+    }
+
+    return null
+  }, [currentStops])
+
+  // Fetch gas price for the trip's start state
+  useEffect(() => {
+    if (!startState || gasPriceInFlight.current.has(startState)) {
+      return
+    }
+
+    gasPriceInFlight.current.add(startState)
+
+    gasPriceService
+      .getPriceForState(startState)
+      .then((priceResult) => {
+        setGasPriceByState((prev) => ({
+          ...prev,
+          [startState]: priceResult,
+        }))
+      })
+      .catch((error) => {
+        console.error(`Error fetching gas price for ${startState}:`, error)
+        // Set a cached error result so we don't retry repeatedly
+        setGasPriceByState((prev) => ({
+          ...prev,
+          [startState]: {
+            state: startState,
+            pricePerGallon: 0,
+            source: 'Error',
+            fetchedAt: new Date().toISOString(),
+            error: 'Failed to fetch gas price',
+          },
+        }))
+      })
+      .finally(() => {
+        gasPriceInFlight.current.delete(startState)
+      })
+  }, [startState])
+
+  // Calculate fuel costs when we have all required data
+  useEffect(() => {
+    if (!currentTrip || !startState) {
+      return
+    }
+
+    const gasPrice = gasPriceByState[startState]
+    if (!gasPrice || !gasPrice.pricePerGallon || gasPrice.pricePerGallon <= 0) {
+      return
+    }
+
+    // Check if any stop actually has a distance that needs cost calculation
+    const hasUncalculatedCosts = currentTrip.stops.some(
+      (stop) =>
+        stop.distanceFromPreviousMeters &&
+        stop.estimatedFuelCost === undefined
+    )
+
+    // Check if MPG has changed
+    const mpgChanged = previousMpgRef.current !== vehicleMpg
+    if (mpgChanged) {
+      previousMpgRef.current = vehicleMpg
+    }
+
+    // Skip if no uncalculated costs AND MPG didn't change
+    if (!hasUncalculatedCosts && !mpgChanged) {
+      return
+    }
+
+    // Calculate costs for all stops
+    const updatedStops = calculateStopCosts(
+      currentTrip.stops,
+      vehicleMpg,
+      gasPrice.pricePerGallon
+    )
+
+    // Only update if costs actually changed
+    const costChanged = updatedStops.some((stop, idx) => {
+      const original = currentTrip.stops[idx]
+      return stop.estimatedFuelCost !== original?.estimatedFuelCost
+    })
+
+    if (!costChanged) {
+      return
+    }
+
+    // Update trip with costs
+    setTripsState((prev) => {
+      const tripIndex = prev.trips.findIndex(
+        (t) => t.id === prev.currentTripId
+      )
+      if (tripIndex === -1) return prev
+
+      const updatedTrips = [...prev.trips]
+      updatedTrips[tripIndex] = {
+        ...updatedTrips[tripIndex],
+        stops: updatedStops,
+        updatedAt: new Date().toISOString(),
+      }
+
+      return {
+        ...prev,
+        trips: updatedTrips,
+      }
+    })
+  }, [costCalculationKey, startState, gasPriceByState, currentTrip, vehicleMpg])
+
   return (
     <div className="app-shell">
       <header className="hero">
@@ -574,6 +908,21 @@ function App() {
             >
               Load trip
             </button>
+            <button
+              className="ghost"
+              type="button"
+              onClick={exportCalendar}
+              disabled={currentStops.length === 0}
+            >
+              📅 Export to Calendar
+            </button>
+            <button
+              className="ghost"
+              type="button"
+              onClick={() => setShowVehicleSettings(true)}
+            >
+              ⛽ Vehicle Settings
+            </button>
             {importStatus ? <span className="import-status">{importStatus}</span> : null}
             {importError ? <span className="import-error">{importError}</span> : null}
           </div>
@@ -591,6 +940,12 @@ function App() {
             <span>Weather</span>
             <strong>Hybrid (NOAA+Climate)</strong>
           </div>
+          <div className="hero-card-row">
+            <span>Estimated Fuel Cost</span>
+            <strong>
+              {tripTotalFuelCost > 0 ? `$${tripTotalFuelCost.toFixed(2)}` : 'Data not available'}
+            </strong>
+          </div>
         </div>
       </header>
 
@@ -600,6 +955,8 @@ function App() {
             stops={currentStops}
             onAddStop={addStop}
             onRemoveStop={removeStop}
+            onUpdateStop={updateStop}
+            onReorderStop={reorderStops}
             mapsLoaded={mapsLoaded}
             weatherByStopId={weatherByStopId}
             weatherErrors={weatherErrors}
@@ -621,6 +978,12 @@ function App() {
           />
         </section>
       </main>
+
+      <VehicleSettingsModal
+        isOpen={showVehicleSettings}
+        gasPrice={startState ? gasPriceByState[startState] : undefined}
+        onClose={() => setShowVehicleSettings(false)}
+      />
     </div>
   )
 }

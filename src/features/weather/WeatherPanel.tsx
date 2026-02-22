@@ -1,6 +1,7 @@
 import { formatDate, formatDateRange } from '../../utils/date'
-import type { TripStop } from '../trip/types'
-import type { StopForecast } from './types'
+import type { TripStop } from '../../domain/trip/types'
+import type { StopForecast } from '../../domain/weather/types'
+import { WeatherIcon } from '../../components/common/WeatherIcon'
 
 type WeatherPanelProps = {
   stops: TripStop[]
@@ -56,6 +57,10 @@ export const WeatherPanel = ({
                   <div className="forecast-list">
                     {forecast.days.map((day) => (
                       <div key={day.date} className="forecast-row">
+                        <WeatherIcon
+                          condition={day.weatherCondition ?? 'unknown'}
+                          size="md"
+                        />
                         <span>{formatDate(day.date)}</span>
                         <span className="temp-range">
                           {Math.round(day.min)} - {Math.round(day.max)}

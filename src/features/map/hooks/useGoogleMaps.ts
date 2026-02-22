@@ -18,8 +18,12 @@ const notifyListeners = () => {
 }
 
 // Set up the callback IMMEDIATELY when this module loads
+type MapsWindow = Window & {
+  [CALLBACK_NAME]?: () => void
+}
+
 const initializeCallback = () => {
-  ;(window as any)[CALLBACK_NAME] = async () => {
+  ;(window as MapsWindow)[CALLBACK_NAME] = async () => {
     console.log('Google Maps callback triggered')
 
     if (!window.google?.maps) {
@@ -97,8 +101,7 @@ export const useGoogleMaps = (apiKey: string): MapsStatus => {
 
     // Already loaded?
     if (globalMapsLoaded) {
-      setLoaded(true)
-      setError(null)
+      notifyListeners()
       return
     }
 

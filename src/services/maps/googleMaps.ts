@@ -1,4 +1,4 @@
-import type { TripStop } from '../features/trip/types'
+import type { TripStop } from '../../domain/trip/types'
 
 /**
  * Validation result for stops before creating Google Maps URL

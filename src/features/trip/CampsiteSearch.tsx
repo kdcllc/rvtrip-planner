@@ -6,7 +6,7 @@ import {
   generateRVParkyUrl,
   openExternalLink,
   type MapBounds,
-} from '../../utils/campsiteSearch'
+} from '../../services/campsiteSearch'
 
 type CampsiteSearchProps = {
   address?: string

@@ -1,5 +1,6 @@
-import type { TripStop } from '../trip/types'
-import type { StopForecast, DailyForecast } from './types'
+import type { TripStop } from '../../domain/trip/types'
+import type { StopForecast, DailyForecast } from '../../domain/weather/types'
+import { getWeatherCondition } from '../../utils/weather'
 
 const NOAA_POINTS_BASE = 'https://api.weather.gov/points'
 const CLIMATE_API_BASE = 'https://climate-api.open-meteo.com/v1/climate'
@@ -56,15 +57,23 @@ const getClimateNormals = async (
       return []
     }
 
-    return data.daily.time.map((date: string, index: number) => ({
-      date,
-      min: Math.round(data.daily.temperature_2m_min[index]),
-      max: Math.round(data.daily.temperature_2m_max[index]),
-      precipChance: data.daily.relative_humidity_2m_mean
+    return data.daily.time.map((date: string, index: number) => {
+      const min = Math.round(data.daily.temperature_2m_min[index])
+      const max = Math.round(data.daily.temperature_2m_max[index])
+      const precipChance = data.daily.relative_humidity_2m_mean
         ? Math.round(data.daily.relative_humidity_2m_mean[index])
-        : null,
-      isHistorical: true,
-    }))
+        : null
+      const avgTemp = (min + max) / 2
+
+      return {
+        date,
+        min,
+        max,
+        precipChance,
+        weatherCondition: getWeatherCondition(precipChance, avgTemp),
+        isHistorical: true,
+      }
+    })
   } catch {
     return []
   }
@@ -103,7 +112,13 @@ export const fetchStopForecast = async (stop: TripStop): Promise<StopForecast> =
     { min: number; max: number; precipChance: number | null }
   >()
 
-  forecastData.properties.periods.forEach((period: any) => {
+  type NoaaPeriod = {
+    startTime: string
+    temperature: number
+    probabilityOfPrecipitation?: { value?: number | null } | null
+  }
+
+  ;(forecastData.properties.periods as NoaaPeriod[]).forEach((period) => {
     const startTime = new Date(period.startTime)
     const dateStr = startTime.toISOString().split('T')[0]
 
@@ -123,13 +138,20 @@ export const fetchStopForecast = async (stop: TripStop): Promise<StopForecast> =
   // Convert NOAA data to array and filter by date range
   const noaaForecasts: DailyForecast[] = Array.from(dateMap.entries())
     .filter(([date]) => date >= stop.startDate && date <= stop.endDate)
-    .map(([date, temps]) => ({
-      date,
-      min: Math.round(temps.min),
-      max: Math.round(temps.max),
-      precipChance: temps.precipChance,
-      isHistorical: false,
-    }))
+    .map(([date, temps]) => {
+      const min = Math.round(temps.min)
+      const max = Math.round(temps.max)
+      const avgTemp = (min + max) / 2
+
+      return {
+        date,
+        min,
+        max,
+        precipChance: temps.precipChance,
+        weatherCondition: getWeatherCondition(temps.precipChance, avgTemp),
+        isHistorical: false,
+      }
+    })
 
   // Check if we need climate normals (dates beyond NOAA's forecast range)
   // NOAA provides ~16 days, then fall back to climate normals

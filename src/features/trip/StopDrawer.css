@@ -1,0 +1,230 @@
+/* Drawer Animations */
+@keyframes slideInDrawer {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInBackdrop {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Backdrop */
+.stop-drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.2);
+  z-index: 49;
+  animation: fadeInBackdrop 300ms ease-out;
+}
+
+/* Drawer Container */
+.stop-drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 450px;
+  background: var(--color-surface);
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  animation: slideInDrawer 300ms ease-out;
+
+  /* Safe area on mobile devices */
+  max-width: min(450px, 100vw);
+}
+
+/* Drawer Header */
+.stop-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.stop-drawer-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: inherit;
+}
+
+/* Drawer Close Button */
+.stop-drawer-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background-color 200ms ease;
+}
+
+.stop-drawer-close:hover {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-dark);
+}
+
+.stop-drawer-close:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Drawer Content */
+.stop-drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Form controls inside drawer */
+.stop-drawer-content input,
+.stop-drawer-content select,
+.stop-drawer-content textarea {
+  appearance: none;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: var(--color-surface-strong);
+  color: inherit;
+  font-family: inherit;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.stop-drawer-content select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b7280' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+}
+
+.stop-drawer-content input:focus,
+.stop-drawer-content select:focus,
+.stop-drawer-content textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+/* Drawer Footer */
+.stop-drawer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-strong);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.footer-actions-left,
+.footer-actions-right {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.footer-actions-right {
+  margin-left: auto;
+}
+
+/* Scroll behavior for long forms */
+.stop-drawer-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.stop-drawer-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stop-drawer-content::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+.stop-drawer-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+/* Responsive: Mobile */
+@media (max-width: 900px) {
+  .stop-drawer {
+    max-width: 100%;
+  }
+
+  .stop-drawer-header {
+    padding: 16px 20px;
+  }
+
+  .stop-drawer-header h2 {
+    font-size: 1.125rem;
+  }
+
+  .stop-drawer-content {
+    padding: 20px;
+  }
+
+  .stop-drawer-footer {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+
+  .footer-actions-left,
+  .footer-actions-right {
+    width: 100%;
+  }
+
+  .footer-actions-right {
+    margin-left: 0;
+  }
+}
+
+/* Responsive: Very narrow mobile (< 400px) */
+@media (max-width: 400px) {
+  .stop-drawer {
+    max-width: 100%;
+  }
+
+  .stop-drawer-header,
+  .stop-drawer-content,
+  .stop-drawer-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .stop-drawer-header h2 {
+    font-size: 1rem;
+  }
+}
+
+/* Prevent scrolling on body when drawer is open */
+body.drawer-open {
+  overflow: hidden;
+}

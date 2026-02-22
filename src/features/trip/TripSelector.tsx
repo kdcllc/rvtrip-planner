@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import type { TripsState } from './types'
-import { getTripsSortedByRecent } from '../../utils/tripStorage'
+import type { TripsState } from '../../domain/trip/types'
+import { getTripsSortedByRecent } from '../../services/storage/tripStorage'
 
 interface TripSelectorProps {
   tripsState: TripsState

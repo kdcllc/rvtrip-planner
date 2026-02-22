@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { GOOGLE_MAPS_MAP_ID } from '../../config'
-import type { TripStop } from '../trip/types'
-import type { MapBounds } from '../../utils/campsiteSearch'
+import { GOOGLE_MAPS_MAP_ID } from '../../config/env'
+import type { TripStop } from '../../domain/trip/types'
+import type { MapBounds } from '../../services/campsiteSearch'
+import { formatDistance, formatDuration } from '../../utils/distance'
 
 type TripMapProps = {
   stops: TripStop[]
@@ -14,51 +15,17 @@ type TripMapProps = {
 type RouteSegment = {
   distance: string
   duration: string
-  polyline: any
+  polyline: google.maps.Polyline
 }
 
-const DEFAULT_CENTER = { lat: 36.1699, lng: -115.1398 }
-
-const formatDistance = (meters?: number) => {
-  if (meters === undefined || Number.isNaN(meters)) {
-    return 'N/A'
-  }
-  const miles = meters / 1609.344
-  if (miles < 0.1) {
-    return `${Math.round(meters)} m`
-  }
-  return `${miles.toFixed(1)} mi`
-}
-
-const formatDuration = (duration?: string) => {
-  if (!duration) {
-    return 'N/A'
-  }
-  const match = duration.match(/(\d+)s/)
-  if (!match) {
-    return duration
-  }
-  const totalSeconds = Number(match[1])
-  const totalMinutes = Math.round(totalSeconds / 60)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24)
-    const remHours = hours % 24
-    return `${days}d ${remHours}h`
-  }
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`
-  }
-  return `${minutes}m`
-}
+const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: 36.1699, lng: -115.1398 }
 
 export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }: TripMapProps) => {
-  const mapRef = useRef<any>(null)
+  const mapRef = useRef<google.maps.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
-  const markersRef = useRef<any[]>([])
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routesRef = useRef<RouteSegment[]>([])
-  const routeLabelsRef = useRef<any[]>([])
+  const routeLabelsRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
 
   useEffect(() => {
     if (!mapsLoaded || !mapContainerRef.current || mapRef.current) {
@@ -71,7 +38,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
     }
 
     try {
-      const mapOptions: any = {
+      const mapOptions: google.maps.MapOptions = {
         center: DEFAULT_CENTER,
         zoom: 5,
         mapTypeControl: false,
@@ -103,11 +70,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
     const bounds = new window.google.maps.LatLngBounds()
 
     markersRef.current.forEach((marker) => {
-      if (marker.map !== undefined) {
-        marker.map = null
-      } else if (marker.setMap) {
-        marker.setMap(null)
-      }
+      marker.map = null
     })
     markersRef.current = []
 
@@ -119,11 +82,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
 
     // Clear route labels
     routeLabelsRef.current.forEach((label) => {
-      if (label.map !== undefined) {
-        label.map = null
-      } else if (label.setMap) {
-        label.setMap(null)
-      }
+      label.map = null
     })
     routeLabelsRef.current = []
 
@@ -220,7 +179,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
             try {
               const errorData = JSON.parse(errorText)
               console.error('Parsed error object:', JSON.stringify(errorData, null, 2))
-            } catch (e) {
+            } catch {
               console.error('Could not parse error as JSON')
             }
             continue
@@ -305,7 +264,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
     if (validStops.length >= 1) {
       map.fitBounds(bounds, 60)
     }
-  }, [mapsLoaded, stops])
+  }, [apiKey, mapsLoaded, stops])
 
   // Track map bounds for campsite search
   useEffect(() => {

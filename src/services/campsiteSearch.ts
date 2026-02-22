@@ -53,6 +53,7 @@ export const extractStateFromAddress = (address: string): string | null => {
  * Opens the site with location in URL hash: https://freecampsites.net/#!location
  */
 
+// Hyphenated lowercase state names for RV Life and Campendium URLs
 const STATE_ABBREV_TO_NAME: Record<string, string> = {
   'AL': 'alabama', 'AK': 'alaska', 'AZ': 'arizona', 'AR': 'arkansas', 'CA': 'california',
   'CO': 'colorado', 'CT': 'connecticut', 'DE': 'delaware', 'FL': 'florida', 'GA': 'georgia',
@@ -68,6 +69,31 @@ const STATE_ABBREV_TO_NAME: Record<string, string> = {
   'PR': 'puerto-rico', 'VI': 'virgin-islands',
 }
 
+// Properly capitalized state names for Free Campsites URLs
+const STATE_ABBREV_TO_FULL_NAME: Record<string, string> = {
+  'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+  'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+  'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+  'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+  'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+  'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+  'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+  'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+  'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+  'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+  'DC': 'Washington DC', 'AS': 'American Samoa', 'GU': 'Guam', 'MP': 'Northern Mariana Islands',
+  'PR': 'Puerto Rico', 'VI': 'Virgin Islands',
+}
+
+/**
+ * Capitalize first letter of each word in a string
+ */
+const capitalizeWords = (str: string): string => {
+  return str.split(' ').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ')
+}
+
 export const generateFreeCampsitesUrl = (address?: string): string => {
   const baseUrl = 'https://freecampsites.net/'
   
@@ -75,7 +101,7 @@ export const generateFreeCampsitesUrl = (address?: string): string => {
     return baseUrl
   }
 
-  // Parse address and extract only city, state, zip (skip street address and country)
+  // Parse address and extract only city and state (skip street address, zip, and country)
   // Address format from Google Maps: "Street Address, City, State ZipCode, Country"
   const parts = address.split(',').map(part => part.trim())
   
@@ -89,24 +115,30 @@ export const generateFreeCampsitesUrl = (address?: string): string => {
     startIndex = 1 // Skip street address
   }
   
-  // Extract city, state+zip parts
-  const city = filtered[startIndex]?.toLowerCase() || ''
+  // Extract city and state+zip parts
+  const cityRaw = filtered[startIndex] || ''
   const stateAndZip = filtered[startIndex + 1] || ''
   
-  // Extract state abbreviation from "NC 28110" format
-  const stateMatch = stateAndZip.match(/([A-Z]{2})\s+(\d+)?/)
+  // Extract state abbreviation from "GA 28110" or "GA" format
+  const stateMatch = stateAndZip.match(/([A-Z]{2})(?:\s+\d+)?/)
   const stateAbbrev = stateMatch?.[1]
-  const zipCode = stateMatch?.[2]
   
-  // Convert state abbreviation to full name
-  const stateName = stateAbbrev ? STATE_ABBREV_TO_NAME[stateAbbrev] : stateAndZip.toLowerCase()
+  if (!cityRaw || !stateAbbrev) {
+    return baseUrl
+  }
   
-  // Format for URL hash (e.g., "monroe+north-carolina+28110")
-  const searchParts = [city]
-  if (stateName) searchParts.push(stateName)
-  if (zipCode) searchParts.push(zipCode)
+  // Capitalize city name properly (e.g., "woodbine" -> "Woodbine")
+  const city = capitalizeWords(cityRaw)
   
-  const searchTerm = searchParts.filter(Boolean).join('+')
+  // Convert state abbreviation to full capitalized name (e.g., "GA" -> "Georgia")
+  const stateName = STATE_ABBREV_TO_FULL_NAME[stateAbbrev]
+  
+  if (!stateName) {
+    return baseUrl
+  }
+  
+  // Format: City,+State (e.g., "Woodbine,+Georgia")
+  const searchTerm = `${city},+${stateName}`
   
   return `${baseUrl}#!${searchTerm}`
 }
