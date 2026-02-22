@@ -6,7 +6,7 @@ type MapsStatus = {
 }
 
 const SCRIPT_ID = 'google-maps-script'
-const CALLBACK_NAME = '__googleMapsCallback'
+const CALLBACK_FUNC = 'initGoogleMaps'
 
 // Module-level state shared across all hook instances
 let globalMapsLoaded = false
@@ -17,55 +17,37 @@ const notifyListeners = () => {
   listeners.forEach((fn) => fn(globalMapsLoaded, globalMapsError))
 }
 
-// Set up the callback IMMEDIATELY when this module loads
-type MapsWindow = Window & {
-  [CALLBACK_NAME]?: () => void
-}
+// Global callback invoked by Google Maps script when it loads
+// Must be on window for the script callback mechanism
+const initGoogleMapsCallback = () => {
+  try {
+    console.log('Google Maps script loaded, callback triggered')
 
-const initializeCallback = () => {
-  ;(window as MapsWindow)[CALLBACK_NAME] = async () => {
-    console.log('Google Maps callback triggered')
-
-    if (!window.google?.maps) {
-      console.error('Google Maps not available')
-      globalMapsError = 'Google Maps not available'
-      notifyListeners()
-      return
+    if (!window.google?.maps?.Map) {
+      throw new Error('Google Maps Map class not available')
     }
 
-    try {
-      // Import required libraries
-      console.log('Importing Google Maps libraries...')
-      await Promise.all([
-        window.google.maps.importLibrary('maps'),
-        window.google.maps.importLibrary('places'),
-        window.google.maps.importLibrary('marker'),
-        window.google.maps.importLibrary('routes'),
-        window.google.maps.importLibrary('geometry'),
-      ])
-
-      console.log('Libraries imported successfully')
-
-      if (window.google?.maps?.Map) {
-        console.log('Google Maps API ready')
-        globalMapsLoaded = true
-        globalMapsError = null
-      } else {
-        console.error('Google Maps Map class not available')
-        globalMapsError = 'Google Maps failed to initialize'
-      }
-      notifyListeners()
-    } catch (err) {
-      console.error('Google Maps library import error:', err)
-      globalMapsError =
-        err instanceof Error ? err.message : 'Failed to load Google Maps libraries'
-      notifyListeners()
-    }
+    console.log('Google Maps API ready')
+    globalMapsLoaded = true
+    globalMapsError = null
+    notifyListeners()
+  } catch (err) {
+    console.error('Google Maps initialization error:', err)
+    globalMapsError =
+      err instanceof Error ? err.message : 'Failed to load Google Maps'
+    globalMapsLoaded = false
+    notifyListeners()
   }
 }
 
-// Initialize callback when module loads (before any components use this hook)
-initializeCallback()
+// Attach callback to window so Google Maps script can invoke it
+declare global {
+  interface Window {
+    initGoogleMaps?: () => void
+  }
+}
+
+window.initGoogleMaps = initGoogleMapsCallback
 
 export const useGoogleMaps = (apiKey: string): MapsStatus => {
   const [loaded, setLoaded] = useState(globalMapsLoaded)
@@ -108,16 +90,18 @@ export const useGoogleMaps = (apiKey: string): MapsStatus => {
     // Already have a script tag?
     const existingScript = document.getElementById(SCRIPT_ID)
     if (existingScript) {
-      console.log('Script already exists, waiting for callback...')
+      console.log('Google Maps script already exists, callback will handle initialization')
       return
     }
 
-    // Add the script
+    // Add the script with callback pattern for async loading
+    // Libraries are pre-loaded in the URL (no need for individual importLibrary calls)
     console.log('Adding Google Maps script with key:', apiKey.substring(0, 20) + '...')
     const script = document.createElement('script')
     script.id = SCRIPT_ID
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&callback=${CALLBACK_NAME}`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=maps,places,marker,routes,geometry&callback=${CALLBACK_FUNC}`
     script.async = true
+    script.defer = true
     script.onerror = () => {
       console.error('Failed to load Google Maps script')
       globalMapsError = 'Failed to load Google Maps script'

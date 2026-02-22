@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useVehicleSettings } from '../../hooks/useVehicleSettings'
+import { useEffect, type ChangeEvent } from 'react'
+import { useVehicleSettingsContext } from '../../hooks/useVehicleSettings'
 import type { GasPriceLookupResult } from '../../domain/gas/types'
 import './StopDrawer.css'
 
@@ -14,7 +14,7 @@ export const VehicleSettingsModal = ({
   gasPrice,
   onClose,
 }: VehicleSettingsModalProps) => {
-  const { mpg, setMpg } = useVehicleSettings()
+  const { mpg, setMpg } = useVehicleSettingsContext()
 
   // Handle ESC key to close modal
   useEffect(() => {
@@ -54,7 +54,7 @@ export const VehicleSettingsModal = ({
     return null
   }
 
-  const handleMpgChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMpgChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value)
     if (!isNaN(value)) {
       setMpg(value)

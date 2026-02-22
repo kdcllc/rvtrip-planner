@@ -20,6 +20,8 @@ import {
 } from './StopFormFields'
 import type { MapBounds } from '../../services/campsiteSearch'
 
+const STARTING_POINT_LABEL = 'Starting point'
+
 type TripFormProps = {
   stops: TripStop[]
   onAddStop: (stop: TripStop) => void
@@ -34,6 +36,7 @@ type TripFormProps = {
   onSelectAllStops: () => void
   onClearStopSelection: () => void
   mapBounds?: MapBounds
+  currentStopId?: string | null
 }
 
 type DrawerState = {
@@ -56,6 +59,7 @@ export const TripForm = ({
   onSelectAllStops,
   onClearStopSelection,
   mapBounds,
+  currentStopId,
 }: TripFormProps) => {
   // Add form state (for inline form - now removed, kept for reference)
   // All form state is now managed by drawer component
@@ -222,7 +226,7 @@ export const TripForm = ({
         window.clearTimeout(drawerDebounceRef.current)
       }
     }
-  }, [drawerFormValues.address, drawerFormValues.manualAddress, mapsLoaded, drawerState.isOpen, drawerValidationState])
+  }, [drawerFormValues.address, drawerFormValues.manualAddress, mapsLoaded, drawerState.isOpen, drawerValidationState.status, drawerValidationState.lastValidatedAddress])
 
   // Drawer prediction selection
   const selectDrawerPrediction = async (item: SuggestionItem) => {
@@ -508,19 +512,23 @@ export const TripForm = ({
       isOpen: true,
       mode: 'add',
     })
-    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+    drawerSessionTokenRef.current =
+      mapsLoaded && window.google?.maps?.places
+        ? new google.maps.places.AutocompleteSessionToken()
+        : null
   }
 
   // Open drawer for editing a stop
   const openEditDrawer = (stop: TripStop) => {
     setDrawerFormValues({
-      label: stop.label,
+      label: stop.label === STARTING_POINT_LABEL ? '' : stop.label,
       address: stop.address,
       startDate: stop.startDate,
       endDate: stop.endDate,
       checkInTime: stop.checkInTime || '',
       checkOutTime: stop.checkOutTime || '',
       note: stop.note || '',
+      isStartPoint: stop.label === STARTING_POINT_LABEL,
       manualAddress: stop.manualEntry || false,
       sourceName: stop.source?.name || '',
       sourceUrl: stop.source?.url || '',
@@ -542,7 +550,10 @@ export const TripForm = ({
       mode: 'edit',
       stopId: stop.id,
     })
-    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
+    drawerSessionTokenRef.current =
+      mapsLoaded && window.google?.maps?.places
+        ? new google.maps.places.AutocompleteSessionToken()
+        : null
   }
 
   // Close drawer
@@ -578,7 +589,7 @@ export const TripForm = ({
   const saveDrawerChanges = async () => {
     setDrawerError('')
 
-    const isStartingPoint = drawerFormValues.label === 'Starting point'
+    const isStartingPoint = drawerFormValues.isStartPoint === true
 
     if (!(drawerFormValues.address || '').trim()) {
       setDrawerError('Add an address for this stop.')
@@ -637,8 +648,9 @@ export const TripForm = ({
       })
     }
 
-    const resolvedLabel =
-      (drawerFormValues.label || '').trim() || 'Starting point'
+    const resolvedLabel = isStartingPoint
+      ? STARTING_POINT_LABEL
+      : (drawerFormValues.label || '').trim()
     const resolvedStartDate = isStartingPoint
       ? drawerFormValues.endDate || ''
       : drawerFormValues.startDate || ''
@@ -805,14 +817,18 @@ export const TripForm = ({
           </div>
         ) : (
           stops.map((stop, index) => {
-            const isStartingPoint = stop.label === 'Starting point'
+            const isStartingPoint = stop.label === STARTING_POINT_LABEL
             const isLast = index === stops.length - 1
-            const canMoveUp = index > 0 && !(isStartingPoint && stops[index + 1]?.label !== 'Starting point')
-            const canMoveDown = !isLast && !(isStartingPoint && stops[index + 1]?.label !== 'Starting point')
+            const canMoveUp =
+              index > 0 &&
+              (stops[index - 1].label === STARTING_POINT_LABEL) === isStartingPoint
+            const canMoveDown =
+              !isLast &&
+              (stops[index + 1].label === STARTING_POINT_LABEL) === isStartingPoint
 
             return (
-              <div key={stop.id} className="stop-item">
-                <article className="stop-card">
+              <div key={stop.id} className="stop-item" data-stop-id={stop.id}>
+                <article className={`stop-card ${currentStopId === stop.id ? 'stop-card--hovered' : ''}`}>
                   <div className="stop-card-checkbox">
                     <input
                       type="checkbox"

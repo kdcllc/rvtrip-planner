@@ -12,8 +12,40 @@
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+}
+
+.hero-intro {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.brand-logo {
+  width: clamp(40px, 4.6vw, 60px);
+  height: clamp(40px, 4.6vw, 60px);
+  flex: 0 0 auto;
+  border-radius: clamp(12px, 1.4vw, 16px);
+  background: #fff1db;
+  border: 1px solid rgba(184, 101, 40, 0.25);
+  padding: clamp(6px, 0.9vw, 10px);
+  box-shadow: 0 10px 22px rgba(90, 46, 18, 0.18);
+}
+
+.brand-text {
+  display: grid;
+  gap: 4px;
+}
+
+.brand-text h1 {
+  line-height: 1.05;
 }
 
 .eyebrow {
@@ -25,7 +57,7 @@
 }
 
 .hero h1 {
-  font-size: clamp(2.2rem, 3vw, 3.4rem);
+  font-size: clamp(0.8rem, 1.1vw, 1.3rem);
   margin-bottom: 12px;
 }
 
@@ -35,12 +67,60 @@
   max-width: 560px;
 }
 
+.hero-tabs {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 232, 204, 0.6);
+  border: 1px solid rgba(186, 120, 51, 0.2);
+  width: fit-content;
+}
+
+.hero-tab {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+}
+
+.hero-tab--active {
+  background: #fff7ed;
+  color: #9a4f1d;
+  box-shadow: 0 8px 18px rgba(90, 46, 18, 0.12);
+}
+
 .hero-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 12px;
   align-items: center;
   margin-top: 18px;
+}
+
+.hero-actions--drive {
+  margin-top: 12px;
+}
+
+.hero-actions--drive .drive-sync {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.hero-actions--drive .drive-sync > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .file-input {
@@ -65,6 +145,7 @@
   box-shadow: var(--shadow-soft);
   display: grid;
   gap: 12px;
+  align-self: flex-start;
 }
 
 .hero-card-row {
@@ -451,6 +532,12 @@
 
 .stop-card--editing .stop-card-checkbox {
   opacity: 0.5;
+}
+
+.stop-card--hovered {
+  background: linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(168, 85, 247, 0.08));
+  border-color: rgba(251, 146, 60, 0.3);
+  box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.1);
 }
 
 .stop-edit-form {
@@ -898,12 +985,28 @@
     grid-template-columns: 1fr;
   }
 
+  .hero-actions {
+    flex-wrap: wrap;
+  }
+
   .map-canvas {
     height: 500px;
   }
 
   .panel {
     padding: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  .brand {
+    align-items: flex-start;
+  }
+
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+    padding: 6px;
   }
 }
 
@@ -1169,4 +1272,89 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.drive-sync {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.drive-sync-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.drive-sync-meta {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.drive-sync-error {
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+
+.drive-sync .ghost {
+  white-space: nowrap;
+}
+
+.drive-conflict-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.drive-conflict-modal {
+  background: var(--color-surface);
+  border-radius: 20px;
+  padding: 24px;
+  max-width: 640px;
+  width: 100%;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 16px;
+}
+
+.drive-conflict-subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.drive-conflict-list {
+  display: grid;
+  gap: 12px;
+}
+
+.drive-conflict-card {
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  padding: 12px 14px;
+  display: grid;
+  gap: 12px;
+  background: var(--color-surface-strong);
+}
+
+.drive-conflict-info {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.drive-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

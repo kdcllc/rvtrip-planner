@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useContext, createContext } from 'react'
 
 const VEHICLE_SETTINGS_KEY = 'trip-planner:vehicleSettings'
 const DEFAULT_MPG = 25
@@ -6,6 +6,16 @@ const DEFAULT_MPG = 25
 export type VehicleSettings = {
   mpg: number
 }
+
+export type VehicleSettingsContextValue = {
+  mpg: number
+  debouncedMpg: number
+  setMpg: (mpg: number) => void
+  resetToDefault: () => void
+}
+
+export const VehicleSettingsContext =
+  createContext<VehicleSettingsContextValue | null>(null)
 
 /**
  * Hook to persist and manage global vehicle settings (MPG)
@@ -17,7 +27,11 @@ export const useVehicleSettings = (initialMpg?: number) => {
       const stored = localStorage.getItem(VEHICLE_SETTINGS_KEY)
       if (stored) {
         const parsed = JSON.parse(stored) as VehicleSettings
-        return { mpg: parsed.mpg ?? initialMpg ?? DEFAULT_MPG }
+        const rawMpg = parsed.mpg ?? initialMpg ?? DEFAULT_MPG
+        const clampedMpg = Number.isFinite(rawMpg)
+          ? Math.max(5, Math.min(100, rawMpg))
+          : initialMpg ?? DEFAULT_MPG
+        return { mpg: clampedMpg }
       }
     } catch (error) {
       console.error('Failed to parse vehicle settings from localStorage:', error)
@@ -47,4 +61,14 @@ export const useVehicleSettings = (initialMpg?: number) => {
     // Helper to reset to default
     resetToDefault: () => setMpg(DEFAULT_MPG),
   }
+}
+
+export const useVehicleSettingsContext = () => {
+  const context = useContext(VehicleSettingsContext)
+  if (!context) {
+    throw new Error(
+      'useVehicleSettingsContext must be used within VehicleSettingsProvider'
+    )
+  }
+  return context
 }

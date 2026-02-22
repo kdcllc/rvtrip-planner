@@ -8,7 +8,7 @@ export const calculateFuelCost = (
   mpg: number,
   gasPricePerGallon: number | undefined
 ): number | undefined => {
-  if (!distanceMeters || !gasPricePerGallon || mpg <= 0) {
+  if (distanceMeters == null || gasPricePerGallon == null || mpg <= 0) {
     return undefined
   }
 

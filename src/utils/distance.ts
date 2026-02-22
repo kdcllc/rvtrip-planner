@@ -111,7 +111,7 @@ export const fetchDistanceBetweenStops = async (
 
     return {
       distanceMeters: leg?.distanceMeters ?? 0,
-      duration: leg?.duration ?? 'PT0S',
+      duration: leg?.duration ?? '0s',
     }
   } catch (error) {
     console.error('Error fetching distance:', error)

@@ -27,6 +27,8 @@
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:;"
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com; img-src 'self' data: https:; style-src 'self' https://maps.googleapis.com 'nonce-csp'; font-src 'self'; connect-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://accounts.google.com https://api.weather.gov https://climate-api.open-meteo.com https://www.fueleconomy.gov; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
   }
 }

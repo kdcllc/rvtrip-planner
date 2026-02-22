@@ -1,13 +1,14 @@
 import icalGenerator from 'ical-generator'
 import type { TripStop } from '../../domain/trip/types'
+import { requiresCheckInOut } from '../../utils/siteType'
 
 /**
- * Default check-in time (2:00 PM) for RV parks when no specific time is provided
+ * Default check-in time (2:00 PM) for site types that require check-in/out
  */
 const DEFAULT_CHECK_IN_TIME = '14:00'
 
 /**
- * Default check-out time (11:00 AM) for RV parks when no specific time is provided
+ * Default check-out time (11:00 AM) for site types that require check-in/out
  */
 const DEFAULT_CHECK_OUT_TIME = '11:00'
 
@@ -27,14 +28,29 @@ export function generateICalendar(stops: TripStop[], tripName: string): string {
       continue
     }
 
-    // Use provided check-in time or default to 2:00 PM
-    const checkInTime = stop.checkInTime || DEFAULT_CHECK_IN_TIME
-    // Use provided check-out time or default to 11:00 AM
-    const checkOutTime = stop.checkOutTime || DEFAULT_CHECK_OUT_TIME
+    const siteType = stop.source?.siteType
+    const needsCheckInOut = requiresCheckInOut(siteType)
 
-    // Combine date and time (format: YYYY-MM-DDTHH:mm)
-    const startDateTime = `${stop.startDate}T${checkInTime}`
-    const endDateTime = `${stop.endDate}T${checkOutTime}`
+    let startDateTime: Date
+    let endDateTime: Date
+    let allDay = false
+
+    if (needsCheckInOut) {
+      // Use provided times or defaults for site types that require check-in/out
+      const checkInTime = stop.checkInTime || DEFAULT_CHECK_IN_TIME
+      const checkOutTime = stop.checkOutTime || DEFAULT_CHECK_OUT_TIME
+      startDateTime = new Date(`${stop.startDate}T${checkInTime}`)
+      endDateTime = new Date(`${stop.endDate}T${checkOutTime}`)
+    } else if (stop.checkInTime && stop.checkOutTime) {
+      // Honor explicitly set times even for non-check-in/out stop types
+      startDateTime = new Date(`${stop.startDate}T${stop.checkInTime}`)
+      endDateTime = new Date(`${stop.endDate}T${stop.checkOutTime}`)
+    } else {
+      // All-day event for stops without check-in/out semantics
+      startDateTime = new Date(stop.startDate)
+      endDateTime = new Date(stop.endDate)
+      allDay = true
+    }
 
     // Build event description from available information
     const descriptionParts: string[] = []
@@ -63,8 +79,9 @@ export function generateICalendar(stops: TripStop[], tripName: string): string {
 
     // Create calendar event
     calendar.createEvent({
-      start: new Date(startDateTime),
-      end: new Date(endDateTime),
+      start: startDateTime,
+      end: endDateTime,
+      allDay,
       summary: stop.label,
       description: description || undefined,
       location: stop.address || undefined,

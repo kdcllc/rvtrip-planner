@@ -26,8 +26,11 @@ import {
 import { gasPriceService } from '../services/gas/gasPriceService'
 import { calculateTripDistances } from '../utils/distance'
 import { calculateStopCosts } from '../utils/costCalculation'
-import { useVehicleSettings } from '../hooks/useVehicleSettings'
+import { useVehicleSettingsContext } from '../hooks/useVehicleSettings'
 import type { GasPriceLookupResult } from '../domain/gas/types'
+import { useGoogleDriveSync } from '../hooks/useGoogleDriveSync'
+import { DriveSyncControls } from '../components/common/DriveSyncControls'
+import { DriveConflictModal } from '../components/common/DriveConflictModal'
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -48,7 +51,9 @@ function App() {
   const [importStatus, setImportStatus] = useState('')
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
   const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
+  const [currentStopId, setCurrentStopId] = useState<string | null>(null)
   const [showVehicleSettings, setShowVehicleSettings] = useState(false)
+  const [heroTab, setHeroTab] = useState<'actions' | 'drive'>('actions')
   const geocodingInFlight = useRef(false)
   const weatherInFlight = useRef<Set<string>>(new Set())
   const gasPriceInFlight = useRef<Set<string>>(new Set())
@@ -56,7 +61,8 @@ function App() {
   const previousLocationsRef = useRef<string>('')
   const previousMpgRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const { mpg: vehicleMpg } = useVehicleSettings()
+  const { debouncedMpg } = useVehicleSettingsContext()
+  const driveSync = useGoogleDriveSync(tripsState, setTripsState)
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(
     GOOGLE_MAPS_API_KEY,
@@ -487,6 +493,8 @@ function App() {
     setWeatherErrors({})
     // Clear selection when switching trips
     setSelectedStopIds(new Set())
+    // Clear current stop when switching trips
+    setCurrentStopId(null)
   }, [])
 
   const handleCreateTrip = useCallback((name: string) => {
@@ -500,6 +508,8 @@ function App() {
     setWeatherErrors({})
     // Clear selection for new trip
     setSelectedStopIds(new Set())
+    // Clear current stop for new trip
+    setCurrentStopId(null)
   }, [])
 
   const toggleStopSelection = useCallback((stopId: string) => {
@@ -520,6 +530,23 @@ function App() {
 
   const clearStopSelection = useCallback(() => {
     setSelectedStopIds(new Set())
+  }, [])
+
+  const handleStopHover = useCallback((stopId: string | null) => {
+    setCurrentStopId(stopId)
+  }, [])
+
+  const handleStopDoubleClick = useCallback((stopId: string) => {
+    setCurrentStopId(stopId)
+    
+    // Scroll to stop in timeline and highlight it
+    // Use specific selector to target timeline stop-item, not marker
+    const stopElement = document.querySelector(`.stop-item[data-stop-id="${stopId}"]`)
+    if (stopElement) {
+      setTimeout(() => {
+        stopElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 0)
+    }
   }, [])
 
   const handleDeleteTrip = useCallback((tripId: string) => {
@@ -545,6 +572,8 @@ function App() {
     setWeatherErrors({})
     // Clear selection when deleting trip
     setSelectedStopIds(new Set())
+    // Clear current stop when deleting trip
+    setCurrentStopId(null)
   }, [])
 
   useEffect(() => {
@@ -747,9 +776,9 @@ function App() {
       stopDistances: currentStops
         .map((stop) => stop.distanceFromPreviousMeters ?? 'none')
         .join('|'),
-      mpg: vehicleMpg,
+      mpg: debouncedMpg,
     }
-  }, [currentTrip?.id, currentStops, vehicleMpg])
+  }, [currentTrip?.id, currentStops, debouncedMpg])
 
   // Extract start state for gas price lookup
   const startState = useMemo(() => {
@@ -824,9 +853,9 @@ function App() {
     )
 
     // Check if MPG has changed
-    const mpgChanged = previousMpgRef.current !== vehicleMpg
+    const mpgChanged = previousMpgRef.current !== debouncedMpg
     if (mpgChanged) {
-      previousMpgRef.current = vehicleMpg
+      previousMpgRef.current = debouncedMpg
     }
 
     // Skip if no uncalculated costs AND MPG didn't change
@@ -837,7 +866,7 @@ function App() {
     // Calculate costs for all stops
     const updatedStops = calculateStopCosts(
       currentTrip.stops,
-      vehicleMpg,
+      debouncedMpg,
       gasPrice.pricePerGallon
     )
 
@@ -870,14 +899,26 @@ function App() {
         trips: updatedTrips,
       }
     })
-  }, [costCalculationKey, startState, gasPriceByState, currentTrip, vehicleMpg])
+  }, [costCalculationKey, startState, gasPriceByState, currentTrip, debouncedMpg])
 
   return (
     <div className="app-shell">
       <header className="hero">
-        <div>
-          <p className="eyebrow">RV Trip Planner</p>
-          <h1>Route, schedule, and weather in one place.</h1>
+        <div className="hero-intro">
+          <div className="brand">
+            <img
+              className="brand-logo"
+              src="/brand/rv-icon.svg"
+              alt="RV Trip Planner logo"
+              width={48}
+              height={48}
+              loading="lazy"
+            />
+            <div className="brand-text">
+              <p className="eyebrow">RV Trip Planner</p>
+              <h1>Route, schedule, and weather in one place.</h1>
+            </div>
+          </div>
           <p className="hero-subtitle">
             Add each stop with dates, and the planner will map your route and
             pull forecasts for the days you are there.
@@ -890,42 +931,80 @@ function App() {
               onDeleteTrip={handleDeleteTrip}
             />
           </div>
-          <div className="hero-actions">
-            <button className="ghost" type="button" onClick={exportTrips}>
-              Save trip
-            </button>
-            <input
-              ref={fileInputRef}
-              className="file-input"
-              type="file"
-              accept="application/json"
-              onChange={onImportChange}
-            />
+          <div className="hero-tabs" role="tablist" aria-label="Quick actions">
             <button
-              className="ghost"
+              className={`hero-tab${heroTab === 'actions' ? ' hero-tab--active' : ''}`}
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              role="tab"
+              aria-selected={heroTab === 'actions'}
+              onClick={() => setHeroTab('actions')}
             >
-              Load trip
+              Trip actions
             </button>
             <button
-              className="ghost"
+              className={`hero-tab${heroTab === 'drive' ? ' hero-tab--active' : ''}`}
               type="button"
-              onClick={exportCalendar}
-              disabled={currentStops.length === 0}
+              role="tab"
+              aria-selected={heroTab === 'drive'}
+              onClick={() => setHeroTab('drive')}
             >
-              📅 Export to Calendar
+              Drive sync
             </button>
-            <button
-              className="ghost"
-              type="button"
-              onClick={() => setShowVehicleSettings(true)}
-            >
-              ⛽ Vehicle Settings
-            </button>
-            {importStatus ? <span className="import-status">{importStatus}</span> : null}
-            {importError ? <span className="import-error">{importError}</span> : null}
           </div>
+          {heroTab === 'actions' ? (
+            <div className="hero-actions">
+              <button className="ghost" type="button" onClick={exportTrips}>
+                💾 Save trip
+              </button>
+              <input
+                ref={fileInputRef}
+                className="file-input"
+                type="file"
+                accept="application/json"
+                onChange={onImportChange}
+              />
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                📂 Load trip
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={exportCalendar}
+                disabled={currentStops.length === 0}
+              >
+                📅 Export to Calendar
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => setShowVehicleSettings(true)}
+              >
+                ⛽ Vehicle Settings
+              </button>
+              {importStatus ? (
+                <span className="import-status">{importStatus}</span>
+              ) : null}
+              {importError ? <span className="import-error">{importError}</span> : null}
+            </div>
+          ) : (
+            <div className="hero-actions hero-actions--drive">
+              <DriveSyncControls
+                authStatus={driveSync.authStatus}
+                syncStatus={driveSync.syncStatus}
+                lastSyncAt={driveSync.lastSyncAt}
+                error={driveSync.error}
+                isOnline={driveSync.isOnline}
+                hasClientId={driveSync.hasClientId}
+                onSignIn={driveSync.signIn}
+                onSignOut={driveSync.signOut}
+                onSyncNow={driveSync.syncNow}
+              />
+            </div>
+          )}
         </div>
         <div className="hero-card">
           <div className="hero-card-row">
@@ -965,6 +1044,7 @@ function App() {
             onSelectAllStops={selectAllStops}
             onClearStopSelection={clearStopSelection}
             mapBounds={mapBounds}
+            currentStopId={currentStopId}
           />
         </section>
 
@@ -975,6 +1055,8 @@ function App() {
             mapsError={mapsError}
             apiKey={GOOGLE_MAPS_API_KEY}
             onBoundsChange={setMapBounds}
+            onStopHover={handleStopHover}
+            onStopDoubleClick={handleStopDoubleClick}
           />
         </section>
       </main>
@@ -983,6 +1065,10 @@ function App() {
         isOpen={showVehicleSettings}
         gasPrice={startState ? gasPriceByState[startState] : undefined}
         onClose={() => setShowVehicleSettings(false)}
+      />
+      <DriveConflictModal
+        conflicts={driveSync.conflicts}
+        onResolve={driveSync.resolveConflict}
       />
     </div>
   )

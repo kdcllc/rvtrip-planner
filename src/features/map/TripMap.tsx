@@ -10,6 +10,8 @@ type TripMapProps = {
   mapsError: string | null
   apiKey: string
   onBoundsChange?: (bounds: MapBounds) => void
+  onStopHover?: (stopId: string | null) => void
+  onStopDoubleClick?: (stopId: string) => void
 }
 
 type RouteSegment = {
@@ -20,13 +22,59 @@ type RouteSegment = {
 
 const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: 36.1699, lng: -115.1398 }
 
-export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }: TripMapProps) => {
+// Format stop information for InfoWindow display
+const formatStopInfoContent = (stop: TripStop): string => {
+  const dateRange = `${new Date(stop.startDate).toLocaleDateString()} – ${new Date(stop.endDate).toLocaleDateString()}`
+  
+  let timeRange = ''
+  if (stop.checkInTime || stop.checkOutTime) {
+    const checkIn = stop.checkInTime ? `Check-in: ${stop.checkInTime}` : ''
+    const checkOut = stop.checkOutTime ? `Check-out: ${stop.checkOutTime}` : ''
+    timeRange = [checkIn, checkOut].filter(Boolean).join(' • ')
+  }
+
+  const distance = stop.distanceFromPreviousMeters 
+    ? `${(stop.distanceFromPreviousMeters / 1609.34).toFixed(1)} mi` 
+    : ''
+  const fuelCost = stop.estimatedFuelCost 
+    ? `$${stop.estimatedFuelCost.toFixed(2)}` 
+    : ''
+  const travelInfo = [distance, fuelCost].filter(Boolean).join(' • ')
+
+  const sourceHtml = stop.source
+    ? `<div style="font-size: 0.9em; color: #666; margin-top: 8px;">
+        <strong>${stop.source.name}</strong>
+        ${stop.source.siteType ? `<br>Type: ${stop.source.siteType}` : ''}
+        ${stop.source.fees ? `<br>Fees: ${stop.source.fees}` : ''}
+      </div>`
+    : ''
+
+  const noteHtml = stop.note
+    ? `<div style="font-size: 0.9em; color: #666; margin-top: 8px; font-style: italic;">${stop.note}</div>`
+    : ''
+
+  return `
+    <div style="font-family: Arial, sans-serif; padding: 8px; max-width: 280px;">
+      <h3 style="margin: 0 0 4px 0; font-size: 1.1em; cursor: pointer; color: #0066cc; text-decoration: underline;" data-stop-nav-id="${stop.id}">${stop.label}</h3>
+      <p style="margin: 0 0 4px 0; font-size: 0.75em; color: #999;">Click title to view in timeline</p>
+      <p style="margin: 0 0 4px 0; font-size: 0.9em; color: #666;">${stop.address}</p>
+      <p style="margin: 0 0 4px 0; font-size: 0.9em;"><strong>${dateRange}</strong></p>
+      ${timeRange ? `<p style="margin: 0 0 4px 0; font-size: 0.9em;">${timeRange}</p>` : ''}
+      ${travelInfo ? `<p style="margin: 0 0 4px 0; font-size: 0.9em; color: #666;">${travelInfo}</p>` : ''}
+      ${sourceHtml}
+      ${noteHtml}
+    </div>
+  `
+}
+
+export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, onStopHover, onStopDoubleClick }: TripMapProps) => {
   const mapRef = useRef<google.maps.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routesRef = useRef<RouteSegment[]>([])
   const routeLabelsRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
-
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  const hoveredStopIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (!mapsLoaded || !mapContainerRef.current || mapRef.current) {
       return
@@ -69,6 +117,13 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
     const validStops = stops.filter((stop) => stop.location)
     const bounds = new window.google.maps.LatLngBounds()
 
+    // Clean up InfoWindow and references when stops change
+    if (infoWindowRef.current) {
+      infoWindowRef.current.close()
+    }
+    hoveredStopIdRef.current = null
+    onStopHover?.(null)
+
     markersRef.current.forEach((marker) => {
       marker.map = null
     })
@@ -104,9 +159,65 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
           const pin = document.createElement('div')
           pin.className = 'map-pin'
           pin.textContent = `${index + 1}`
+          pin.setAttribute('data-stop-id', stop.id)
           return pin
         })(),
       })
+
+      // Add event listeners for hover and double-click
+      marker.addListener('mouseover', () => {
+        hoveredStopIdRef.current = stop.id
+        onStopHover?.(stop.id)
+
+        // Create or update InfoWindow
+        if (!infoWindowRef.current) {
+          infoWindowRef.current = new window.google.maps.InfoWindow()
+        }
+
+        const infoWindow = infoWindowRef.current
+        infoWindow.setContent(formatStopInfoContent(stop))
+        infoWindow.open(map, marker)
+
+        // Visual feedback on marker
+        const pinElement = marker.content as HTMLElement
+        if (pinElement) {
+          pinElement.style.transform = 'scale(1.2)'
+          pinElement.style.zIndex = '999'
+        }
+      })
+
+      marker.addListener('mouseout', () => {
+        hoveredStopIdRef.current = null
+        onStopHover?.(null)
+
+        // Hide InfoWindow
+        if (infoWindowRef.current) {
+          infoWindowRef.current.close()
+        }
+
+        // Reset marker visual
+        const pinElement = marker.content as HTMLElement
+        if (pinElement) {
+          pinElement.style.transform = 'scale(1)'
+          pinElement.style.zIndex = ''
+        }
+      })
+
+      marker.addListener('click', () => {
+        // Show InfoWindow on click for accessibility
+        if (!infoWindowRef.current) {
+          infoWindowRef.current = new window.google.maps.InfoWindow()
+        }
+
+        const infoWindow = infoWindowRef.current
+        infoWindow.setContent(formatStopInfoContent(stop))
+        infoWindow.open(map, marker)
+      })
+
+      marker.addListener('dblclick', () => {
+        onStopDoubleClick?.(stop.id)
+      })
+
       markersRef.current.push(marker)
 
       bounds.extend(stop.location)
@@ -264,7 +375,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
     if (validStops.length >= 1) {
       map.fitBounds(bounds, 60)
     }
-  }, [apiKey, mapsLoaded, stops])
+  }, [apiKey, mapsLoaded, stops, onStopHover, onStopDoubleClick])
 
   // Track map bounds for campsite search
   useEffect(() => {
@@ -302,6 +413,25 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange }
       }
     }
   }, [mapsLoaded, onBoundsChange])
+
+  // Handle clicks on InfoWindow titles to navigate to timeline
+  useEffect(() => {
+    const handleInfoWindowClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (target && target.hasAttribute('data-stop-nav-id')) {
+        const stopId = target.getAttribute('data-stop-nav-id')
+        if (stopId) {
+          // Trigger double-click callback to navigate
+          onStopDoubleClick?.(stopId)
+        }
+      }
+    }
+
+    document.addEventListener('click', handleInfoWindowClick)
+    return () => {
+      document.removeEventListener('click', handleInfoWindowClick)
+    }
+  }, [onStopDoubleClick])
 
   return (
     <div className="map-wrap">
