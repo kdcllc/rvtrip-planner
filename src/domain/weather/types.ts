@@ -20,6 +20,7 @@ export type StopForecast = {
   stopId: string
   cacheKey: string
   timezone: string
+  forecastUrl?: string
   days: DailyForecast[]
   updatedAt: string
 }

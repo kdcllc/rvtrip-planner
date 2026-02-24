@@ -1,5 +1,13 @@
 const TOKEN_STORAGE_KEY = 'trip-planner-drive-token'
 const TOKEN_EXPIRY_KEY = 'trip-planner-drive-token-expiry'
+const USER_INFO_KEY = 'trip-planner-drive-user'
+
+export type DriveUserInfo = {
+  sub?: string
+  email?: string
+  name?: string
+  picture?: string
+}
 
 export function saveAccessToken(token: string, expiresInSeconds?: number): void {
   try {
@@ -8,6 +16,19 @@ export function saveAccessToken(token: string, expiresInSeconds?: number): void 
       const expiryTime = Date.now() + expiresInSeconds * 1000
       window.localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiryTime))
     }
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export function saveDriveUserInfo(userInfo: DriveUserInfo | null): void {
+  try {
+    if (!userInfo) {
+      window.localStorage.removeItem(USER_INFO_KEY)
+      return
+    }
+
+    window.localStorage.setItem(USER_INFO_KEY, JSON.stringify(userInfo))
   } catch {
     // Ignore storage failures
   }
@@ -34,6 +55,17 @@ export function loadAccessToken(): string | null {
   }
 }
 
+export function loadDriveUserInfo(): DriveUserInfo | null {
+  try {
+    const raw = window.localStorage.getItem(USER_INFO_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DriveUserInfo
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 export function getTokenExpiryTime(): number | null {
   try {
     const expiryTimeStr = window.localStorage.getItem(TOKEN_EXPIRY_KEY)
@@ -55,6 +87,7 @@ export function clearAccessToken(): void {
   try {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY)
     window.localStorage.removeItem(TOKEN_EXPIRY_KEY)
+    window.localStorage.removeItem(USER_INFO_KEY)
   } catch {
     // Ignore storage failures
   }

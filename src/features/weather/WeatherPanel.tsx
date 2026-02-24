@@ -40,6 +40,16 @@ export const WeatherPanel = ({
                   <div>
                     <h3>{stop.label}</h3>
                     <p className="muted">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                    {forecast?.forecastUrl ? (
+                      <a
+                        className="source-link forecast-link"
+                        href={forecast.forecastUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View NOAA forecast
+                      </a>
+                    ) : null}
                   </div>
                   <span className={`pill pill-${stop.status ?? 'idle'}`}>
                     {stop.status === 'ready' && 'Located'}

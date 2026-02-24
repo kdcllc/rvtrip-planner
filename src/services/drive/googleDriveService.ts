@@ -1,6 +1,16 @@
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3'
 
+export class DriveApiError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'DriveApiError'
+    this.status = status
+  }
+}
+
 export type DriveFileInfo = {
   id: string
   name: string
@@ -148,7 +158,7 @@ async function driveFetch(
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(`Drive request failed (${response.status}): ${text}`)
+    throw new DriveApiError(response.status, `Drive request failed (${response.status}): ${text}`)
   }
 
   return response

@@ -1,5 +1,6 @@
 const DRIVE_FILE_MAP_KEY = 'trip-planner-drive-file-map'
 const DRIVE_CHECKSUMS_KEY = 'trip-planner-drive-checksums'
+const DRIVE_TRIP_NAMES_KEY = 'trip-planner-drive-trip-names'
 const DRIVE_QUEUE_KEY = 'trip-planner-drive-queue'
 const DRIVE_IGNORED_KEY = 'trip-planner-drive-ignored'
 
@@ -36,6 +37,25 @@ export function loadDriveChecksums(): Record<string, string> {
 export function saveDriveChecksums(checksums: Record<string, string>): void {
   try {
     window.localStorage.setItem(DRIVE_CHECKSUMS_KEY, JSON.stringify(checksums))
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export function loadDriveTripNames(): Record<string, string> {
+  try {
+    const stored = window.localStorage.getItem(DRIVE_TRIP_NAMES_KEY)
+    if (!stored) return {}
+    const parsed = JSON.parse(stored) as Record<string, string>
+    return parsed ?? {}
+  } catch {
+    return {}
+  }
+}
+
+export function saveDriveTripNames(names: Record<string, string>): void {
+  try {
+    window.localStorage.setItem(DRIVE_TRIP_NAMES_KEY, JSON.stringify(names))
   } catch {
     // Ignore storage failures
   }

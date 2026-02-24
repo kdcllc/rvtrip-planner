@@ -17,6 +17,24 @@
   --shadow-soft: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
 
+/* Dark mode theme */
+:root[data-theme="dark"] {
+  color: #e8dcc8;
+  background-color: #1f1a14;
+  --color-surface: #2d2418;
+  --color-surface-strong: #3d3226;
+  --color-border: rgba(232, 220, 200, 0.15);
+  --color-text-muted: #a89878;
+  --color-accent: #f59e0b;
+  --color-accent-soft: rgba(245, 158, 11, 0.15);
+  --color-accent-dark: #fbbf24;
+  --shadow-soft: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] body {
+  background: radial-gradient(circle at top, #2d2418, #1f1a14 50%, #151110 100%);
+}
+
 * {
   box-sizing: border-box;
 }

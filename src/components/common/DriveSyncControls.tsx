@@ -1,4 +1,5 @@
 import type { DriveAuthStatus, DriveSyncStatus } from '../../hooks/useGoogleDriveSync'
+import type { DriveUserInfo } from '../../services/drive/tokenStorage'
 
 interface DriveSyncControlsProps {
   authStatus: DriveAuthStatus
@@ -7,6 +8,8 @@ interface DriveSyncControlsProps {
   error: string | null
   isOnline: boolean
   hasClientId: boolean
+  gisReady?: boolean
+  userInfo?: DriveUserInfo | null
   onSignIn: () => void
   onSignOut: () => void
   onSyncNow: () => void
@@ -19,6 +22,8 @@ export function DriveSyncControls({
   error,
   isOnline,
   hasClientId,
+  gisReady = true,
+  userInfo,
   onSignIn,
   onSignOut,
   onSyncNow,
@@ -29,13 +34,16 @@ export function DriveSyncControls({
         minute: '2-digit',
       }).format(new Date(lastSyncAt))
     : null
+  const connectedLabel = userInfo?.email ?? userInfo?.name
 
   return (
     <div className="drive-sync">
       <div>
         {authStatus === 'signed-in' ? (
           <>
-            <span className="drive-sync-status">Google Drive connected</span>
+            <span className="drive-sync-status">
+              Google Drive connected{connectedLabel ? ` as ${connectedLabel}` : ''}
+            </span>
             <button
               className="ghost"
               type="button"
@@ -53,7 +61,7 @@ export function DriveSyncControls({
             className="ghost"
             type="button"
             onClick={onSignIn}
-            disabled={!hasClientId || authStatus === 'loading'}
+            disabled={!hasClientId || !gisReady || authStatus === 'loading'}
           >
             {authStatus === 'loading' ? '🔌 Connecting…' : '🔌 Connect Google Drive'}
           </button>

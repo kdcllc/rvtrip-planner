@@ -31,10 +31,29 @@ import type { GasPriceLookupResult } from '../domain/gas/types'
 import { useGoogleDriveSync } from '../hooks/useGoogleDriveSync'
 import { DriveSyncControls } from '../components/common/DriveSyncControls'
 import { DriveConflictModal } from '../components/common/DriveConflictModal'
+import {
+  buildDriveTripPayload,
+  createTripFileName,
+  type DriveTripPayload,
+  parseDriveTripPayload,
+} from '../services/drive/tripDriveSync'
+import { ImportTripModal } from '../components/common/ImportTripModal'
+import { FloatingActionButtons } from '../components/common/FloatingActionButtons'
+import { DeleteTripModal } from '../components/common/DeleteTripModal'
+import { ThemeToggle } from '../components/common/ThemeToggle'
+import { createId } from '../utils/id'
 
 function App() {
   const allowedSourceNames = useMemo(
-    () => new Set<TripStopSourceName>(['Campendium', 'Harvest Hosts', 'RV Parky', 'Other']),
+    () =>
+      new Set<TripStopSourceName>([
+        'RV Life',
+        'Hipcamp',
+        'Campendium',
+        'Harvest Hosts',
+        'RV Parky',
+        'Other',
+      ]),
     []
   )
   const [tripsState, setTripsState] = useState<TripsState>(() => {
@@ -49,12 +68,20 @@ function App() {
   >({})
   const [importError, setImportError] = useState('')
   const [importStatus, setImportStatus] = useState('')
+  const [pendingImport, setPendingImport] = useState<{
+    payload: DriveTripPayload
+    skippedStops: number
+    totalStops: number
+  } | null>(null)
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
   const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
   const [currentStopId, setCurrentStopId] = useState<string | null>(null)
   const [showVehicleSettings, setShowVehicleSettings] = useState(false)
   const [heroTab, setHeroTab] = useState<'actions' | 'drive'>('actions')
+  const [isMapVisible, setIsMapVisible] = useState(true)
+  const [pendingDeleteTripId, setPendingDeleteTripId] = useState<string | null>(null)
   const geocodingInFlight = useRef(false)
+  const mapPanelRef = useRef<HTMLElement | null>(null)
   const weatherInFlight = useRef<Set<string>>(new Set())
   const gasPriceInFlight = useRef<Set<string>>(new Set())
   const distanceCalculationInFlight = useRef(false)
@@ -240,20 +267,15 @@ function App() {
       return
     }
 
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      stops: currentTrip.stops,
-    }
+    const payload = buildDriveTripPayload(currentTrip)
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    const dateStamp = new Date().toISOString().slice(0, 10)
     link.href = url
-    link.download = `trip-${currentTrip.name}-${dateStamp}.json`
+    link.download = createTripFileName(currentTrip)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -315,16 +337,64 @@ function App() {
     [orderStops],
   )
 
+  const completeImport = useCallback(
+    (
+      payload: DriveTripPayload,
+      skippedStops: number,
+      _totalStops: number,
+      mode: 'merge' | 'new',
+    ) => {
+      const sanitizedStops = payload.trip.stops
+
+      setTripsState((prev) => {
+        const tripIndex = prev.trips.findIndex((t) => t.id === prev.currentTripId)
+
+        if (tripIndex === -1 || mode === 'new') {
+          // Check if the imported trip's ID already exists
+          const existingIds = new Set(prev.trips.map((t) => t.id))
+          const importedTrip = existingIds.has(payload.trip.id)
+            ? { ...payload.trip, id: createId() }
+            : payload.trip
+
+          return {
+            trips: [...prev.trips, importedTrip],
+            currentTripId: importedTrip.id,
+          }
+        }
+
+        const updatedTrips = [...prev.trips]
+        updatedTrips[tripIndex] = {
+          ...updatedTrips[tripIndex],
+          stops: mergeStops(updatedTrips[tripIndex].stops, sanitizedStops),
+          updatedAt: new Date().toISOString(),
+        }
+
+        return {
+          ...prev,
+          trips: updatedTrips,
+        }
+      })
+
+      setWeatherByStopId({})
+      setWeatherErrors({})
+      const skippedMessage =
+        skippedStops > 0
+          ? ` Skipped ${skippedStops} invalid stop${skippedStops === 1 ? '' : 's'}.`
+          : ''
+      setImportStatus(
+        `Imported ${sanitizedStops.length} stop${
+          sanitizedStops.length === 1 ? '' : 's'
+        }.${skippedMessage}`
+      )
+      setPendingImport(null)
+    },
+    [mergeStops],
+  )
+
   const handleImportFile = useCallback(
     (file: File) => {
       setImportError('')
       setImportStatus('Importing...')
-
-      if (!currentTrip) {
-        setImportStatus('')
-        setImportError('No trip to import to. Create a trip first.')
-        return
-      }
 
       const reader = new FileReader()
       reader.onerror = () => {
@@ -334,127 +404,22 @@ function App() {
       reader.onload = () => {
         try {
           const raw = JSON.parse(String(reader.result ?? ''))
-          const payloadStops = Array.isArray(raw)
-            ? raw
-            : Array.isArray(raw?.stops)
-              ? raw.stops
-              : null
+          const { payload, skippedStops, totalStops } = parseDriveTripPayload(raw, {
+            allowedSourceNames,
+          })
+          const sanitizedStops: TripStop[] = payload.trip.stops
 
-          if (!payloadStops) {
-            throw new Error('Invalid format')
+          if (totalStops > 0 && sanitizedStops.length === 0) {
+            throw new Error('No valid stops found')
           }
 
-          const sanitizedStops: TripStop[] = payloadStops.map((stop: unknown) => {
-            if (!stop || typeof stop !== 'object') {
-              throw new Error('Invalid stop')
-            }
+          if (!currentTrip) {
+            completeImport(payload, skippedStops, totalStops, 'new')
+            return
+          }
 
-            const stopData = stop as Record<string, unknown>
-
-            if (
-              typeof stopData.id !== 'string' ||
-              typeof stopData.label !== 'string' ||
-              typeof stopData.address !== 'string' ||
-              typeof stopData.startDate !== 'string' ||
-              typeof stopData.endDate !== 'string'
-            ) {
-              throw new Error('Invalid stop')
-            }
-
-            const location = stopData.location as
-              | { lat?: unknown; lng?: unknown }
-              | undefined
-            const hasLocation =
-              location &&
-              typeof location.lat === 'number' &&
-              typeof location.lng === 'number'
-            const note =
-              typeof stopData.note === 'string'
-                ? stopData.note.trim().slice(0, 500)
-                : ''
-            const checkInTime =
-              typeof stopData.checkInTime === 'string'
-                ? stopData.checkInTime.trim()
-                : ''
-            const checkOutTime =
-              typeof stopData.checkOutTime === 'string'
-                ? stopData.checkOutTime.trim()
-                : ''
-            const rawSource = stopData.source
-            const source =
-              rawSource && typeof rawSource === 'object'
-                ? (rawSource as Record<string, unknown>)
-                : null
-            const sourceName =
-              source && typeof source.name === 'string' ? source.name : undefined
-            const sourceUrl =
-              source && typeof source.url === 'string' ? source.url : undefined
-            const sourceSiteType =
-              source && typeof source.siteType === 'string'
-                ? source.siteType
-                : undefined
-            const sourceFees =
-              source && typeof source.fees === 'string' ? source.fees : undefined
-            const sourceAmenities =
-              source && typeof source.amenities === 'string'
-                ? source.amenities
-                : undefined
-            const normalizedSourceName = sourceName
-              ? allowedSourceNames.has(sourceName as TripStopSourceName)
-                ? (sourceName as TripStopSourceName)
-                : undefined
-              : undefined
-            const hasSourceDetails =
-              Boolean(normalizedSourceName) ||
-              Boolean(sourceUrl) ||
-              Boolean(sourceSiteType) ||
-              Boolean(sourceFees) ||
-              Boolean(sourceAmenities)
-            const sanitizedSource = hasSourceDetails
-              ? {
-                  name: normalizedSourceName ?? 'Other',
-                  url: sourceUrl,
-                  siteType: sourceSiteType,
-                  fees: sourceFees,
-                  amenities: sourceAmenities,
-                }
-              : undefined
-
-            return {
-              id: stopData.id,
-              label: stopData.label,
-              address: stopData.address,
-              startDate: stopData.startDate,
-              endDate: stopData.endDate,
-              checkInTime: checkInTime || undefined,
-              checkOutTime: checkOutTime || undefined,
-              note: note ? note : undefined,
-              source: sanitizedSource,
-              location: hasLocation ? { lat: location.lat, lng: location.lng } : undefined,
-              status: typeof stopData.status === 'string' ? stopData.status : 'idle',
-            }
-          })
-
-          setTripsState((prev) => {
-            const tripIndex = prev.trips.findIndex((t) => t.id === prev.currentTripId)
-            if (tripIndex === -1) return prev
-
-            const updatedTrips = [...prev.trips]
-            updatedTrips[tripIndex] = {
-              ...updatedTrips[tripIndex],
-              stops: mergeStops(updatedTrips[tripIndex].stops, sanitizedStops),
-              updatedAt: new Date().toISOString(),
-            }
-
-            return {
-              ...prev,
-              trips: updatedTrips,
-            }
-          })
-
-          setWeatherByStopId({})
-          setWeatherErrors({})
-          setImportStatus(`Imported ${sanitizedStops.length} stops.`)
+          setPendingImport({ payload, skippedStops, totalStops })
+          setImportStatus('')
         } catch (error) {
           setImportStatus('')
           setImportError(
@@ -467,8 +432,34 @@ function App() {
 
       reader.readAsText(file)
     },
-    [allowedSourceNames, currentTrip, mergeStops],
+    [allowedSourceNames, completeImport, currentTrip],
   )
+
+  const handleConfirmMergeImport = useCallback(() => {
+    if (!pendingImport) return
+    completeImport(
+      pendingImport.payload,
+      pendingImport.skippedStops,
+      pendingImport.totalStops,
+      'merge',
+    )
+  }, [completeImport, pendingImport])
+
+  const handleConfirmNewImport = useCallback(() => {
+    if (!pendingImport) return
+    completeImport(
+      pendingImport.payload,
+      pendingImport.skippedStops,
+      pendingImport.totalStops,
+      'new',
+    )
+  }, [completeImport, pendingImport])
+
+  const handleCancelImport = useCallback(() => {
+    setPendingImport(null)
+    setImportStatus('')
+    setImportError('Import canceled.')
+  }, [])
 
   const onImportChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -549,9 +540,55 @@ function App() {
     }
   }, [])
 
-  const handleDeleteTrip = useCallback((tripId: string) => {
+  const handleScrollToMap = useCallback(() => {
+    const mapPanel = document.querySelector('.panel-map')
+    if (mapPanel) {
+      mapPanel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [])
+
+  const handleAddStop = useCallback(() => {
+    const formPanel = document.querySelector('.panel-form')
+    if (formPanel) {
+      formPanel.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Give the scroll time to complete, then try to focus the first form input
+      setTimeout(() => {
+        const addButton = document.querySelector('.panel-form button[aria-label*="Add"]') as HTMLButtonElement
+        if (addButton) {
+          addButton.click()
+        }
+      }, 300)
+    }
+  }, [])
+
+  const handleRequestDeleteTrip = useCallback((tripId: string) => {
+    setPendingDeleteTripId(tripId)
+  }, [])
+
+  const handleRenameTrip = useCallback((tripId: string, newName: string) => {
     setTripsState((prev) => {
-      const remainingTrips = prev.trips.filter((t) => t.id !== tripId)
+      const tripIndex = prev.trips.findIndex((t) => t.id === tripId)
+      if (tripIndex === -1) return prev
+
+      const updatedTrips = [...prev.trips]
+      updatedTrips[tripIndex] = {
+        ...updatedTrips[tripIndex],
+        name: newName,
+        updatedAt: new Date().toISOString(),
+      }
+
+      return {
+        ...prev,
+        trips: updatedTrips,
+      }
+    })
+  }, [])
+
+  const handleConfirmDeleteTrip = useCallback(() => {
+    if (!pendingDeleteTripId) return
+
+    setTripsState((prev) => {
+      const remainingTrips = prev.trips.filter((t) => t.id !== pendingDeleteTripId)
       if (remainingTrips.length === 0) {
         return {
           trips: [],
@@ -560,7 +597,7 @@ function App() {
       }
 
       const newCurrentTripId =
-        prev.currentTripId === tripId ? remainingTrips[0].id : prev.currentTripId
+        prev.currentTripId === pendingDeleteTripId ? remainingTrips[0].id : prev.currentTripId
 
       return {
         trips: remainingTrips,
@@ -574,6 +611,38 @@ function App() {
     setSelectedStopIds(new Set())
     // Clear current stop when deleting trip
     setCurrentStopId(null)
+    // Close the modal
+    setPendingDeleteTripId(null)
+  }, [pendingDeleteTripId])
+
+  const handleCancelDeleteTrip = useCallback(() => {
+    setPendingDeleteTripId(null)
+  }, [])
+
+  // Scroll detection for map visibility
+  useEffect(() => {
+    const mapPanel = document.querySelector('.panel-map')
+    if (!mapPanel) return
+
+    mapPanelRef.current = mapPanel as HTMLElement
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          setIsMapVisible(entry.isIntersecting)
+        })
+      },
+      {
+        threshold: 0.1,
+        rootMargin: '-100px 0px 0px 0px',
+      }
+    )
+
+    observer.observe(mapPanel)
+
+    return () => {
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {
@@ -905,19 +974,22 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div className="hero-intro">
-          <div className="brand">
-            <img
-              className="brand-logo"
-              src="/brand/rv-icon.svg"
-              alt="RV Trip Planner logo"
-              width={48}
-              height={48}
-              loading="lazy"
-            />
-            <div className="brand-text">
-              <p className="eyebrow">RV Trip Planner</p>
-              <h1>Route, schedule, and weather in one place.</h1>
+          <div className="hero-header">
+            <div className="brand">
+              <img
+                className="brand-logo"
+                src="/brand/rv-icon.svg"
+                alt="RV Trip Planner logo"
+                width={48}
+                height={48}
+                loading="lazy"
+              />
+              <div className="brand-text">
+                <p className="eyebrow">RV Trip Planner</p>
+                <h1>Route, schedule, and weather in one place.</h1>
+              </div>
             </div>
+            <ThemeToggle />
           </div>
           <p className="hero-subtitle">
             Add each stop with dates, and the planner will map your route and
@@ -928,7 +1000,8 @@ function App() {
               tripsState={tripsState}
               onSelectTrip={handleSelectTrip}
               onCreateTrip={handleCreateTrip}
-              onDeleteTrip={handleDeleteTrip}
+              onRequestDelete={handleRequestDeleteTrip}
+              onRenameTrip={handleRenameTrip}
             />
           </div>
           <div className="hero-tabs" role="tablist" aria-label="Quick actions">
@@ -999,6 +1072,8 @@ function App() {
                 error={driveSync.error}
                 isOnline={driveSync.isOnline}
                 hasClientId={driveSync.hasClientId}
+                gisReady={driveSync.gisReady}
+                userInfo={driveSync.userInfo}
                 onSignIn={driveSync.signIn}
                 onSignOut={driveSync.signOut}
                 onSyncNow={driveSync.syncNow}
@@ -1066,9 +1141,38 @@ function App() {
         gasPrice={startState ? gasPriceByState[startState] : undefined}
         onClose={() => setShowVehicleSettings(false)}
       />
+      <ImportTripModal
+        isOpen={Boolean(pendingImport)}
+        tripName={pendingImport?.payload.trip.name ?? 'Imported trip'}
+        stopCount={pendingImport?.payload.trip.stops.length ?? 0}
+        skippedStops={pendingImport?.skippedStops ?? 0}
+        onMerge={handleConfirmMergeImport}
+        onCreateNew={handleConfirmNewImport}
+        onCancel={handleCancelImport}
+      />
       <DriveConflictModal
         conflicts={driveSync.conflicts}
         onResolve={driveSync.resolveConflict}
+      />
+      <DeleteTripModal
+        isOpen={Boolean(pendingDeleteTripId)}
+        tripName={
+          pendingDeleteTripId
+            ? tripsState.trips.find((t) => t.id === pendingDeleteTripId)?.name ?? 'Unknown trip'
+            : ''
+        }
+        stopCount={
+          pendingDeleteTripId
+            ? tripsState.trips.find((t) => t.id === pendingDeleteTripId)?.stops.length ?? 0
+            : 0
+        }
+        onConfirm={handleConfirmDeleteTrip}
+        onCancel={handleCancelDeleteTrip}
+      />
+      <FloatingActionButtons
+        onAddStop={handleAddStop}
+        onScrollToMap={handleScrollToMap}
+        showScrollToMap={!isMapVisible}
       />
     </div>
   )

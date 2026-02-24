@@ -24,24 +24,36 @@ export const StopWeatherForecast = ({
       {error ? (
         <p className="form-error">{error}</p>
       ) : forecast ? (
-        <div className="forecast-list">
-          {forecast.days.map((day) => (
-            <div key={day.date} className="forecast-row">
-              <WeatherIcon condition={day.weatherCondition ?? 'unknown'} size="sm" />
-              <span>{formatDate(day.date)}</span>
-              <span className="temp-range">
-                {Math.round(day.min)} - {Math.round(day.max)}
-                <span className="unit"> F</span>
-              </span>
-              <span className="precip">
-                {day.precipChance === null
-                  ? 'No data'
-                  : `${day.precipChance}% precip`}
-              </span>
-              {day.isHistorical && <span className="historical-badge">avg</span>}
-            </div>
-          ))}
-        </div>
+        <>
+          {forecast.forecastUrl ? (
+            <a
+              className="source-link forecast-link"
+              href={forecast.forecastUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View NOAA forecast
+            </a>
+          ) : null}
+          <div className="forecast-list">
+            {forecast.days.map((day) => (
+              <div key={day.date} className="forecast-row">
+                <WeatherIcon condition={day.weatherCondition ?? 'unknown'} size="sm" />
+                <span>{formatDate(day.date)}</span>
+                <span className="temp-range">
+                  {Math.round(day.min)} - {Math.round(day.max)}
+                  <span className="unit"> F</span>
+                </span>
+                <span className="precip">
+                  {day.precipChance === null
+                    ? 'No data'
+                    : `${day.precipChance}% precip`}
+                </span>
+                {day.isHistorical && <span className="historical-badge">avg</span>}
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <p className="muted">Waiting for map coordinates.</p>
       )}

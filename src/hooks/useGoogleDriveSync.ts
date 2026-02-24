@@ -14,6 +14,7 @@ import {
   ensureDriveFolder,
   listDriveFiles,
   updateDriveFile,
+  DriveApiError,
   type DriveFileInfo,
 } from '../services/drive/googleDriveService'
 import {
@@ -29,21 +30,30 @@ import {
   loadDriveFileMap,
   loadDriveIgnoredTripIds,
   loadDriveQueue,
+  loadDriveTripNames,
   saveDriveChecksums,
   saveDriveFileMap,
   saveDriveIgnoredTripIds,
   saveDriveQueue,
+  saveDriveTripNames,
 } from '../services/drive/driveStorage'
 import {
   loadAccessToken,
   saveAccessToken,
   clearAccessToken,
   isTokenNearExpiry,
+  loadDriveUserInfo,
+  saveDriveUserInfo,
+  type DriveUserInfo,
 } from '../services/drive/tokenStorage'
-import { loadGoogleIdentityServices, revokeGoogleAccess } from '../services/drive/googleIdentity'
+import {
+  fetchGoogleUserInfo,
+  loadGoogleIdentityServices,
+  revokeGoogleAccess,
+} from '../services/drive/googleIdentity'
 
 const DRIVE_FOLDER_NAME = 'Trip Planner'
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email profile'
 
 export type DriveAuthStatus = 'signed-out' | 'loading' | 'signed-in' | 'error'
 export type DriveSyncStatus = 'idle' | 'syncing' | 'error'
@@ -71,6 +81,7 @@ type SyncResult = {
   conflicts: DriveConflict[]
   fileMap: Record<string, string>
   checksums: Record<string, string>
+  tripNames: Record<string, string>
 }
 
 export function useGoogleDriveSync(
@@ -83,8 +94,11 @@ export function useGoogleDriveSync(
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const [conflicts, setConflicts] = useState<DriveConflict[]>([])
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+  const [userInfo, setUserInfo] = useState<DriveUserInfo | null>(() => loadDriveUserInfo())
+  const [gisReady, setGisReady] = useState(() => Boolean(window.google?.accounts?.oauth2))
   const [fileMap, setFileMap] = useState<Record<string, string>>(() => loadDriveFileMap())
   const [checksums, setChecksums] = useState<Record<string, string>>(() => loadDriveChecksums())
+  const [tripNames, setTripNames] = useState<Record<string, string>>(() => loadDriveTripNames())
   const [queue, setQueue] = useState<Set<string>>(() => new Set(loadDriveQueue()))
   const [ignoredTripIds, setIgnoredTripIds] = useState<Set<string>>(
     () => new Set(loadDriveIgnoredTripIds())
@@ -94,6 +108,7 @@ export function useGoogleDriveSync(
   const tokenExpiresAtRef = useRef<number | null>(null)
   const folderIdRef = useRef<string | null>(null)
   const initializingRef = useRef(false)
+  const silentAuthAttemptedRef = useRef(false)
 
   const hasClientId = Boolean(GOOGLE_DRIVE_CLIENT_ID)
 
@@ -106,6 +121,9 @@ export function useGoogleDriveSync(
     if (storedToken && hasClientId) {
       accessTokenRef.current = storedToken
       setAuthStatus('signed-in')
+      setUserInfo(loadDriveUserInfo())
+    } else if (!storedToken) {
+      setUserInfo(null)
     }
   }, [hasClientId])
 
@@ -120,7 +138,43 @@ export function useGoogleDriveSync(
     }
   }, [])
 
-  const requestAccessToken = useCallback(async (silentMode = false) => {
+  useEffect(() => {
+    if (!hasClientId || gisReady) return
+
+    void loadGoogleIdentityServices()
+      .then(() => setGisReady(true))
+      .catch(() => setGisReady(false))
+  }, [gisReady, hasClientId])
+
+  const requestAccessTokenInteractive = useCallback(
+    (prompt?: 'consent' | 'select_account') => {
+      if (!GOOGLE_DRIVE_CLIENT_ID) {
+        throw new Error('Missing Google Drive client ID')
+      }
+
+      return new Promise<TokenResponse>((resolve, reject) => {
+        if (!window.google?.accounts?.oauth2) {
+          reject(new Error('Google Identity Services is not ready. Please try again.'))
+          return
+        }
+
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_DRIVE_CLIENT_ID,
+          scope: DRIVE_SCOPE,
+          callback: (response) => resolve(response as TokenResponse),
+        })
+
+        if (prompt) {
+          client.requestAccessToken({ prompt })
+        } else {
+          client.requestAccessToken({})
+        }
+      })
+    },
+    [],
+  )
+
+  const requestAccessTokenSilent = useCallback(async () => {
     await loadGoogleIdentityServices()
 
     if (!GOOGLE_DRIVE_CLIENT_ID) {
@@ -139,32 +193,62 @@ export function useGoogleDriveSync(
         callback: (response) => resolve(response as TokenResponse),
       })
 
-      // Use 'none' for silent refresh (no prompt), 'consent' for explicit sign-in
-      client.requestAccessToken({ prompt: silentMode ? 'none' : 'consent' })
+      client.requestAccessToken({ prompt: 'none' })
     })
   }, [])
 
+  const applyTokenResponse = useCallback(async (response: TokenResponse) => {
+    if (response.error) {
+      throw new Error(response.error_description ?? response.error)
+    }
+    if (!response.access_token) {
+      throw new Error('No access token returned from Google')
+    }
+
+    accessTokenRef.current = response.access_token
+    tokenExpiresAtRef.current = response.expires_in
+      ? Date.now() + response.expires_in * 1000
+      : null
+
+    saveAccessToken(response.access_token, response.expires_in)
+
+    const profile = await fetchGoogleUserInfo(response.access_token)
+    if (profile) {
+      saveDriveUserInfo(profile)
+      setUserInfo(profile)
+    }
+
+    setError(null)
+  }, [])
+
+  const withTimeout = useCallback(
+    async <T,>(promise: Promise<T>, ms: number, message: string): Promise<T> => {
+      let timeoutId: number | undefined
+      const timeout = new Promise<T>((_resolve, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(message))
+        }, ms)
+      })
+
+      try {
+        return await Promise.race([promise, timeout])
+      } finally {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      }
+    },
+    [],
+  )
+
   const refreshAccessToken = useCallback(async (silent = true) => {
     try {
-      const response = await requestAccessToken(silent)
-      if (response.error) {
-        if (silent && response.error === 'popup_closed_by_user') {
-          // Silent refresh failed because user isn't logged into Google or denied
-          throw new Error('Silent refresh failed. Please sign in again.')
-        }
-        throw new Error(response.error_description ?? response.error)
-      }
-      if (!response.access_token) {
-        throw new Error('No access token returned from Google')
-      }
-
-      accessTokenRef.current = response.access_token
-      tokenExpiresAtRef.current = response.expires_in
-        ? Date.now() + response.expires_in * 1000
-        : null
-
-      saveAccessToken(response.access_token, response.expires_in)
-      setError(null)
+      const response = await withTimeout(
+        requestAccessTokenSilent(),
+        6000,
+        'Silent refresh timed out. Please sign in again.',
+      )
+      await applyTokenResponse(response)
       return true
     } catch (refreshError) {
       console.error('Token refresh failed:', refreshError)
@@ -176,10 +260,28 @@ export function useGoogleDriveSync(
 
       // After failed refresh, clear token
       clearAccessToken()
+      setUserInfo(null)
       setAuthStatus('signed-out')
       return false
     }
-  }, [requestAccessToken])
+  }, [applyTokenResponse, requestAccessTokenSilent, withTimeout])
+
+  const withDriveAuthRetry = useCallback(
+    async <T,>(operation: () => Promise<T>): Promise<T> => {
+      try {
+        return await operation()
+      } catch (error) {
+        if (error instanceof DriveApiError && error.status === 401) {
+          const refreshed = await refreshAccessToken(true)
+          if (refreshed) {
+            return await operation()
+          }
+        }
+        throw error
+      }
+    },
+    [refreshAccessToken],
+  )
 
 
   const ensureFolder = useCallback(async () => {
@@ -191,10 +293,12 @@ export function useGoogleDriveSync(
       return folderIdRef.current
     }
 
-    const folder = await ensureDriveFolder(accessTokenRef.current, DRIVE_FOLDER_NAME)
+    const folder = await withDriveAuthRetry(() =>
+      ensureDriveFolder(accessTokenRef.current as string, DRIVE_FOLDER_NAME),
+    )
     folderIdRef.current = folder.id
     return folder.id
-  }, [])
+  }, [withDriveAuthRetry])
 
   const performUpload = useCallback(
     async (trip: Trip, existingFileId?: string) => {
@@ -209,20 +313,24 @@ export function useGoogleDriveSync(
 
       let updatedFile: DriveFileInfo
       if (existingFileId) {
-        updatedFile = await updateDriveFile(accessTokenRef.current, {
-          fileId: existingFileId,
-          name,
-          appProperties,
-          payload,
-        })
+        updatedFile = await withDriveAuthRetry(() =>
+          updateDriveFile(accessTokenRef.current as string, {
+            fileId: existingFileId,
+            name,
+            appProperties,
+            payload,
+          }),
+        )
       } else {
         const folderId = await ensureFolder()
-        updatedFile = await createDriveFile(accessTokenRef.current, {
-          folderId,
-          name,
-          appProperties,
-          payload,
-        })
+        updatedFile = await withDriveAuthRetry(() =>
+          createDriveFile(accessTokenRef.current as string, {
+            folderId,
+            name,
+            appProperties,
+            payload,
+          }),
+        )
       }
 
       return {
@@ -230,7 +338,7 @@ export function useGoogleDriveSync(
         checksum,
       }
     },
-    [ensureFolder],
+    [ensureFolder, withDriveAuthRetry],
   )
 
   const uploadTrip = useCallback(
@@ -251,8 +359,15 @@ export function useGoogleDriveSync(
       }
       setChecksums(nextChecksums)
       saveDriveChecksums(nextChecksums)
+
+      const nextTripNames = {
+        ...tripNames,
+        [trip.id]: trip.name,
+      }
+      setTripNames(nextTripNames)
+      saveDriveTripNames(nextTripNames)
     },
-    [checksums, fileMap, performUpload],
+    [checksums, fileMap, performUpload, tripNames],
   )
 
   const applyDriveTrip = useCallback(
@@ -282,8 +397,15 @@ export function useGoogleDriveSync(
       }
       setChecksums(nextChecksums)
       saveDriveChecksums(nextChecksums)
+
+      const nextTripNames = {
+        ...tripNames,
+        [incomingTrip.id]: incomingTrip.name,
+      }
+      setTripNames(nextTripNames)
+      saveDriveTripNames(nextTripNames)
     },
-    [checksums, setTripsState],
+    [checksums, setTripsState, tripNames],
   )
 
   const syncTripsWithDrive = useCallback(
@@ -293,7 +415,9 @@ export function useGoogleDriveSync(
       }
 
       const folderId = await ensureFolder()
-      const driveFiles = await listDriveFiles(accessTokenRef.current, folderId)
+      const driveFiles = await withDriveAuthRetry(() =>
+        listDriveFiles(accessTokenRef.current as string, folderId),
+      )
       const driveTrips = driveFiles
         .map(toDriveTripFile)
         .filter((file): file is DriveTripFileInfo => Boolean(file?.appProperties?.tripId))
@@ -301,7 +425,9 @@ export function useGoogleDriveSync(
       const driveTripMap = new Map(driveTrips.map((file) => [file.appProperties?.tripId, file]))
       const nextFileMap = { ...fileMap }
       const nextChecksums = { ...checksums }
+      const nextTripNames = { ...tripNames }
       const nextConflicts: DriveConflict[] = []
+      const renameUpdates: Array<{ tripId: string; newName: string; updatedAt: string }> = []
 
       for (const trip of state.trips) {
         const driveFile = driveTripMap.get(trip.id)
@@ -313,18 +439,43 @@ export function useGoogleDriveSync(
           const uploadResult = await performUpload(trip)
           nextFileMap[trip.id] = uploadResult.fileId
           nextChecksums[trip.id] = uploadResult.checksum
+          nextTripNames[trip.id] = trip.name
           continue
         }
 
         nextFileMap[trip.id] = driveFile.id
 
-        if (remoteChecksum && remoteChecksum === localChecksum) {
+        const remoteName = driveFile.appProperties?.tripName
+        const nameChanged = Boolean(remoteName && remoteName !== trip.name)
+        const stopsMatch = Boolean(remoteChecksum && remoteChecksum === localChecksum)
+
+        if (stopsMatch && !nameChanged) {
           nextChecksums[trip.id] = localChecksum
+          nextTripNames[trip.id] = trip.name
           continue
         }
 
         const remoteUpdatedValue = parseDateValue(remoteUpdatedAt ?? driveFile.modifiedTime)
         const localUpdatedValue = parseDateValue(trip.updatedAt)
+
+        if (stopsMatch && nameChanged) {
+          if (remoteUpdatedValue > localUpdatedValue && remoteName) {
+            renameUpdates.push({
+              tripId: trip.id,
+              newName: remoteName,
+              updatedAt: remoteUpdatedAt ?? driveFile.modifiedTime ?? new Date().toISOString(),
+            })
+            nextChecksums[trip.id] = localChecksum
+            nextTripNames[trip.id] = remoteName
+            continue
+          }
+
+          const uploadResult = await performUpload(trip, driveFile.id)
+          nextFileMap[trip.id] = uploadResult.fileId
+          nextChecksums[trip.id] = uploadResult.checksum
+          nextTripNames[trip.id] = trip.name
+          continue
+        }
 
         if (remoteUpdatedValue > localUpdatedValue) {
           nextConflicts.push({
@@ -355,6 +506,7 @@ export function useGoogleDriveSync(
         const uploadResult = await performUpload(trip, driveFile.id)
         nextFileMap[trip.id] = uploadResult.fileId
         nextChecksums[trip.id] = uploadResult.checksum
+        nextTripNames[trip.id] = trip.name
       }
 
       for (const file of driveTrips) {
@@ -378,14 +530,44 @@ export function useGoogleDriveSync(
 
       saveDriveFileMap(nextFileMap)
       saveDriveChecksums(nextChecksums)
+      saveDriveTripNames(nextTripNames)
+
+      if (renameUpdates.length > 0) {
+        setTripsState((prev) => {
+          const updatedTrips = prev.trips.map((trip) => {
+            const rename = renameUpdates.find((item) => item.tripId === trip.id)
+            if (!rename) return trip
+            return {
+              ...trip,
+              name: rename.newName,
+              updatedAt: rename.updatedAt,
+            }
+          })
+
+          return {
+            ...prev,
+            trips: updatedTrips,
+          }
+        })
+      }
 
       return {
         conflicts: nextConflicts,
         fileMap: nextFileMap,
         checksums: nextChecksums,
+        tripNames: nextTripNames,
       }
     },
-    [checksums, ensureFolder, fileMap, ignoredTripIds, performUpload],
+    [
+      checksums,
+      ensureFolder,
+      fileMap,
+      ignoredTripIds,
+      performUpload,
+      setTripsState,
+      tripNames,
+      withDriveAuthRetry,
+    ],
   )
 
   const resolveConflict = useCallback(
@@ -413,9 +595,11 @@ export function useGoogleDriveSync(
         }
 
         if (action === 'use-drive') {
-          const payload = await downloadDriveFile<DriveTripPayload>(
-            accessTokenRef.current,
-            conflict.fileId,
+          const payload = await withDriveAuthRetry(() =>
+            downloadDriveFile<DriveTripPayload>(
+              accessTokenRef.current as string,
+              conflict.fileId,
+            ),
           )
           applyDriveTrip(payload)
 
@@ -435,7 +619,7 @@ export function useGoogleDriveSync(
         setError(syncError instanceof Error ? syncError.message : 'Unable to resolve conflict')
       }
     },
-    [applyDriveTrip, fileMap, tripsState.trips, uploadTrip],
+    [applyDriveTrip, fileMap, tripsState.trips, uploadTrip, withDriveAuthRetry],
   )
 
   const syncAll = useCallback(
@@ -456,6 +640,7 @@ export function useGoogleDriveSync(
         const result = await syncTripsWithDrive(tripsState)
         setFileMap(result.fileMap)
         setChecksums(result.checksums)
+        setTripNames(result.tripNames)
         setConflicts(result.conflicts)
         if (result.conflicts.length === 0) {
           setLastSyncAt(new Date().toISOString())
@@ -478,30 +663,24 @@ export function useGoogleDriveSync(
     setAuthStatus('loading')
 
     try {
-      // Use explicit consent prompt for initial sign-in
-      const response = await requestAccessToken(false)
-      if (response.error) {
-        throw new Error(response.error_description ?? response.error)
-      }
-      if (!response.access_token) {
-        throw new Error('No access token returned from Google')
+      if (!gisReady || !window.google?.accounts?.oauth2) {
+        throw new Error('Google Identity Services is still loading. Please try again.')
       }
 
-      accessTokenRef.current = response.access_token
-      tokenExpiresAtRef.current = response.expires_in
-        ? Date.now() + response.expires_in * 1000
-        : null
+      let response = await requestAccessTokenInteractive('select_account')
 
-      // Persist token
-      saveAccessToken(response.access_token, response.expires_in)
+      if (response.error === 'consent_required' || response.error === 'invalid_scope') {
+        response = await requestAccessTokenInteractive('consent')
+      }
 
+      await applyTokenResponse(response)
       setAuthStatus('signed-in')
       await syncAll('initial')
     } catch (syncError) {
       setAuthStatus('error')
       setError(syncError instanceof Error ? syncError.message : 'Unable to sign in to Drive')
     }
-  }, [requestAccessToken, syncAll])
+  }, [applyTokenResponse, gisReady, requestAccessTokenInteractive, syncAll])
 
   const signOut = useCallback(async () => {
     const token = accessTokenRef.current
@@ -513,10 +692,43 @@ export function useGoogleDriveSync(
     tokenExpiresAtRef.current = null
     folderIdRef.current = null
     clearAccessToken()
+    setUserInfo(null)
     setAuthStatus('signed-out')
     setConflicts([])
     setSyncStatus('idle')
   }, [])
+
+  useEffect(() => {
+    if (!hasClientId) return
+    if (silentAuthAttemptedRef.current) return
+    if (accessTokenRef.current) return
+
+    silentAuthAttemptedRef.current = true
+    setAuthStatus('loading')
+
+    void (async () => {
+      try {
+        const response = await withTimeout(
+          requestAccessTokenSilent(),
+          6000,
+          'Silent sign-in blocked by the browser. Click Connect to sign in.',
+        )
+        if (response.error || !response.access_token) {
+          setAuthStatus('signed-out')
+          return
+        }
+
+        await applyTokenResponse(response)
+        setAuthStatus('signed-in')
+        await syncAll('initial')
+      } catch (silentError) {
+        if (silentError instanceof Error) {
+          setError(silentError.message)
+        }
+        setAuthStatus('signed-out')
+      }
+    })()
+  }, [applyTokenResponse, hasClientId, requestAccessTokenSilent, syncAll, withTimeout])
 
   const enqueueTrip = useCallback((tripId: string) => {
     setQueue((prev) => {
@@ -559,7 +771,8 @@ export function useGoogleDriveSync(
 
     const changedTrips = tripsState.trips.filter((trip) => {
       const checksum = createStopsChecksum(trip.stops)
-      return checksums[trip.id] !== checksum
+      const nameChanged = tripNames[trip.id] !== trip.name
+      return checksums[trip.id] !== checksum || nameChanged
     })
 
     if (changedTrips.length === 0) return
@@ -584,7 +797,16 @@ export function useGoogleDriveSync(
         setError(syncError instanceof Error ? syncError.message : 'Unable to sync trips')
       }
     })()
-  }, [authStatus, checksums, conflicts.length, enqueueTrip, isOnline, tripsState.trips, uploadTrip])
+  }, [
+    authStatus,
+    checksums,
+    conflicts.length,
+    enqueueTrip,
+    isOnline,
+    tripNames,
+    tripsState.trips,
+    uploadTrip,
+  ])
 
   useEffect(() => {
     if (authStatus !== 'signed-in') return
@@ -615,6 +837,8 @@ export function useGoogleDriveSync(
     conflicts,
     isOnline,
     hasClientId,
+    gisReady,
+    userInfo,
     signIn,
     signOut,
     syncNow,

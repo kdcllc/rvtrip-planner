@@ -3,6 +3,7 @@ import type { StopForecast, DailyForecast } from '../../domain/weather/types'
 import { getWeatherCondition } from '../../utils/weather'
 
 const NOAA_POINTS_BASE = 'https://api.weather.gov/points'
+const NOAA_FORECAST_PAGE_BASE = 'https://forecast.weather.gov/MapClick.php'
 const CLIMATE_API_BASE = 'https://climate-api.open-meteo.com/v1/climate'
 
 export const makeForecastCacheKey = (stop: TripStop) => {
@@ -26,6 +27,9 @@ const getGridData = async (lat: number, lng: number) => {
 
   return { url: data.properties.forecast, timezone: data.properties.timeZone }
 }
+
+const buildNoaaForecastPageUrl = (lat: number, lng: number) =>
+  `${NOAA_FORECAST_PAGE_BASE}?lat=${lat}&lon=${lng}`
 
 const getClimateNormals = async (
   lat: number,
@@ -89,13 +93,13 @@ export const fetchStopForecast = async (stop: TripStop): Promise<StopForecast> =
   }
 
   // Get the forecast URL for this location's grid point
-  const { url: forecastUrl, timezone } = await getGridData(
+  const { url: forecastApiUrl, timezone } = await getGridData(
     stop.location.lat,
     stop.location.lng,
   )
 
   // Fetch the actual forecast data from NOAA
-  const forecastResponse = await fetch(forecastUrl)
+  const forecastResponse = await fetch(forecastApiUrl)
   if (!forecastResponse.ok) {
     throw new Error('Unable to fetch NOAA weather data')
   }
@@ -209,6 +213,7 @@ export const fetchStopForecast = async (stop: TripStop): Promise<StopForecast> =
     stopId: stop.id,
     cacheKey: makeForecastCacheKey(stop),
     timezone: timezone ?? 'UTC',
+    forecastUrl: buildNoaaForecastPageUrl(stop.location.lat, stop.location.lng),
     days: allDays,
     updatedAt: new Date().toISOString(),
   }

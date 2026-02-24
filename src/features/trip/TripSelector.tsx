@@ -6,21 +6,25 @@ interface TripSelectorProps {
   tripsState: TripsState
   onSelectTrip: (tripId: string) => void
   onCreateTrip: (name: string) => void
-  onDeleteTrip: (tripId: string) => void
+  onRequestDelete: (tripId: string) => void
+  onRenameTrip: (tripId: string, newName: string) => void
 }
 
 export function TripSelector({
   tripsState,
   onSelectTrip,
   onCreateTrip,
-  onDeleteTrip,
+  onRequestDelete,
+  onRenameTrip,
 }: TripSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [newTripName, setNewTripName] = useState('')
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [editingTripId, setEditingTripId] = useState<string | null>(null)
+  const [editTripName, setEditTripName] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -28,7 +32,8 @@ export function TripSelector({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
         setIsCreatingNew(false)
-        setDeleteConfirmId(null)
+        setEditingTripId(null)
+        setEditTripName('')
       }
     }
 
@@ -45,6 +50,13 @@ export function TripSelector({
     }
   }, [isCreatingNew])
 
+  useEffect(() => {
+    if (editingTripId && editInputRef.current) {
+      editInputRef.current.focus()
+      editInputRef.current.select()
+    }
+  }, [editingTripId])
+
   const currentTrip = tripsState.trips.find((t) => t.id === tripsState.currentTripId)
   const sortedTrips = getTripsSortedByRecent(tripsState.trips)
 
@@ -56,14 +68,31 @@ export function TripSelector({
     }
   }
 
-  const handleDeleteTrip = (tripId: string, e: React.MouseEvent) => {
+  const handleStartEdit = (tripId: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (deleteConfirmId === tripId) {
-      onDeleteTrip(tripId)
-      setDeleteConfirmId(null)
-    } else {
-      setDeleteConfirmId(tripId)
+    setEditingTripId(tripId)
+    setEditTripName(name)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingTripId(null)
+    setEditTripName('')
+  }
+
+  const handleConfirmEdit = (tripId: string, originalName: string) => {
+    const trimmed = editTripName.trim()
+    if (!trimmed || trimmed === originalName) {
+      handleCancelEdit()
+      return
     }
+
+    onRenameTrip(tripId, trimmed)
+    handleCancelEdit()
+  }
+
+  const handleDeleteClick = (tripId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    onRequestDelete(tripId)
   }
 
   const handleSelectTrip = (tripId: string) => {
@@ -97,31 +126,68 @@ export function TripSelector({
                 {sortedTrips.map((trip) => (
                   <li key={trip.id} className="trip-selector-item">
                     <div className="trip-selector-item-content">
+                      {editingTripId === trip.id ? (
+                        <div className="trip-selector-editing">
+                          <input
+                            ref={editInputRef}
+                            type="text"
+                            value={editTripName}
+                            onChange={(e) => setEditTripName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleConfirmEdit(trip.id, trip.name)
+                              } else if (e.key === 'Escape') {
+                                handleCancelEdit()
+                              }
+                            }}
+                            onBlur={handleCancelEdit}
+                            aria-label="Rename trip"
+                            className="trip-selector-edit-input"
+                          />
+                          <span className="trip-selector-item-stops">
+                            ({trip.stops.length} {trip.stops.length === 1 ? 'stop' : 'stops'})
+                          </span>
+                        </div>
+                      ) : (
+                        <button
+                          className={`trip-selector-item-button ${
+                            currentTrip?.id === trip.id ? 'active' : ''
+                          }`}
+                          onClick={() => handleSelectTrip(trip.id)}
+                        >
+                          {trip.name}
+                          <span className="trip-selector-item-stops">
+                            ({trip.stops.length} {trip.stops.length === 1 ? 'stop' : 'stops'})
+                          </span>
+                        </button>
+                      )}
                       <button
-                        className={`trip-selector-item-button ${
-                          currentTrip?.id === trip.id ? 'active' : ''
-                        }`}
-                        onClick={() => handleSelectTrip(trip.id)}
+                        className="trip-selector-delete-button"
+                        onClick={(e) => handleDeleteClick(trip.id, e)}
+                        title="Delete trip"
+                        aria-label="Delete trip"
                       >
-                        {trip.name}
-                        <span className="trip-selector-item-stops">
-                          ({trip.stops.length} {trip.stops.length === 1 ? 'stop' : 'stops'})
-                        </span>
+                        ×
                       </button>
-                      <button
-                        className={`trip-selector-delete-button ${
-                          deleteConfirmId === trip.id ? 'confirm' : ''
-                        }`}
-                        onClick={(e) => handleDeleteTrip(trip.id, e)}
-                        title={deleteConfirmId === trip.id ? 'Click again to confirm' : 'Delete trip'}
-                      >
-                        {deleteConfirmId === trip.id ? '⚠ Delete?' : '×'}
-                      </button>
+                      {editingTripId !== trip.id && (
+                        <button
+                          className="trip-selector-rename-button"
+                          onClick={(e) => handleStartEdit(trip.id, trip.name, e)}
+                          title="Rename trip"
+                          aria-label="Rename trip"
+                        >
+                          Rename
+                        </button>
+                      )}
                     </div>
                   </li>
                 ))}
               </ul>
             )}
+
+            <div className="trip-selector-rename-hint">
+              Renames sync to Google Drive when connected.
+            </div>
 
             {!isCreatingNew && (
               <button
