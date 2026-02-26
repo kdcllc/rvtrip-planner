@@ -7,7 +7,13 @@ import {
   type SetStateAction,
 } from 'react'
 import type { Trip, TripsState } from '../domain/trip/types'
+import type {
+  TripConflict,
+  TripConflictDecision,
+  TripConflictSide,
+} from '../domain/trip/conflicts'
 import { GOOGLE_DRIVE_CLIENT_ID } from '../config/env'
+import { createId } from '../utils/id'
 import {
   createDriveFile,
   downloadDriveFile,
@@ -27,13 +33,17 @@ import {
 } from '../services/drive/tripDriveSync'
 import {
   loadDriveChecksums,
+  loadDriveDeviceId,
   loadDriveFileMap,
   loadDriveIgnoredTripIds,
+  loadDriveLastSyncedAtMap,
   loadDriveQueue,
   loadDriveTripNames,
   saveDriveChecksums,
+  saveDriveDeviceId,
   saveDriveFileMap,
   saveDriveIgnoredTripIds,
+  saveDriveLastSyncedAtMap,
   saveDriveQueue,
   saveDriveTripNames,
 } from '../services/drive/driveStorage'
@@ -58,18 +68,6 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email pro
 export type DriveAuthStatus = 'signed-out' | 'loading' | 'signed-in' | 'error'
 export type DriveSyncStatus = 'idle' | 'syncing' | 'error'
 
-export type DriveConflictType = 'remote-newer' | 'checksum-mismatch' | 'remote-only'
-
-export type DriveConflict = {
-  id: string
-  tripId: string
-  tripName: string
-  type: DriveConflictType
-  fileId: string
-  localUpdatedAt?: string
-  remoteUpdatedAt?: string
-}
-
 type TokenResponse = {
   access_token?: string
   expires_in?: number
@@ -78,10 +76,11 @@ type TokenResponse = {
 }
 
 type SyncResult = {
-  conflicts: DriveConflict[]
+  conflicts: TripConflict[]
   fileMap: Record<string, string>
   checksums: Record<string, string>
   tripNames: Record<string, string>
+  lastSyncedAtByTrip: Record<string, string>
 }
 
 export function useGoogleDriveSync(
@@ -92,13 +91,23 @@ export function useGoogleDriveSync(
   const [syncStatus, setSyncStatus] = useState<DriveSyncStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
-  const [conflicts, setConflicts] = useState<DriveConflict[]>([])
+  const [conflicts, setConflicts] = useState<TripConflict[]>([])
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [userInfo, setUserInfo] = useState<DriveUserInfo | null>(() => loadDriveUserInfo())
   const [gisReady, setGisReady] = useState(() => Boolean(window.google?.accounts?.oauth2))
   const [fileMap, setFileMap] = useState<Record<string, string>>(() => loadDriveFileMap())
   const [checksums, setChecksums] = useState<Record<string, string>>(() => loadDriveChecksums())
   const [tripNames, setTripNames] = useState<Record<string, string>>(() => loadDriveTripNames())
+  const [lastSyncedAtByTrip, setLastSyncedAtByTrip] = useState<Record<string, string>>(() =>
+    loadDriveLastSyncedAtMap(),
+  )
+  const [deviceId] = useState(() => {
+    const stored = loadDriveDeviceId()
+    if (stored) return stored
+    const next = createId()
+    saveDriveDeviceId(next)
+    return next
+  })
   const [queue, setQueue] = useState<Set<string>>(() => new Set(loadDriveQueue()))
   const [ignoredTripIds, setIgnoredTripIds] = useState<Set<string>>(
     () => new Set(loadDriveIgnoredTripIds())
@@ -308,7 +317,11 @@ export function useGoogleDriveSync(
 
       const checksum = createStopsChecksum(trip.stops)
       const payload = buildDriveTripPayload(trip)
-      const appProperties = buildDriveAppProperties(trip, checksum)
+      const lastSyncedAt = new Date().toISOString()
+      const appProperties = buildDriveAppProperties(trip, checksum, {
+        deviceId,
+        lastSyncedAt,
+      })
       const name = createTripFileName(trip)
 
       let updatedFile: DriveFileInfo
@@ -336,9 +349,10 @@ export function useGoogleDriveSync(
       return {
         fileId: updatedFile.id,
         checksum,
+        lastSyncedAt,
       }
     },
-    [ensureFolder, withDriveAuthRetry],
+    [deviceId, ensureFolder, withDriveAuthRetry],
   )
 
   const uploadTrip = useCallback(
@@ -366,8 +380,17 @@ export function useGoogleDriveSync(
       }
       setTripNames(nextTripNames)
       saveDriveTripNames(nextTripNames)
+
+      if (uploadResult.lastSyncedAt) {
+        const nextLastSynced = {
+          ...lastSyncedAtByTrip,
+          [trip.id]: uploadResult.lastSyncedAt,
+        }
+        setLastSyncedAtByTrip(nextLastSynced)
+        saveDriveLastSyncedAtMap(nextLastSynced)
+      }
     },
-    [checksums, fileMap, performUpload, tripNames],
+    [checksums, fileMap, lastSyncedAtByTrip, performUpload, tripNames],
   )
 
   const applyDriveTrip = useCallback(
@@ -404,8 +427,15 @@ export function useGoogleDriveSync(
       }
       setTripNames(nextTripNames)
       saveDriveTripNames(nextTripNames)
+
+      const nextLastSynced = {
+        ...lastSyncedAtByTrip,
+        [incomingTrip.id]: new Date().toISOString(),
+      }
+      setLastSyncedAtByTrip(nextLastSynced)
+      saveDriveLastSyncedAtMap(nextLastSynced)
     },
-    [checksums, setTripsState, tripNames],
+    [checksums, lastSyncedAtByTrip, setTripsState, tripNames],
   )
 
   const syncTripsWithDrive = useCallback(
@@ -426,7 +456,8 @@ export function useGoogleDriveSync(
       const nextFileMap = { ...fileMap }
       const nextChecksums = { ...checksums }
       const nextTripNames = { ...tripNames }
-      const nextConflicts: DriveConflict[] = []
+      const nextLastSyncedAtByTrip = { ...lastSyncedAtByTrip }
+      const nextConflicts: TripConflict[] = []
       const renameUpdates: Array<{ tripId: string; newName: string; updatedAt: string }> = []
 
       for (const trip of state.trips) {
@@ -436,10 +467,27 @@ export function useGoogleDriveSync(
         const remoteUpdatedAt = driveFile?.appProperties?.updatedAt
 
         if (!driveFile) {
+          const hadRemote = Boolean(fileMap[trip.id])
+          if (hadRemote) {
+            nextConflicts.push(
+              buildDriveConflict({
+                trip,
+                file: null,
+                category: 'missing-remote',
+                localChecksum,
+                lastSyncedAt: lastSyncedAtByTrip[trip.id],
+              }),
+            )
+            continue
+          }
+
           const uploadResult = await performUpload(trip)
           nextFileMap[trip.id] = uploadResult.fileId
           nextChecksums[trip.id] = uploadResult.checksum
           nextTripNames[trip.id] = trip.name
+          if (uploadResult.lastSyncedAt) {
+            nextLastSyncedAtByTrip[trip.id] = uploadResult.lastSyncedAt
+          }
           continue
         }
 
@@ -474,32 +522,35 @@ export function useGoogleDriveSync(
           nextFileMap[trip.id] = uploadResult.fileId
           nextChecksums[trip.id] = uploadResult.checksum
           nextTripNames[trip.id] = trip.name
+          if (uploadResult.lastSyncedAt) {
+            nextLastSyncedAtByTrip[trip.id] = uploadResult.lastSyncedAt
+          }
           continue
         }
 
         if (remoteUpdatedValue > localUpdatedValue) {
-          nextConflicts.push({
-            id: `${trip.id}-remote-newer`,
-            tripId: trip.id,
-            tripName: trip.name,
-            type: 'remote-newer',
-            fileId: driveFile.id,
-            localUpdatedAt: trip.updatedAt,
-            remoteUpdatedAt: remoteUpdatedAt ?? driveFile.modifiedTime,
-          })
+          nextConflicts.push(
+            buildDriveConflict({
+              trip,
+              file: driveFile,
+              category: 'remote-newer',
+              localChecksum,
+              lastSyncedAt: lastSyncedAtByTrip[trip.id],
+            }),
+          )
           continue
         }
 
         if (remoteUpdatedValue === localUpdatedValue) {
-          nextConflicts.push({
-            id: `${trip.id}-checksum-mismatch`,
-            tripId: trip.id,
-            tripName: trip.name,
-            type: 'checksum-mismatch',
-            fileId: driveFile.id,
-            localUpdatedAt: trip.updatedAt,
-            remoteUpdatedAt: remoteUpdatedAt ?? driveFile.modifiedTime,
-          })
+          nextConflicts.push(
+            buildDriveConflict({
+              trip,
+              file: driveFile,
+              category: 'checksum-mismatch',
+              localChecksum,
+              lastSyncedAt: lastSyncedAtByTrip[trip.id],
+            }),
+          )
           continue
         }
 
@@ -507,6 +558,9 @@ export function useGoogleDriveSync(
         nextFileMap[trip.id] = uploadResult.fileId
         nextChecksums[trip.id] = uploadResult.checksum
         nextTripNames[trip.id] = trip.name
+        if (uploadResult.lastSyncedAt) {
+          nextLastSyncedAtByTrip[trip.id] = uploadResult.lastSyncedAt
+        }
       }
 
       for (const file of driveTrips) {
@@ -518,19 +572,20 @@ export function useGoogleDriveSync(
           continue
         }
 
-        nextConflicts.push({
-          id: `${tripId}-remote-only`,
-          tripId,
-          tripName: file.appProperties?.tripName ?? file.name,
-          type: 'remote-only',
-          fileId: file.id,
-          remoteUpdatedAt: file.appProperties?.updatedAt ?? file.modifiedTime,
-        })
+        nextConflicts.push(
+          buildDriveConflict({
+            trip: null,
+            file,
+            category: 'missing-local',
+            localChecksum: null,
+          }),
+        )
       }
 
       saveDriveFileMap(nextFileMap)
       saveDriveChecksums(nextChecksums)
       saveDriveTripNames(nextTripNames)
+      saveDriveLastSyncedAtMap(nextLastSyncedAtByTrip)
 
       if (renameUpdates.length > 0) {
         setTripsState((prev) => {
@@ -556,6 +611,7 @@ export function useGoogleDriveSync(
         fileMap: nextFileMap,
         checksums: nextChecksums,
         tripNames: nextTripNames,
+        lastSyncedAtByTrip: nextLastSyncedAtByTrip,
       }
     },
     [
@@ -563,6 +619,7 @@ export function useGoogleDriveSync(
       ensureFolder,
       fileMap,
       ignoredTripIds,
+      lastSyncedAtByTrip,
       performUpload,
       setTripsState,
       tripNames,
@@ -570,56 +627,135 @@ export function useGoogleDriveSync(
     ],
   )
 
-  const resolveConflict = useCallback(
-    async (conflict: DriveConflict, action: 'use-local' | 'use-drive' | 'ignore') => {
+  const resolveConflictsBatch = useCallback(
+    async (decisions: TripConflictDecision[]) => {
       if (!accessTokenRef.current) return
 
       setSyncStatus('syncing')
       setError(null)
 
+      const resolvedIds = new Set<string>()
+      let failureCount = 0
+      let firstFailureMessage: string | null = null
+
       try {
-        if (action === 'ignore') {
-          setIgnoredTripIds((prev) => {
-            const next = new Set(prev)
-            next.add(conflict.tripId)
-            saveDriveIgnoredTripIds(Array.from(next))
-            return next
-          })
-        }
+        for (const decision of decisions) {
+          const conflict = conflicts.find((c) => c.id === decision.conflictId)
+          if (!conflict) continue
 
-        if (action === 'use-local') {
-          const trip = tripsState.trips.find((item) => item.id === conflict.tripId)
-          if (trip) {
-            await uploadTrip(trip)
+          const { action } = decision
+          let didResolve = false
+
+          try {
+            if (action === 'ignore') {
+              const tripId = conflict.local?.tripId ?? conflict.incoming?.tripId
+              if (tripId) {
+                setIgnoredTripIds((prev) => {
+                  const next = new Set(prev)
+                  next.add(tripId)
+                  saveDriveIgnoredTripIds(Array.from(next))
+                  return next
+                })
+              }
+              didResolve = true
+            }
+
+            if (action === 'use-local') {
+              const tripId = conflict.local?.tripId
+              if (!tripId) {
+                throw new Error('Missing local trip for upload.')
+              }
+              const trip = tripsState.trips.find((item) => item.id === tripId)
+              if (!trip) {
+                throw new Error('Local trip not found for upload.')
+              }
+              await uploadTrip(trip)
+              didResolve = true
+            }
+
+            if (action === 'use-remote' || action === 'create-new') {
+              const fileId = conflict.incoming?.fileId
+              if (!fileId) {
+                throw new Error('Missing Drive file for download.')
+              }
+              const payload = await withDriveAuthRetry(() =>
+                downloadDriveFile<DriveTripPayload>(
+                  accessTokenRef.current as string,
+                  fileId,
+                ),
+              )
+
+              if (action === 'create-new') {
+                const newTrip = {
+                  ...payload.trip,
+                  id: createId(),
+                  name: `${payload.trip.name} (${new Date().toLocaleDateString()})`,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                }
+
+                setTripsState((prev) => ({
+                  ...prev,
+                  trips: [...prev.trips, newTrip],
+                }))
+
+                await uploadTrip(newTrip)
+              } else {
+                applyDriveTrip(payload)
+
+                const tripId = conflict.local?.tripId ?? conflict.incoming?.tripId
+                if (tripId) {
+                  const nextFileMap = {
+                    ...fileMap,
+                    [tripId]: fileId,
+                  }
+                  setFileMap(nextFileMap)
+                  saveDriveFileMap(nextFileMap)
+                }
+              }
+
+              didResolve = true
+            }
+          } catch (decisionError) {
+            failureCount += 1
+            if (!firstFailureMessage) {
+              firstFailureMessage =
+                decisionError instanceof Error
+                  ? decisionError.message
+                  : 'Unable to resolve a conflict.'
+            }
+          }
+
+          if (didResolve) {
+            resolvedIds.add(decision.conflictId)
           }
         }
 
-        if (action === 'use-drive') {
-          const payload = await withDriveAuthRetry(() =>
-            downloadDriveFile<DriveTripPayload>(
-              accessTokenRef.current as string,
-              conflict.fileId,
-            ),
-          )
-          applyDriveTrip(payload)
-
-          const nextFileMap = {
-            ...fileMap,
-            [conflict.tripId]: conflict.fileId,
-          }
-          setFileMap(nextFileMap)
-          saveDriveFileMap(nextFileMap)
+        if (resolvedIds.size > 0) {
+          setConflicts((prev) => prev.filter((c) => !resolvedIds.has(c.id)))
         }
 
-        setConflicts((prev) => prev.filter((item) => item.id !== conflict.id))
+        if (failureCount > 0) {
+          setSyncStatus('error')
+          setError(firstFailureMessage ?? 'Unable to resolve conflicts')
+          return
+        }
+
         setLastSyncAt(new Date().toISOString())
         setSyncStatus('idle')
       } catch (syncError) {
         setSyncStatus('error')
-        setError(syncError instanceof Error ? syncError.message : 'Unable to resolve conflict')
+        setError(syncError instanceof Error ? syncError.message : 'Unable to resolve conflicts')
       }
     },
-    [applyDriveTrip, fileMap, tripsState.trips, uploadTrip, withDriveAuthRetry],
+    [applyDriveTrip, conflicts, fileMap, setTripsState, tripsState.trips, uploadTrip, withDriveAuthRetry],
+  )
+
+  const resolveConflict = useCallback(
+    async (conflict: TripConflict, action: TripConflictDecision['action']) => {
+      return resolveConflictsBatch([{ conflictId: conflict.id, action }])
+    },
+    [resolveConflictsBatch],
   )
 
   const syncAll = useCallback(
@@ -641,6 +777,7 @@ export function useGoogleDriveSync(
         setFileMap(result.fileMap)
         setChecksums(result.checksums)
         setTripNames(result.tripNames)
+        setLastSyncedAtByTrip(result.lastSyncedAtByTrip)
         setConflicts(result.conflicts)
         if (result.conflicts.length === 0) {
           setLastSyncAt(new Date().toISOString())
@@ -843,6 +980,58 @@ export function useGoogleDriveSync(
     signOut,
     syncNow,
     resolveConflict,
+    resolveConflictsBatch,
+  }
+}
+
+function buildDriveConflict(options: {
+  trip: Trip | null
+  file: DriveTripFileInfo | null
+  category: TripConflict['category']
+  localChecksum?: string | null
+  lastSyncedAt?: string
+}): TripConflict {
+  const { trip, file, category, localChecksum, lastSyncedAt } = options
+
+  const local: TripConflictSide | null = trip
+    ? {
+        label: 'Local',
+        tripId: trip.id,
+        name: trip.name,
+        updatedAt: trip.updatedAt,
+        stopCount: trip.stops.length,
+        checksum: localChecksum ?? undefined,
+        lastSyncedAt,
+      }
+    : null
+
+  const incoming: TripConflictSide | null = file
+    ? {
+        label: 'Drive',
+        tripId: file.appProperties?.tripId,
+        name: file.appProperties?.tripName ?? file.name,
+        updatedAt: file.appProperties?.updatedAt ?? file.modifiedTime,
+        stopCount: file.appProperties?.stopCount
+          ? parseInt(file.appProperties.stopCount, 10)
+          : undefined,
+        checksum: file.appProperties?.checksum,
+        fileId: file.id,
+        deviceId: file.appProperties?.deviceId,
+        lastSyncedAt: file.appProperties?.lastSyncedAt,
+      }
+    : null
+
+  const conflictId =
+    category === 'missing-local'
+      ? `${file?.appProperties?.tripId ?? 'unknown'}-${category}`
+      : `${trip?.id ?? 'unknown'}-${category}`
+
+  return {
+    id: conflictId,
+    source: 'drive',
+    category,
+    local,
+    incoming,
   }
 }
 

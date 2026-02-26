@@ -3,6 +3,8 @@ import { GOOGLE_MAPS_MAP_ID } from '../../config/env'
 import type { TripStop } from '../../domain/trip/types'
 import type { MapBounds } from '../../services/campsiteSearch'
 import { formatDistance, formatDuration } from '../../utils/distance'
+import { computeRoute } from '../../services/maps/routesService'
+import { useRoutesEnabled } from '../../hooks/useRoutesEnabled'
 
 type TripMapProps = {
   stops: TripStop[]
@@ -68,6 +70,7 @@ const formatStopInfoContent = (stop: TripStop): string => {
 }
 
 export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, onStopHover, onStopDoubleClick }: TripMapProps) => {
+  const [routesEnabled, setRoutesEnabled] = useRoutesEnabled()
   const mapRef = useRef<google.maps.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
@@ -75,6 +78,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
   const routeLabelsRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const hoveredStopIdRef = useRef<string | null>(null)
+  const routeCalculationInFlight = useRef(false)
   useEffect(() => {
     if (!mapsLoaded || !mapContainerRef.current || mapRef.current) {
       return
@@ -124,22 +128,11 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     hoveredStopIdRef.current = null
     onStopHover?.(null)
 
+    // Clear existing markers
     markersRef.current.forEach((marker) => {
       marker.map = null
     })
     markersRef.current = []
-
-    // Clear existing route polylines
-    routesRef.current.forEach((segment) => {
-      segment.polyline.setMap(null)
-    })
-    routesRef.current = []
-
-    // Clear route labels
-    routeLabelsRef.current.forEach((label) => {
-      label.map = null
-    })
-    routeLabelsRef.current = []
 
     validStops.forEach((stop, index) => {
       if (!stop.location) {
@@ -223,150 +216,116 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
       bounds.extend(stop.location)
     })
 
-    // Calculate routes between consecutive stops
+    // Calculate routes between consecutive stops (gated by routesEnabled)
     const calculateRoutes = async () => {
       if (validStops.length < 2) return
+      if (!routesEnabled) return
+      if (routeCalculationInFlight.current) return
 
+      // Clear existing route polylines and labels only when we're about to recalculate
+      routesRef.current.forEach((segment) => {
+        segment.polyline.setMap(null)
+      })
+      routesRef.current = []
+
+      routeLabelsRef.current.forEach((label) => {
+        label.map = null
+      })
+      routeLabelsRef.current = []
+
+      routeCalculationInFlight.current = true
       console.log('Calculating routes between', validStops.length, 'stops')
 
-      for (let i = 0; i < validStops.length - 1; i++) {
-        const origin = validStops[i].location
-        const destination = validStops[i + 1].location
+      try {
+        for (let i = 0; i < validStops.length - 1; i++) {
+          const origin = validStops[i].location
+          const destination = validStops[i + 1].location
 
-        if (!origin || !destination) {
-          continue
-        }
-
-        console.log(
-          `Calculating route ${i + 1} from ${validStops[i].label} to ${validStops[i + 1].label}`
-        )
-
-        try {
-          const requestBody = {
-            origin: {
-              location: {
-                latLng: {
-                  latitude: origin.lat,
-                  longitude: origin.lng,
-                },
-              },
-            },
-            destination: {
-              location: {
-                latLng: {
-                  latitude: destination.lat,
-                  longitude: destination.lng,
-                },
-              },
-            },
-            routeModifiers: {
-              avoidTolls: false,
-              avoidHighways: false,
-              avoidFerries: false,
-            },
-            travelMode: 'DRIVE',
-            computeAlternativeRoutes: false,
-            languageCode: 'en-US',
+          if (!origin || !destination) {
+            continue
           }
-          console.log('Sending Routes API request:', JSON.stringify(requestBody, null, 2))
-          const resp = await fetch(
-            `https://routes.googleapis.com/directions/v2:computeRoutes`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-Api-Key': apiKey,
-                'X-Goog-FieldMask':
-                  'routes.polyline.encodedPolyline,routes.legs.duration,routes.legs.distanceMeters',
-              },
-              body: JSON.stringify(requestBody),
-            }
+
+          console.log(
+            `Calculating route ${i + 1} from ${validStops[i].label} to ${validStops[i + 1].label}`
           )
 
-          if (!resp.ok) {
-            const errorText = await resp.text()
-            console.error('Routes API error:', resp.status)
-            console.error('Error response:', errorText)
-            try {
-              const errorData = JSON.parse(errorText)
-              console.error('Parsed error object:', JSON.stringify(errorData, null, 2))
-            } catch {
-              console.error('Could not parse error as JSON')
-            }
-            continue
-          }
-
-          const data = await resp.json()
-          console.log('Routes API response:', data)
-
-          if (!data.routes?.length) {
-            console.warn('No routes found in response')
-            continue
-          }
-
-          const route = data.routes[0]
-          const polylineData = route.polyline?.encodedPolyline
-          const leg = route.legs?.[0]
-
-          if (polylineData && window.google?.maps?.geometry?.encoding) {
-            // Decode polyline
-            const path = window.google.maps.geometry.encoding.decodePath(
-              polylineData
+          try {
+            // Use shared routes service with caching
+            const routeResponse = await computeRoute(
+              {
+                origin,
+                destination,
+                avoidTolls: false,
+                avoidHighways: false,
+                avoidFerries: false,
+              },
+              apiKey
             )
-            console.log('Decoded polyline path length:', path.length)
 
-            const polyline = new window.google.maps.Polyline({
-              map,
-              path,
-              strokeColor: '#f59e0b',
-              strokeOpacity: 0.8,
-              strokeWeight: 3,
-              zIndex: 1,
-            })
+            const polylineData = routeResponse.polyline
 
-            const distance = formatDistance(leg?.distanceMeters)
-            const duration = formatDuration(leg?.duration)
+            if (polylineData && window.google?.maps?.geometry?.encoding) {
+              // Decode polyline
+              const path = window.google.maps.geometry.encoding.decodePath(
+                polylineData
+              )
+              console.log('Decoded polyline path length:', path.length)
 
-            console.log(`Route ${i + 1}: ${distance} • ${duration}`)
-
-            routesRef.current.push({
-              distance,
-              duration,
-              polyline,
-            })
-
-            // Add label at midpoint
-            if (path.length > 0) {
-              const midpoint = path[Math.floor(path.length / 2)]
-              const durationText = duration === 'N/A'
-                ? '↝'
-                : duration
-                    .replace(/\s/g, '')
-                    .replace('minutes', 'm')
-                    .replace('minute', 'm')
-                    .replace('hours', 'h')
-                    .replace('hour', 'h')
-                    .replace('days', 'd')
-                    .replace('day', 'd')
-
-              const labelContent = document.createElement('div')
-              labelContent.className = 'route-label'
-              labelContent.textContent = durationText
-
-              const label = new window.google.maps.marker.AdvancedMarkerElement({
+              const polyline = new window.google.maps.Polyline({
                 map,
-                position: midpoint,
-                title: `${validStops[i].label} → ${validStops[i + 1].label}\n${distance} • ${duration}`,
-                content: labelContent,
+                path,
+                strokeColor: '#f59e0b',
+                strokeOpacity: 0.8,
+                strokeWeight: 3,
+                zIndex: 1,
               })
-              routeLabelsRef.current.push(label)
+
+              const distance = formatDistance(routeResponse.distanceMeters)
+              const duration = formatDuration(routeResponse.duration)
+
+              console.log(`Route ${i + 1}: ${distance} • ${duration}`)
+
+              routesRef.current.push({
+                distance,
+                duration,
+                polyline,
+              })
+
+              // Add label at midpoint
+              if (path.length > 0) {
+                const midpoint = path[Math.floor(path.length / 2)]
+                const durationText = duration === 'N/A'
+                  ? '↝'
+                  : duration
+                      .replace(/\s/g, '')
+                      .replace('minutes', 'm')
+                      .replace('minute', 'm')
+                      .replace('hours', 'h')
+                      .replace('hour', 'h')
+                      .replace('days', 'd')
+                      .replace('day', 'd')
+
+                const labelContent = document.createElement('div')
+                labelContent.className = 'route-label'
+                labelContent.textContent = durationText
+
+                const label = new window.google.maps.marker.AdvancedMarkerElement({
+                  map,
+                  position: midpoint,
+                  title: `${validStops[i].label} → ${validStops[i + 1].label}\n${distance} • ${duration}`,
+                  content: labelContent,
+                })
+                routeLabelsRef.current.push(label)
+              }
+            } else {
+              console.warn('No polyline data in route', i)
             }
-          } else {
-            console.warn('No polyline data in route', i)
+          } catch (err) {
+            console.error(`Error calculating route ${i + 1}:`, err)
           }
-        } catch (err) {
-          console.error(`Error calculating route ${i + 1}:`, err)
         }
+      } finally {
+        routeCalculationInFlight.current = false
       }
     }
 
@@ -375,7 +334,7 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     if (validStops.length >= 1) {
       map.fitBounds(bounds, 60)
     }
-  }, [apiKey, mapsLoaded, stops, onStopHover, onStopDoubleClick])
+  }, [apiKey, mapsLoaded, stops, onStopHover, onStopDoubleClick, routesEnabled])
 
   // Track map bounds for campsite search
   useEffect(() => {
@@ -433,6 +392,10 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     }
   }, [onStopDoubleClick])
 
+  const handleEnableRoutes = () => {
+    setRoutesEnabled(true)
+  }
+
   return (
     <div className="map-wrap">
       <div className="panel-header">
@@ -442,8 +405,30 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
         </div>
         <span className="chip">Google Maps</span>
       </div>
+      {!routesEnabled && (
+        <div style={{ padding: '16px', background: 'var(--color-surface-strong)', borderRadius: '8px', margin: '0 16px 16px' }}>
+          <p style={{ margin: '0 0 12px', fontSize: '0.9em', color: 'var(--color-text-muted)' }}>
+            Route calculation is disabled by default to reduce API costs. Click below to enable map and route visualization.
+          </p>
+          <button
+            onClick={handleEnableRoutes}
+            style={{
+              padding: '10px 20px',
+              background: 'var(--color-accent)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '0.95em',
+            }}
+          >
+            Calculate Routes
+          </button>
+        </div>
+      )}
       <div className="map-canvas" ref={mapContainerRef}>
-        {!mapsLoaded && (
+        {!mapsLoaded && routesEnabled && (
           <div className="map-overlay">
             <p>{mapsError ?? 'Loading Google Maps...'}</p>
           </div>

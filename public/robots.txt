@@ -1,0 +1,10 @@
+# Block all bots from crawling the application
+# This is a client-side trip planner with personal data
+User-agent: *
+Disallow: /
+
+# Note: Well-behaved bots will respect this file, but not all bots follow robots.txt
+# TODO: Additional protection is recommended but not yet implemented in this project, for example:
+# - Google API key restrictions (HTTP referrer allowlist, API allowlist)
+# - Azure Static Web Apps firewall rules if available
+# - Request rate limiting at the hosting/CDN level

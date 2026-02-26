@@ -25,12 +25,13 @@ import {
 } from '../services/calendar/calendarService'
 import { gasPriceService } from '../services/gas/gasPriceService'
 import { calculateTripDistances } from '../utils/distance'
-import { calculateStopCosts } from '../utils/costCalculation'
+import { calculateStopCosts, calculateTripTotalAccommodationCost } from '../utils/costCalculation'
+import { buildTripPrintStops, calculateTotalDistanceMeters } from '../utils/print'
 import { useVehicleSettingsContext } from '../hooks/useVehicleSettings'
 import type { GasPriceLookupResult } from '../domain/gas/types'
 import { useGoogleDriveSync } from '../hooks/useGoogleDriveSync'
 import { DriveSyncControls } from '../components/common/DriveSyncControls'
-import { DriveConflictModal } from '../components/common/DriveConflictModal'
+import { UnifiedConflictModal } from '../components/common/UnifiedConflictModal'
 import {
   buildDriveTripPayload,
   createTripFileName,
@@ -42,6 +43,9 @@ import { FloatingActionButtons } from '../components/common/FloatingActionButton
 import { DeleteTripModal } from '../components/common/DeleteTripModal'
 import { ThemeToggle } from '../components/common/ThemeToggle'
 import { createId } from '../utils/id'
+import { downloadTripPdf } from '../services/print/printTripPdf'
+import type { TripPrintData } from '../domain/trip/print'
+import { useRoutesEnabled } from '../hooks/useRoutesEnabled'
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -68,6 +72,8 @@ function App() {
   >({})
   const [importError, setImportError] = useState('')
   const [importStatus, setImportStatus] = useState('')
+  const [printError, setPrintError] = useState('')
+  const [printStatus, setPrintStatus] = useState('')
   const [pendingImport, setPendingImport] = useState<{
     payload: DriveTripPayload
     skippedStops: number
@@ -90,9 +96,11 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { debouncedMpg } = useVehicleSettingsContext()
   const driveSync = useGoogleDriveSync(tripsState, setTripsState)
+  const [routesEnabled] = useRoutesEnabled()
 
   const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(
     GOOGLE_MAPS_API_KEY,
+    routesEnabled
   )
 
   const currentTrip = getCurrentTrip(tripsState)
@@ -102,6 +110,10 @@ function App() {
     return currentStops.reduce((total, stop) => {
       return total + (stop.estimatedFuelCost ?? 0)
     }, 0)
+  }, [currentStops])
+
+  const tripTotalAccommodationCost = useMemo(() => {
+    return calculateTripTotalAccommodationCost(currentStops)
   }, [currentStops])
 
   // Auto-save trips state to localStorage
@@ -317,6 +329,58 @@ function App() {
       )
     }
   }, [currentTrip, selectedStopIds])
+
+  const exportTripPdf = useCallback(async () => {
+    setPrintError('')
+    setPrintStatus('')
+
+    if (!currentTrip) {
+      setPrintError('No trip to print. Create a trip first.')
+      return
+    }
+
+    const stopsToPrint =
+      selectedStopIds.size > 0
+        ? currentTrip.stops.filter((stop) => selectedStopIds.has(stop.id))
+        : currentTrip.stops
+
+    if (stopsToPrint.length === 0) {
+      setPrintError('No stops to print.')
+      return
+    }
+
+    try {
+      const printStops = buildTripPrintStops(stopsToPrint, weatherByStopId)
+      const totalDistanceMeters = calculateTotalDistanceMeters(printStops)
+      const selectionNote =
+        selectedStopIds.size > 0
+          ? `Selected ${stopsToPrint.length} of ${currentTrip.stops.length} stops`
+          : undefined
+
+      const printData: TripPrintData = {
+        tripName: currentTrip.name,
+        exportedAt: new Date().toISOString(),
+        selectionNote,
+        stops: printStops,
+        totalDistanceMeters,
+        totalFuelCost: tripTotalFuelCost,
+        totalAccommodationCost: tripTotalAccommodationCost,
+      }
+
+      const dateStamp = new Date().toISOString().slice(0, 10)
+      const filename = `trip-${currentTrip.name}-${dateStamp}.pdf`
+      await downloadTripPdf(printData, { fileName: filename })
+
+      setPrintStatus(
+        `Saved PDF for ${stopsToPrint.length} stop${stopsToPrint.length === 1 ? '' : 's'}`
+      )
+      setTimeout(() => setPrintStatus(''), 3000)
+    } catch (error) {
+      setPrintError(
+        `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }, [currentTrip, selectedStopIds, weatherByStopId, tripTotalFuelCost, tripTotalAccommodationCost])
 
   const mergeStops = useCallback(
     (existing: TripStop[], imported: TripStop[]) => {
@@ -769,7 +833,7 @@ function App() {
 
   // Calculate distances for all consecutive stop pairs
   useEffect(() => {
-    if (!currentTrip || currentStops.length < 2 || !mapsLoaded) {
+    if (!currentTrip || currentStops.length < 2 || !mapsLoaded || !routesEnabled) {
       return
     }
 
@@ -835,7 +899,7 @@ function App() {
     }
 
     void calculateDistancesAsync()
-  }, [currentTrip, currentStops, mapsLoaded])
+  }, [currentTrip, currentStops, mapsLoaded, routesEnabled])
 
   // Create a stable key for cost calculation trigger
   // Only changes when stops with distances change or MPG changes
@@ -1054,6 +1118,14 @@ function App() {
               <button
                 className="ghost"
                 type="button"
+                onClick={() => void exportTripPdf()}
+                disabled={currentStops.length === 0}
+              >
+                Print / PDF
+              </button>
+              <button
+                className="ghost"
+                type="button"
                 onClick={() => setShowVehicleSettings(true)}
               >
                 ⛽ Vehicle Settings
@@ -1062,6 +1134,10 @@ function App() {
                 <span className="import-status">{importStatus}</span>
               ) : null}
               {importError ? <span className="import-error">{importError}</span> : null}
+              {printStatus ? (
+                <span className="import-status">{printStatus}</span>
+              ) : null}
+              {printError ? <span className="import-error">{printError}</span> : null}
             </div>
           ) : (
             <div className="hero-actions hero-actions--drive">
@@ -1150,9 +1226,9 @@ function App() {
         onCreateNew={handleConfirmNewImport}
         onCancel={handleCancelImport}
       />
-      <DriveConflictModal
+      <UnifiedConflictModal
         conflicts={driveSync.conflicts}
-        onResolve={driveSync.resolveConflict}
+        onResolve={driveSync.resolveConflictsBatch}
       />
       <DeleteTripModal
         isOpen={Boolean(pendingDeleteTripId)}

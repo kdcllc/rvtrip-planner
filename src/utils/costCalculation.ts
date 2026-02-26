@@ -29,6 +29,40 @@ export const calculateTripTotalFuelCost = (stops: TripStop[]): number => {
 }
 
 /**
+ * Calculate total accommodation cost for a trip
+ */
+export const calculateTripTotalAccommodationCost = (stops: TripStop[]): number => {
+  return stops.reduce((total, stop) => {
+    const nightlyCost = stop.nightlyCost ?? 0
+    const nights = calculateNights(stop.startDate, stop.endDate)
+    return total + (nightlyCost * nights)
+  }, 0)
+}
+
+/**
+ * Calculate number of nights between dates (exclusive of end date)
+ */
+export const calculateNights = (startDate: string, endDate: string): number => {
+  try {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const msPerDay = 24 * 60 * 60 * 1000
+    return Math.round((end.getTime() - start.getTime()) / msPerDay)
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Calculate total trip cost (fuel + accommodation)
+ */
+export const calculateTripTotalCost = (stops: TripStop[], mpg?: number, gasPricePerGallon?: number): number => {
+  const fuelCost = mpg && gasPricePerGallon ? calculateTripTotalFuelCost(stops) : 0
+  const accommodationCost = calculateTripTotalAccommodationCost(stops)
+  return Math.round((fuelCost + accommodationCost) * 100) / 100
+}
+
+/**
  * Update stops with estimated fuel costs
  * Requires distances and gas price to already be available
  */

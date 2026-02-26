@@ -3,6 +3,8 @@ const DRIVE_CHECKSUMS_KEY = 'trip-planner-drive-checksums'
 const DRIVE_TRIP_NAMES_KEY = 'trip-planner-drive-trip-names'
 const DRIVE_QUEUE_KEY = 'trip-planner-drive-queue'
 const DRIVE_IGNORED_KEY = 'trip-planner-drive-ignored'
+const DRIVE_DEVICE_ID_KEY = 'trip-planner-drive-device-id'
+const DRIVE_LAST_SYNCED_KEY = 'trip-planner-drive-last-synced'
 
 export function loadDriveFileMap(): Record<string, string> {
   try {
@@ -94,6 +96,41 @@ export function loadDriveIgnoredTripIds(): string[] {
 export function saveDriveIgnoredTripIds(ids: string[]): void {
   try {
     window.localStorage.setItem(DRIVE_IGNORED_KEY, JSON.stringify(ids))
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export function loadDriveDeviceId(): string | null {
+  try {
+    return window.localStorage.getItem(DRIVE_DEVICE_ID_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function saveDriveDeviceId(value: string): void {
+  try {
+    window.localStorage.setItem(DRIVE_DEVICE_ID_KEY, value)
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export function loadDriveLastSyncedAtMap(): Record<string, string> {
+  try {
+    const stored = window.localStorage.getItem(DRIVE_LAST_SYNCED_KEY)
+    if (!stored) return {}
+    const parsed = JSON.parse(stored) as Record<string, string>
+    return parsed ?? {}
+  } catch {
+    return {}
+  }
+}
+
+export function saveDriveLastSyncedAtMap(map: Record<string, string>): void {
+  try {
+    window.localStorage.setItem(DRIVE_LAST_SYNCED_KEY, JSON.stringify(map))
   } catch {
     // Ignore storage failures
   }

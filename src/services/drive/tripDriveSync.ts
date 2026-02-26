@@ -38,6 +38,9 @@ export type DriveTripAppProperties = {
   updatedAt: string
   checksum: string
   version: string
+  stopCount: string
+  deviceId?: string
+  lastSyncedAt?: string
 }
 
 export type DriveTripFileInfo = {
@@ -73,6 +76,12 @@ export function createStopsChecksum(stops: TripStop[]): string {
     manualEntry: stop.manualEntry ?? false,
     distanceFromPreviousMeters: stop.distanceFromPreviousMeters ?? null,
     estimatedFuelCost: stop.estimatedFuelCost ?? null,
+    reservationStatus: stop.reservationStatus ?? '',
+    confirmationNumber: stop.confirmationNumber ?? '',
+    siteNumber: stop.siteNumber ?? '',
+    contactPhone: stop.contactPhone ?? '',
+    nightlyCost: stop.nightlyCost ?? null,
+    reservationNote: stop.reservationNote ?? '',
   }))
 
   return hashStringFNV1a(JSON.stringify(normalizedStops))
@@ -158,6 +167,7 @@ export function parseDriveTripPayload(
 export function buildDriveAppProperties(
   trip: Trip,
   checksum: string,
+  options?: { deviceId?: string; lastSyncedAt?: string },
 ): DriveTripAppProperties {
   return {
     tripId: trip.id,
@@ -165,6 +175,9 @@ export function buildDriveAppProperties(
     updatedAt: trip.updatedAt,
     checksum,
     version: String(DRIVE_TRIP_VERSION),
+    stopCount: String(trip.stops.length),
+    deviceId: options?.deviceId,
+    lastSyncedAt: options?.lastSyncedAt,
   }
 }
 
@@ -249,6 +262,24 @@ function sanitizeStop(
   const estimatedFuelCost =
     typeof stopData.estimatedFuelCost === 'number' ? stopData.estimatedFuelCost : undefined
 
+  // Reservation fields
+  const reservationStatus = typeof stopData.reservationStatus === 'string' 
+    ? (stopData.reservationStatus as 'reserved' | 'unreserved')
+    : undefined
+  const confirmationNumber = typeof stopData.confirmationNumber === 'string' 
+    ? stopData.confirmationNumber.trim().slice(0, 100)
+    : undefined
+  const siteNumber = typeof stopData.siteNumber === 'string'
+    ? stopData.siteNumber.trim().slice(0, 50)
+    : undefined
+  const contactPhone = typeof stopData.contactPhone === 'string'
+    ? stopData.contactPhone.trim().slice(0, 50)
+    : undefined
+  const nightlyCost = typeof stopData.nightlyCost === 'number' ? stopData.nightlyCost : undefined
+  const reservationNote = typeof stopData.reservationNote === 'string'
+    ? stopData.reservationNote.trim().slice(0, 200)
+    : undefined
+
   return {
     id: stopData.id,
     label: stopData.label,
@@ -264,6 +295,12 @@ function sanitizeStop(
     manualEntry,
     distanceFromPreviousMeters,
     estimatedFuelCost,
+    reservationStatus,
+    confirmationNumber,
+    siteNumber,
+    contactPhone,
+    nightlyCost,
+    reservationNote,
   }
 }
 

@@ -499,6 +499,12 @@ export const TripForm = ({
       sourceFees: '',
       sourceAmenities: '',
       location: null,
+      reservationStatus: '',
+      confirmationNumber: '',
+      siteNumber: '',
+      contactPhone: '',
+      nightlyCost: '',
+      reservationNote: '',
     })
     setDrawerValidationState({
       status: 'idle',
@@ -536,6 +542,12 @@ export const TripForm = ({
       sourceFees: stop.source?.fees || '',
       sourceAmenities: stop.source?.amenities || '',
       location: stop.location || null,
+      reservationStatus: stop.reservationStatus || '',
+      confirmationNumber: stop.confirmationNumber || '',
+      siteNumber: stop.siteNumber || '',
+      contactPhone: stop.contactPhone || '',
+      nightlyCost: stop.nightlyCost ? String(stop.nightlyCost) : '',
+      reservationNote: stop.reservationNote || '',
     })
     setDrawerValidationState({
       status: stop.location ? 'valid' : 'idle',
@@ -574,6 +586,12 @@ export const TripForm = ({
       sourceFees: '',
       sourceAmenities: '',
       location: null,
+      reservationStatus: '',
+      confirmationNumber: '',
+      siteNumber: '',
+      contactPhone: '',
+      nightlyCost: '',
+      reservationNote: '',
     })
     setDrawerValidationState({
       status: 'idle',
@@ -698,6 +716,12 @@ export const TripForm = ({
           : undefined,
         location: drawerFormValues.location ?? undefined,
         status: drawerFormValues.location ? 'ready' : 'idle',
+        reservationStatus: (drawerFormValues.reservationStatus as 'reserved' | 'unreserved' | '') || undefined,
+        confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
+        siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
+        contactPhone: (drawerFormValues.contactPhone || '').trim() || undefined,
+        nightlyCost: drawerFormValues.nightlyCost ? parseFloat(drawerFormValues.nightlyCost) : undefined,
+        reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onUpdateStop(drawerState.stopId, updates)
     } else {
@@ -729,6 +753,12 @@ export const TripForm = ({
           : undefined,
         status: drawerFormValues.location ? 'ready' : 'idle',
         location: drawerFormValues.location ?? undefined,
+        reservationStatus: (drawerFormValues.reservationStatus as 'reserved' | 'unreserved' | '') || undefined,
+        confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
+        siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
+        contactPhone: (drawerFormValues.contactPhone || '').trim() || undefined,
+        nightlyCost: drawerFormValues.nightlyCost ? parseFloat(drawerFormValues.nightlyCost) : undefined,
+        reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onAddStop(newStop)
     }

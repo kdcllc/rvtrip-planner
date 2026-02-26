@@ -16,6 +16,8 @@ export type TripStopSource = {
   amenities?: string
 }
 
+export type ReservationStatus = 'reserved' | 'unreserved'
+
 export type TripStop = {
   id: string
   label: string
@@ -34,6 +36,13 @@ export type TripStop = {
   manualEntry?: boolean
   distanceFromPreviousMeters?: number
   estimatedFuelCost?: number
+  // Reservation fields
+  reservationStatus?: ReservationStatus
+  confirmationNumber?: string
+  siteNumber?: string
+  contactPhone?: string
+  nightlyCost?: number
+  reservationNote?: string
 }
 
 export type Trip = {

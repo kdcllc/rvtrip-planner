@@ -49,7 +49,7 @@ declare global {
 
 window.initGoogleMaps = initGoogleMapsCallback
 
-export const useGoogleMaps = (apiKey: string): MapsStatus => {
+export const useGoogleMaps = (apiKey: string, enabled: boolean = true): MapsStatus => {
   const [loaded, setLoaded] = useState(globalMapsLoaded)
   const [error, setError] = useState(globalMapsError)
 
@@ -71,6 +71,12 @@ export const useGoogleMaps = (apiKey: string): MapsStatus => {
       globalMapsError = 'Missing Google Maps API key'
       globalMapsLoaded = false
       notifyListeners()
+      return
+    }
+
+    // Gate script injection behind enabled flag to prevent bots from loading Maps
+    if (!enabled) {
+      console.log('Google Maps loading gated (routesEnabled=false)')
       return
     }
 
@@ -109,7 +115,7 @@ export const useGoogleMaps = (apiKey: string): MapsStatus => {
     }
 
     document.head.appendChild(script)
-  }, [apiKey])
+  }, [apiKey, enabled])
 
   return { loaded, error }
 }

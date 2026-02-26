@@ -1,0 +1,140 @@
+.trip-print {
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  color: #1f2937;
+  background: #ffffff;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.trip-print-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid rgba(184, 101, 40, 0.2);
+  padding-bottom: 16px;
+}
+
+.trip-print-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.7rem;
+  color: #9a4f1d;
+  margin-bottom: 8px;
+}
+
+.trip-print-title {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.trip-print-selection {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.trip-print-meta {
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-align: right;
+  display: grid;
+  gap: 4px;
+}
+
+.trip-print-map img {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(184, 101, 40, 0.2);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+}
+
+.trip-print-map-placeholder {
+  border-radius: 16px;
+  border: 1px dashed rgba(184, 101, 40, 0.35);
+  padding: 48px 24px;
+  text-align: center;
+  color: #6b7280;
+  background: #fff7ed;
+}
+
+.trip-print-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  background: #fff7ed;
+  border-radius: 16px;
+  padding: 16px 20px;
+  border: 1px solid rgba(184, 101, 40, 0.2);
+}
+
+.summary-label {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.trip-print-stops h2 {
+  margin-bottom: 12px;
+}
+
+.print-stop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.print-stop {
+  border: 1px solid rgba(184, 101, 40, 0.2);
+  border-radius: 18px;
+  padding: 16px 20px;
+  background: #fffdf9;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-stop-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.print-stop-header h3 {
+  margin: 0;
+}
+
+.print-stop-index {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #9a4f1d;
+  background: rgba(245, 158, 11, 0.2);
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.print-stop-details {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.dates,
+.times {
+  color: #6b7280;
+  font-size: 0.85rem;
+}

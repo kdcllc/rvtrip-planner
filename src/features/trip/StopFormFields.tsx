@@ -123,6 +123,13 @@ export type StopFormValues = {
   sourceFees: string
   sourceAmenities: string
   location: { lat: number; lng: number } | null
+  // Reservation fields
+  reservationStatus: string
+  confirmationNumber: string
+  siteNumber: string
+  contactPhone: string
+  nightlyCost: string
+  reservationNote: string
 }
 
 export type StopFormValidationState = {
@@ -460,6 +467,87 @@ export const StopFormFields = ({
                 : 'Data not available'}
             </p>
           </div>
+        </label>
+      </div>
+
+      <div className="reservation-section">
+        <div className="reservation-header">
+          <p className="source-title">Reservation Details (optional)</p>
+        </div>
+        <label>
+          Reservation status
+          <select
+            value={values.reservationStatus || ''}
+            onChange={(event) =>
+              onFieldChange('reservationStatus', event.target.value)
+            }
+          >
+            <option value="">Unreserved</option>
+            <option value="reserved">Reserved</option>
+            <option value="unreserved">Unreserved</option>
+          </select>
+        </label>
+        <label>
+          Confirmation number
+          <input
+            type="text"
+            value={values.confirmationNumber || ''}
+            onChange={(event) =>
+              onFieldChange('confirmationNumber', event.target.value)
+            }
+            placeholder="e.g., RES-12345"
+          />
+        </label>
+        <label>
+          Site number
+          <input
+            type="text"
+            value={values.siteNumber || ''}
+            onChange={(event) => onFieldChange('siteNumber', event.target.value)}
+            placeholder="e.g., A-42"
+          />
+        </label>
+        <label>
+          Contact phone
+          <input
+            type="tel"
+            value={values.contactPhone || ''}
+            onChange={(event) =>
+              onFieldChange('contactPhone', event.target.value)
+            }
+            placeholder="e.g., (555) 123-4567"
+          />
+        </label>
+        <label>
+          Nightly cost
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={values.nightlyCost || ''}
+            onChange={(event) => onFieldChange('nightlyCost', event.target.value)}
+            placeholder="e.g., 35.00"
+          />
+        </label>
+        <label>
+          <span className="label-row">
+            Reservation note (optional)
+            <span className="note-count">
+              {(values.reservationNote || '').length}/200
+            </span>
+          </span>
+          <textarea
+            value={values.reservationNote || ''}
+            onChange={(event) =>
+              onFieldChange(
+                'reservationNote',
+                event.target.value.slice(0, 200),
+              )
+            }
+            maxLength={200}
+            rows={2}
+            placeholder="Add any reservation-specific details or special instructions."
+          />
         </label>
       </div>
 

@@ -1,4 +1,5 @@
 import type { TripStop } from '../domain/trip/types'
+import { computeRoute } from '../services/maps/routesService'
 
 /**
  * Format distance in meters to a human-readable string
@@ -47,71 +48,28 @@ export type DistanceResult = {
 
 /**
  * Calculate distance and duration between two locations using Google Maps Routes API
- * Reuses the existing pattern from TripMap.tsx
+ * Uses the shared routes service with caching
  */
 export const fetchDistanceBetweenStops = async (
   origin: { lat: number; lng: number },
   destination: { lat: number; lng: number },
   apiKey: string
 ): Promise<DistanceResult> => {
-  const requestBody = {
-    origin: {
-      location: {
-        latLng: {
-          latitude: origin.lat,
-          longitude: origin.lng,
-        },
-      },
-    },
-    destination: {
-      location: {
-        latLng: {
-          latitude: destination.lat,
-          longitude: destination.lng,
-        },
-      },
-    },
-    routeModifiers: {
-      avoidTolls: false,
-      avoidHighways: false,
-      avoidFerries: false,
-    },
-    travelMode: 'DRIVE',
-    computeAlternativeRoutes: false,
-    languageCode: 'en-US',
-  }
-
   try {
-    const response = await fetch(
-      'https://routes.googleapis.com/directions/v2:computeRoutes',
+    const routeResponse = await computeRoute(
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask':
-            'routes.polyline.encodedPolyline,routes.legs.duration,routes.legs.distanceMeters',
-        },
-        body: JSON.stringify(requestBody),
-      }
+        origin,
+        destination,
+        avoidTolls: false,
+        avoidHighways: false,
+        avoidFerries: false,
+      },
+      apiKey
     )
 
-    if (!response.ok) {
-      throw new Error(`Routes API returned ${response.status}`)
-    }
-
-    const data = await response.json()
-
-    if (!data.routes?.length) {
-      throw new Error('No routes returned from API')
-    }
-
-    const route = data.routes[0]
-    const leg = route.legs?.[0]
-
     return {
-      distanceMeters: leg?.distanceMeters ?? 0,
-      duration: leg?.duration ?? '0s',
+      distanceMeters: routeResponse.distanceMeters,
+      duration: routeResponse.duration,
     }
   } catch (error) {
     console.error('Error fetching distance:', error)
