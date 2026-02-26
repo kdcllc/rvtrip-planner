@@ -6,11 +6,12 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import type { Trip, TripsState } from '../domain/trip/types'
+import type { Trip, TripsState, TripStop } from '../domain/trip/types'
 import type {
   TripConflict,
   TripConflictDecision,
   TripConflictSide,
+  TripStopMergeDecision,
 } from '../domain/trip/conflicts'
 import { GOOGLE_DRIVE_CLIENT_ID } from '../config/env'
 import { createId } from '../utils/id'
@@ -355,11 +356,8 @@ export function useGoogleDriveSync(
     [deviceId, ensureFolder, withDriveAuthRetry],
   )
 
-  const uploadTrip = useCallback(
-    async (trip: Trip) => {
-      const existingFileId = fileMap[trip.id]
-      const uploadResult = await performUpload(trip, existingFileId)
-
+  const applyUploadResult = useCallback(
+    (trip: Trip, uploadResult: { fileId: string; checksum: string; lastSyncedAt?: string }) => {
       const nextFileMap = {
         ...fileMap,
         [trip.id]: uploadResult.fileId,
@@ -390,7 +388,54 @@ export function useGoogleDriveSync(
         saveDriveLastSyncedAtMap(nextLastSynced)
       }
     },
-    [checksums, fileMap, lastSyncedAtByTrip, performUpload, tripNames],
+    [checksums, fileMap, lastSyncedAtByTrip, tripNames],
+  )
+
+  const buildMergedStops = useCallback(
+    (localStops: TripStop[], remoteStops: TripStop[], decisions: TripStopMergeDecision[]) => {
+      const localById = new Map(localStops.map((stop) => [stop.id, stop]))
+      const remoteById = new Map(remoteStops.map((stop) => [stop.id, stop]))
+      const merged: TripStop[] = []
+
+      for (const decision of decisions) {
+        if (decision.choice === 'skip') {
+          continue
+        }
+
+        if (decision.choice === 'local') {
+          if (!decision.localStopId) {
+            throw new Error('Missing local stop for merge selection.')
+          }
+          const stop = localById.get(decision.localStopId)
+          if (!stop) {
+            throw new Error('Local stop not found for merge selection.')
+          }
+          merged.push(stop)
+          continue
+        }
+
+        if (!decision.remoteStopId) {
+          throw new Error('Missing Drive stop for merge selection.')
+        }
+        const stop = remoteById.get(decision.remoteStopId)
+        if (!stop) {
+          throw new Error('Drive stop not found for merge selection.')
+        }
+        merged.push(stop)
+      }
+
+      return merged
+    },
+    [],
+  )
+
+  const uploadTrip = useCallback(
+    async (trip: Trip) => {
+      const existingFileId = fileMap[trip.id]
+      const uploadResult = await performUpload(trip, existingFileId)
+      applyUploadResult(trip, uploadResult)
+    },
+    [applyUploadResult, fileMap, performUpload],
   )
 
   const applyDriveTrip = useCallback(
@@ -459,6 +504,20 @@ export function useGoogleDriveSync(
       const nextLastSyncedAtByTrip = { ...lastSyncedAtByTrip }
       const nextConflicts: TripConflict[] = []
       const renameUpdates: Array<{ tripId: string; newName: string; updatedAt: string }> = []
+      const remoteStopsCache = new Map<string, TripStop[]>()
+
+      const loadRemoteStops = async (fileId: string): Promise<TripStop[]> => {
+        if (remoteStopsCache.has(fileId)) {
+          return remoteStopsCache.get(fileId) as TripStop[]
+        }
+
+        const payload = await withDriveAuthRetry(() =>
+          downloadDriveFile<DriveTripPayload>(accessTokenRef.current as string, fileId),
+        )
+        const stops = payload?.trip?.stops ?? []
+        remoteStopsCache.set(fileId, stops)
+        return stops
+      }
 
       for (const trip of state.trips) {
         const driveFile = driveTripMap.get(trip.id)
@@ -529,6 +588,7 @@ export function useGoogleDriveSync(
         }
 
         if (remoteUpdatedValue > localUpdatedValue) {
+          const remoteStops = await loadRemoteStops(driveFile.id)
           nextConflicts.push(
             buildDriveConflict({
               trip,
@@ -536,12 +596,15 @@ export function useGoogleDriveSync(
               category: 'remote-newer',
               localChecksum,
               lastSyncedAt: lastSyncedAtByTrip[trip.id],
+              localStops: trip.stops,
+              incomingStops: remoteStops,
             }),
           )
           continue
         }
 
         if (remoteUpdatedValue === localUpdatedValue) {
+          const remoteStops = await loadRemoteStops(driveFile.id)
           nextConflicts.push(
             buildDriveConflict({
               trip,
@@ -549,18 +612,25 @@ export function useGoogleDriveSync(
               category: 'checksum-mismatch',
               localChecksum,
               lastSyncedAt: lastSyncedAtByTrip[trip.id],
+              localStops: trip.stops,
+              incomingStops: remoteStops,
             }),
           )
           continue
         }
 
-        const uploadResult = await performUpload(trip, driveFile.id)
-        nextFileMap[trip.id] = uploadResult.fileId
-        nextChecksums[trip.id] = uploadResult.checksum
-        nextTripNames[trip.id] = trip.name
-        if (uploadResult.lastSyncedAt) {
-          nextLastSyncedAtByTrip[trip.id] = uploadResult.lastSyncedAt
-        }
+        const remoteStops = await loadRemoteStops(driveFile.id)
+        nextConflicts.push(
+          buildDriveConflict({
+            trip,
+            file: driveFile,
+            category: 'local-newer',
+            localChecksum,
+            lastSyncedAt: lastSyncedAtByTrip[trip.id],
+            localStops: trip.stops,
+            incomingStops: remoteStops,
+          }),
+        )
       }
 
       for (const file of driveTrips) {
@@ -572,14 +642,11 @@ export function useGoogleDriveSync(
           continue
         }
 
-        nextConflicts.push(
-          buildDriveConflict({
-            trip: null,
-            file,
-            category: 'missing-local',
-            localChecksum: null,
-          }),
+        const payload = await withDriveAuthRetry(() =>
+          downloadDriveFile<DriveTripPayload>(accessTokenRef.current as string, file.id),
         )
+        applyDriveTrip(payload)
+        nextFileMap[tripId] = file.id
       }
 
       saveDriveFileMap(nextFileMap)
@@ -669,7 +736,56 @@ export function useGoogleDriveSync(
               if (!trip) {
                 throw new Error('Local trip not found for upload.')
               }
-              await uploadTrip(trip)
+              if (conflict.category === 'missing-remote') {
+                const uploadResult = await performUpload(trip)
+                applyUploadResult(trip, uploadResult)
+              } else {
+                await uploadTrip(trip)
+              }
+              didResolve = true
+            }
+
+            if (action === 'merge') {
+              const tripId = conflict.local?.tripId
+              if (!tripId) {
+                throw new Error('Missing local trip for merge.')
+              }
+              const trip = tripsState.trips.find((item) => item.id === tripId)
+              if (!trip) {
+                throw new Error('Local trip not found for merge.')
+              }
+              const remoteStops = conflict.incoming?.stops
+              if (!remoteStops) {
+                throw new Error('Missing Drive stops for merge.')
+              }
+              const stopMergeDecisions = decision.stopMergeDecisions
+              if (!stopMergeDecisions || stopMergeDecisions.length === 0) {
+                throw new Error('Missing merge selections.')
+              }
+
+              const mergedStops = buildMergedStops(trip.stops, remoteStops, stopMergeDecisions)
+              const mergedTrip: Trip = {
+                ...trip,
+                stops: mergedStops,
+                updatedAt: new Date().toISOString(),
+              }
+
+              setTripsState((prev) => {
+                const index = prev.trips.findIndex((item) => item.id === tripId)
+                if (index === -1) return prev
+                const nextTrips = [...prev.trips]
+                nextTrips[index] = mergedTrip
+                return {
+                  ...prev,
+                  trips: nextTrips,
+                }
+              })
+
+              const uploadResult = await performUpload(
+                mergedTrip,
+                conflict.incoming?.fileId ?? undefined,
+              )
+              applyUploadResult(mergedTrip, uploadResult)
               didResolve = true
             }
 
@@ -748,7 +864,18 @@ export function useGoogleDriveSync(
         setError(syncError instanceof Error ? syncError.message : 'Unable to resolve conflicts')
       }
     },
-    [applyDriveTrip, conflicts, fileMap, setTripsState, tripsState.trips, uploadTrip, withDriveAuthRetry],
+    [
+      applyDriveTrip,
+      applyUploadResult,
+      buildMergedStops,
+      conflicts,
+      fileMap,
+      performUpload,
+      setTripsState,
+      tripsState.trips,
+      uploadTrip,
+      withDriveAuthRetry,
+    ],
   )
 
   const resolveConflict = useCallback(
@@ -990,8 +1117,10 @@ function buildDriveConflict(options: {
   category: TripConflict['category']
   localChecksum?: string | null
   lastSyncedAt?: string
+  localStops?: TripStop[]
+  incomingStops?: TripStop[]
 }): TripConflict {
-  const { trip, file, category, localChecksum, lastSyncedAt } = options
+  const { trip, file, category, localChecksum, lastSyncedAt, localStops, incomingStops } = options
 
   const local: TripConflictSide | null = trip
     ? {
@@ -1000,6 +1129,7 @@ function buildDriveConflict(options: {
         name: trip.name,
         updatedAt: trip.updatedAt,
         stopCount: trip.stops.length,
+        stops: localStops,
         checksum: localChecksum ?? undefined,
         lastSyncedAt,
       }
@@ -1014,6 +1144,7 @@ function buildDriveConflict(options: {
         stopCount: file.appProperties?.stopCount
           ? parseInt(file.appProperties.stopCount, 10)
           : undefined,
+        stops: incomingStops,
         checksum: file.appProperties?.checksum,
         fileId: file.id,
         deviceId: file.appProperties?.deviceId,

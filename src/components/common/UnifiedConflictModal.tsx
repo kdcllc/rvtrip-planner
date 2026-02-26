@@ -5,7 +5,10 @@ import type {
   TripConflictDecision,
   TripConflictAction,
   TripConflictCategory,
+  TripStopMergeChoice,
+  TripStopMergeDecision,
 } from '../../domain/trip/conflicts'
+import type { TripStop } from '../../domain/trip/types'
 
 interface UnifiedConflictModalProps {
   conflicts: TripConflict[]
@@ -20,6 +23,22 @@ export function UnifiedConflictModal({
 }: UnifiedConflictModalProps) {
   const [selections, setSelections] = useState<Record<string, TripConflictAction>>({})
   const [categoryFilter, setCategoryFilter] = useState<TripConflictCategory | 'all'>('all')
+  const [mergeSelections, setMergeSelections] = useState<
+    Record<string, Record<string, TripStopMergeChoice>>
+  >({})
+  const bulkUseLocalLabel =
+    categoryFilter === 'missing-remote' ? 'Upload to Drive' : 'Use Local'
+
+  const mergePairsByConflict = useMemo(() => {
+    const next: Record<string, StopPair[]> = {}
+    conflicts.forEach((conflict) => {
+      if (!isMergeableConflict(conflict)) return
+      const localStops = conflict.local?.stops ?? []
+      const remoteStops = conflict.incoming?.stops ?? []
+      next[conflict.id] = buildStopPairs(localStops, remoteStops)
+    })
+    return next
+  }, [conflicts])
 
   const filteredConflicts = useMemo(() => {
     if (categoryFilter === 'all') return conflicts
@@ -52,22 +71,68 @@ export function UnifiedConflictModal({
     setSelections((prev) => ({ ...prev, ...nextSelections }))
   }
 
+  const handleMergeSelection = (
+    conflictId: string,
+    pairId: string,
+    choice: TripStopMergeChoice,
+  ) => {
+    setMergeSelections((prev) => ({
+      ...prev,
+      [conflictId]: {
+        ...prev[conflictId],
+        [pairId]: choice,
+      },
+    }))
+  }
+
+  const isMergeSelectionComplete = (conflictId: string) => {
+    if (selections[conflictId] !== 'merge') return true
+    const pairs = mergePairsByConflict[conflictId] ?? []
+    if (pairs.length === 0) return true
+    const choices = mergeSelections[conflictId] ?? {}
+    return pairs.every((pair) => Boolean(choices[pair.id]))
+  }
+
   const handleApply = () => {
     const decisions: TripConflictDecision[] = conflicts
       .filter((conflict) => selections[conflict.id])
-      .map((conflict) => ({
-        conflictId: conflict.id,
-        action: selections[conflict.id],
-      }))
+      .map((conflict) => {
+        const action = selections[conflict.id]
+        const decision: TripConflictDecision = {
+          conflictId: conflict.id,
+          action,
+        }
+
+        if (action === 'merge') {
+          const pairs = mergePairsByConflict[conflict.id] ?? []
+          const selectionsForConflict = mergeSelections[conflict.id] ?? {}
+          const stopMergeDecisions: TripStopMergeDecision[] = pairs
+            .filter((pair) => selectionsForConflict[pair.id])
+            .map((pair) => ({
+              localStopId: pair.local?.id,
+              remoteStopId: pair.remote?.id,
+              choice: selectionsForConflict[pair.id],
+            }))
+
+          decision.stopMergeDecisions = stopMergeDecisions
+        }
+
+        return decision
+      })
 
     if (decisions.length > 0) {
       onResolve(decisions)
     }
   }
 
-  const allSelected = conflicts.every((c) => Boolean(selections[c.id]))
+  const allSelected = conflicts.every(
+    (conflict) => Boolean(selections[conflict.id]) && isMergeSelectionComplete(conflict.id),
+  )
   const selectedCount = conflicts.filter((c) => Boolean(selections[c.id])).length
   const hasSelections = selectedCount > 0
+  const hasIncompleteMerge = conflicts.some(
+    (conflict) => selections[conflict.id] === 'merge' && !isMergeSelectionComplete(conflict.id),
+  )
 
   if (conflicts.length === 0) return null
 
@@ -144,6 +209,7 @@ export function UnifiedConflictModal({
           <span>
             Apply requires all conflicts to be resolved
             {categoryFilter === 'all' ? '.' : '; filters only affect bulk actions.'}
+            {hasIncompleteMerge ? ' Merge selections are still incomplete.' : ''}
           </span>
         </div>
 
@@ -154,7 +220,7 @@ export function UnifiedConflictModal({
             className="ghost ghost--small"
             onClick={() => handleSelectAll('use-local')}
           >
-            Use Local
+            {bulkUseLocalLabel}
           </button>
           <button
             type="button"
@@ -178,6 +244,9 @@ export function UnifiedConflictModal({
               key={conflict.id}
               conflict={conflict}
               selected={selections[conflict.id]}
+              mergePairs={mergePairsByConflict[conflict.id]}
+              mergeSelections={mergeSelections[conflict.id]}
+              onMergeSelect={handleMergeSelection}
               onSelect={handleSelection}
             />
           ))}
@@ -206,13 +275,30 @@ export function UnifiedConflictModal({
 interface ConflictCardProps {
   conflict: TripConflict
   selected?: TripConflictAction
+  mergePairs?: StopPair[]
+  mergeSelections?: Record<string, TripStopMergeChoice>
+  onMergeSelect: (conflictId: string, pairId: string, choice: TripStopMergeChoice) => void
   onSelect: (conflictId: string, action: TripConflictAction) => void
 }
 
-function ConflictCard({ conflict, selected, onSelect }: ConflictCardProps) {
+function ConflictCard({
+  conflict,
+  selected,
+  mergePairs,
+  mergeSelections,
+  onMergeSelect,
+  onSelect,
+}: ConflictCardProps) {
   const categoryLabel = getCategoryLabel(conflict.category)
   const hasLocal = Boolean(conflict.local)
   const hasIncoming = Boolean(conflict.incoming)
+  const canMerge = Boolean(
+    hasLocal &&
+      hasIncoming &&
+      mergePairs &&
+      mergePairs.length > 0 &&
+      isMergeableCategory(conflict.category),
+  )
 
   return (
     <div className="conflict-card">
@@ -282,7 +368,7 @@ function ConflictCard({ conflict, selected, onSelect }: ConflictCardProps) {
               checked={selected === 'use-local'}
               onChange={() => onSelect(conflict.id, 'use-local')}
             />
-            <span>Use Local</span>
+            <span>{getUseLocalLabel(conflict.category)}</span>
           </label>
         )}
         {hasIncoming && (
@@ -305,6 +391,17 @@ function ConflictCard({ conflict, selected, onSelect }: ConflictCardProps) {
               />
               <span>Create Copy</span>
             </label>
+            {canMerge && (
+              <label className="conflict-action-radio">
+                <input
+                  type="radio"
+                  name={`conflict-${conflict.id}`}
+                  checked={selected === 'merge'}
+                  onChange={() => onSelect(conflict.id, 'merge')}
+                />
+                <span>Merge per stop</span>
+              </label>
+            )}
           </>
         )}
         <label className="conflict-action-radio">
@@ -317,8 +414,193 @@ function ConflictCard({ conflict, selected, onSelect }: ConflictCardProps) {
           <span>Ignore</span>
         </label>
       </div>
+
+      {selected === 'merge' && canMerge && mergePairs ? (
+        <div className="merge-panel">
+          <div className="merge-panel-header">
+            Choose which version of each stop to keep.
+          </div>
+          <div className="merge-panel-list">
+            {mergePairs.map((pair) => (
+              <div key={pair.id} className="merge-row">
+                <div className="merge-stop">
+                  <div className="merge-stop-label">Local</div>
+                  {pair.local ? (
+                    <>
+                      <div className="merge-stop-title">{pair.local.label}</div>
+                      <div className="merge-stop-meta">{pair.local.address}</div>
+                      <div className="merge-stop-meta">
+                        {formatStopDateRange(pair.local)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="merge-stop-empty">Not in Local</div>
+                  )}
+                </div>
+
+                <div className="merge-stop">
+                  <div className="merge-stop-label">Drive</div>
+                  {pair.remote ? (
+                    <>
+                      <div className="merge-stop-title">{pair.remote.label}</div>
+                      <div className="merge-stop-meta">{pair.remote.address}</div>
+                      <div className="merge-stop-meta">
+                        {formatStopDateRange(pair.remote)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="merge-stop-empty">Not in Drive</div>
+                  )}
+                </div>
+
+                <div className="merge-choice">
+                  <span className="merge-choice-label">Keep</span>
+                  <div className="merge-choice-group">
+                    {pair.local && (
+                      <label>
+                        <input
+                          type="radio"
+                          name={`merge-${conflict.id}-${pair.id}`}
+                          checked={mergeSelections?.[pair.id] === 'local'}
+                          onChange={() => onMergeSelect(conflict.id, pair.id, 'local')}
+                        />
+                        Local
+                      </label>
+                    )}
+                    {pair.remote && (
+                      <label>
+                        <input
+                          type="radio"
+                          name={`merge-${conflict.id}-${pair.id}`}
+                          checked={mergeSelections?.[pair.id] === 'remote'}
+                          onChange={() => onMergeSelect(conflict.id, pair.id, 'remote')}
+                        />
+                        Drive
+                      </label>
+                    )}
+                    <label>
+                      <input
+                        type="radio"
+                        name={`merge-${conflict.id}-${pair.id}`}
+                        checked={mergeSelections?.[pair.id] === 'skip'}
+                        onChange={() => onMergeSelect(conflict.id, pair.id, 'skip')}
+                      />
+                      Skip
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
+}
+
+type StopPair = {
+  id: string
+  local?: TripStop
+  remote?: TripStop
+  matchType: 'id' | 'fuzzy' | 'unmatched'
+}
+
+const MERGEABLE_CATEGORIES: TripConflictCategory[] = [
+  'remote-newer',
+  'local-newer',
+  'checksum-mismatch',
+]
+
+function isMergeableCategory(category: TripConflictCategory): boolean {
+  return MERGEABLE_CATEGORIES.includes(category)
+}
+
+function isMergeableConflict(conflict: TripConflict): boolean {
+  return (
+    isMergeableCategory(conflict.category) &&
+    Boolean(conflict.local?.stops) &&
+    Boolean(conflict.incoming?.stops)
+  )
+}
+
+function buildStopPairs(localStops: TripStop[], remoteStops: TripStop[]): StopPair[] {
+  const pairs: StopPair[] = []
+  const remoteById = new Map(remoteStops.map((stop) => [stop.id, stop]))
+  const usedRemoteIds = new Set<string>()
+
+  localStops.forEach((local) => {
+    const remote = remoteById.get(local.id)
+    if (!remote) return
+    usedRemoteIds.add(remote.id)
+    pairs.push({
+      id: `id-${local.id}`,
+      local,
+      remote,
+      matchType: 'id',
+    })
+  })
+
+  const remainingLocals = localStops.filter((stop) => !remoteById.has(stop.id))
+  const remainingRemotes = remoteStops.filter((stop) => !usedRemoteIds.has(stop.id))
+  const remoteByKey = new Map<string, TripStop[]>()
+
+  remainingRemotes.forEach((remote) => {
+    const key = createStopKey(remote)
+    const existing = remoteByKey.get(key) ?? []
+    existing.push(remote)
+    remoteByKey.set(key, existing)
+  })
+
+  remainingLocals.forEach((local) => {
+    const key = createStopKey(local)
+    const matches = remoteByKey.get(key)
+    if (matches && matches.length > 0) {
+      const remote = matches.shift() as TripStop
+      usedRemoteIds.add(remote.id)
+      pairs.push({
+        id: `fuzzy-${local.id}-${remote.id}`,
+        local,
+        remote,
+        matchType: 'fuzzy',
+      })
+      return
+    }
+
+    pairs.push({
+      id: `local-${local.id}`,
+      local,
+      matchType: 'unmatched',
+    })
+  })
+
+  remainingRemotes.forEach((remote) => {
+    if (usedRemoteIds.has(remote.id)) return
+    pairs.push({
+      id: `remote-${remote.id}`,
+      remote,
+      matchType: 'unmatched',
+    })
+  })
+
+  return pairs
+}
+
+function createStopKey(stop: TripStop): string {
+  return [
+    normalizeKey(stop.label),
+    normalizeKey(stop.address),
+    stop.startDate,
+    stop.endDate,
+  ].join('|')
+}
+
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function formatStopDateRange(stop: TripStop): string {
+  if (stop.startDate === stop.endDate) return stop.startDate
+  return `${stop.startDate} - ${stop.endDate}`
 }
 
 function getCategoryLabel(category: TripConflictCategory): string {
@@ -336,6 +618,14 @@ function getCategoryLabel(category: TripConflictCategory): string {
     default:
       return 'Unknown'
   }
+}
+
+function getUseLocalLabel(category: TripConflictCategory): string {
+  if (category === 'missing-remote') {
+    return 'Upload to Drive'
+  }
+
+  return 'Use Local'
 }
 
 function formatTimestamp(value?: string): string {

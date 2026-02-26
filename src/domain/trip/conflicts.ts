@@ -1,3 +1,5 @@
+import type { TripStop } from './types'
+
 export type TripConflictSource = 'drive' | 'import'
 
 export type TripConflictCategory =
@@ -14,12 +16,21 @@ export type TripConflictAction =
   | 'create-new'
   | 'ignore'
 
+export type TripStopMergeChoice = 'local' | 'remote' | 'skip'
+
+export type TripStopMergeDecision = {
+  localStopId?: string
+  remoteStopId?: string
+  choice: TripStopMergeChoice
+}
+
 export type TripConflictSide = {
   label: string
   tripId?: string
   name?: string
   updatedAt?: string
   stopCount?: number
+  stops?: TripStop[]
   checksum?: string
   fileId?: string
   deviceId?: string
@@ -37,4 +48,5 @@ export type TripConflict = {
 export type TripConflictDecision = {
   conflictId: string
   action: TripConflictAction
+  stopMergeDecisions?: TripStopMergeDecision[]
 }

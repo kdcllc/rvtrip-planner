@@ -143,6 +143,13 @@ export async function updateDriveFile(
   })
 }
 
+export async function deleteDriveFile(accessToken: string, fileId: string): Promise<void> {
+  const url = `${DRIVE_API_BASE}/files/${fileId}`
+  await driveFetch(url, accessToken, {
+    method: 'DELETE',
+  })
+}
+
 async function driveFetch(
   url: string,
   accessToken: string,

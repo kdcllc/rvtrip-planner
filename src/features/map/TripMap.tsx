@@ -220,9 +220,15 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     const calculateRoutes = async () => {
       if (validStops.length < 2) return
       if (!routesEnabled) return
-      if (routeCalculationInFlight.current) return
+      if (routeCalculationInFlight.current) {
+        console.log('Route calculation already in progress, skipping')
+        return
+      }
 
-      // Clear existing route polylines and labels only when we're about to recalculate
+      routeCalculationInFlight.current = true
+      console.log('Calculating routes between', validStops.length, 'stops')
+
+      // Clear existing route polylines and labels before recalculating
       routesRef.current.forEach((segment) => {
         segment.polyline.setMap(null)
       })
@@ -232,9 +238,6 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
         label.map = null
       })
       routeLabelsRef.current = []
-
-      routeCalculationInFlight.current = true
-      console.log('Calculating routes between', validStops.length, 'stops')
 
       try {
         for (let i = 0; i < validStops.length - 1; i++) {
@@ -333,6 +336,11 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     
     if (validStops.length >= 1) {
       map.fitBounds(bounds, 60)
+    }
+
+    // Cleanup: reset in-flight guard when effect re-runs or unmounts
+    return () => {
+      routeCalculationInFlight.current = false
     }
   }, [apiKey, mapsLoaded, stops, onStopHover, onStopDoubleClick, routesEnabled])
 

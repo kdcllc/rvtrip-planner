@@ -246,6 +246,93 @@
   font-weight: 600;
 }
 
+.merge-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.merge-panel-header {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.merge-panel-list {
+  display: grid;
+  gap: 12px;
+}
+
+.merge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(140px, auto);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-strong);
+}
+
+.merge-stop {
+  display: grid;
+  gap: 4px;
+}
+
+.merge-stop-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+}
+
+.merge-stop-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.merge-stop-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.merge-stop-empty {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.merge-choice {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.merge-choice-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+}
+
+.merge-choice-group {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.merge-choice-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .unified-conflict-actions {
   display: flex;
   gap: 12px;
@@ -322,5 +409,9 @@
   .filter-chip {
     font-size: 0.8rem;
     padding: 5px 10px;
+  }
+
+  .merge-row {
+    grid-template-columns: 1fr;
   }
 }
