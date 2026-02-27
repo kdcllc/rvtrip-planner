@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { GOOGLE_MAPS_MAP_ID } from '../../config/env'
+import { useEffect, useRef, useState } from 'react'
+import maplibregl, { type StyleSpecification } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import polyline from '@mapbox/polyline'
 import type { TripStop } from '../../domain/trip/types'
 import type { MapBounds } from '../../services/campsiteSearch'
 import { formatDistance, formatDuration } from '../../utils/distance'
@@ -8,26 +10,39 @@ import { useRoutesEnabled } from '../../hooks/useRoutesEnabled'
 
 type TripMapProps = {
   stops: TripStop[]
-  mapsLoaded: boolean
-  mapsError: string | null
-  apiKey: string
   onBoundsChange?: (bounds: MapBounds) => void
   onStopHover?: (stopId: string | null) => void
   onStopDoubleClick?: (stopId: string) => void
 }
 
-type RouteSegment = {
-  distance: string
-  duration: string
-  polyline: google.maps.Polyline
+const DEFAULT_CENTER: [number, number] = [-115.1398, 36.1699]
+
+const OSM_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    'osm-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution:
+        '© OpenStreetMap contributors, Tiles courtesy of OpenStreetMap and HOT',
+    },
+  },
+  layers: [
+    {
+      id: 'osm-tiles',
+      type: 'raster',
+      source: 'osm-tiles',
+    },
+  ],
 }
 
-const DEFAULT_CENTER: google.maps.LatLngLiteral = { lat: 36.1699, lng: -115.1398 }
-
-// Format stop information for InfoWindow display
 const formatStopInfoContent = (stop: TripStop): string => {
   const dateRange = `${new Date(stop.startDate).toLocaleDateString()} – ${new Date(stop.endDate).toLocaleDateString()}`
-  
+
   let timeRange = ''
   if (stop.checkInTime || stop.checkOutTime) {
     const checkIn = stop.checkInTime ? `Check-in: ${stop.checkInTime}` : ''
@@ -35,11 +50,11 @@ const formatStopInfoContent = (stop: TripStop): string => {
     timeRange = [checkIn, checkOut].filter(Boolean).join(' • ')
   }
 
-  const distance = stop.distanceFromPreviousMeters 
-    ? `${(stop.distanceFromPreviousMeters / 1609.34).toFixed(1)} mi` 
+  const distance = stop.distanceFromPreviousMeters
+    ? `${(stop.distanceFromPreviousMeters / 1609.34).toFixed(1)} mi`
     : ''
-  const fuelCost = stop.estimatedFuelCost 
-    ? `$${stop.estimatedFuelCost.toFixed(2)}` 
+  const fuelCost = stop.estimatedFuelCost
+    ? `$${stop.estimatedFuelCost.toFixed(2)}`
     : ''
   const travelInfo = [distance, fuelCost].filter(Boolean).join(' • ')
 
@@ -69,154 +84,145 @@ const formatStopInfoContent = (stop: TripStop): string => {
   `
 }
 
-export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, onStopHover, onStopDoubleClick }: TripMapProps) => {
+export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick }: TripMapProps) => {
   const [routesEnabled, setRoutesEnabled] = useRoutesEnabled()
-  const mapRef = useRef<google.maps.Map | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
-  const routesRef = useRef<RouteSegment[]>([])
-  const routeLabelsRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
-  const hoveredStopIdRef = useRef<string | null>(null)
+  const markersRef = useRef<maplibregl.Marker[]>([])
+  const routeLabelsRef = useRef<maplibregl.Marker[]>([])
+  const routeLayerIdsRef = useRef<string[]>([])
+  const routeSourceIdsRef = useRef<string[]>([])
+  const popupRef = useRef<maplibregl.Popup | null>(null)
   const routeCalculationInFlight = useRef(false)
-  useEffect(() => {
-    if (!mapsLoaded || !mapContainerRef.current || mapRef.current) {
-      return
-    }
+  const [mapReady, setMapReady] = useState(false)
+  const [mapError, setMapError] = useState<string | null>(null)
 
-    if (!window.google?.maps?.Map) {
-      console.error('Google Maps API not available')
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) {
       return
     }
 
     try {
-      const mapOptions: google.maps.MapOptions = {
+      const map = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style: OSM_STYLE,
         center: DEFAULT_CENTER,
         zoom: 5,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-      }
+      })
 
-      if (GOOGLE_MAPS_MAP_ID && GOOGLE_MAPS_MAP_ID.trim()) {
-        mapOptions.mapId = GOOGLE_MAPS_MAP_ID
-      } else {
-        console.warn('GOOGLE_MAPS_MAP_ID is missing; AdvancedMarkerElement may not render as expected.')
-      }
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
 
-      console.log('Creating map with options:', mapOptions)
-      mapRef.current = new window.google.maps.Map(mapContainerRef.current, mapOptions)
-      console.log('Map created successfully')
+      map.on('load', () => {
+        setMapReady(true)
+      })
+
+      map.on('error', () => {
+        setMapError('Map failed to load.')
+      })
+
+      mapRef.current = map
     } catch (error) {
-      console.error('Error creating map:', error)
+      console.error('Error creating MapLibre map:', error)
+      setMapError('Map failed to initialize.')
     }
-  }, [mapsLoaded])
+
+    return () => {
+      mapRef.current?.remove()
+      mapRef.current = null
+      setMapReady(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (!mapsLoaded || !mapRef.current) {
+    if (!mapReady || !mapRef.current) {
       return
     }
 
     const map = mapRef.current
     const validStops = stops.filter((stop) => stop.location)
-    const bounds = new window.google.maps.LatLngBounds()
 
-    // Clean up InfoWindow and references when stops change
-    if (infoWindowRef.current) {
-      infoWindowRef.current.close()
+    if (popupRef.current) {
+      popupRef.current.remove()
     }
-    hoveredStopIdRef.current = null
     onStopHover?.(null)
 
-    // Clear existing markers
-    markersRef.current.forEach((marker) => {
-      marker.map = null
-    })
+    markersRef.current.forEach((marker) => marker.remove())
     markersRef.current = []
+
+    routeLabelsRef.current.forEach((label) => label.remove())
+    routeLabelsRef.current = []
+
+    routeLayerIdsRef.current.forEach((layerId) => {
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId)
+      }
+    })
+    routeLayerIdsRef.current = []
+
+    routeSourceIdsRef.current.forEach((sourceId) => {
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId)
+      }
+    })
+    routeSourceIdsRef.current = []
+
+    const bounds = new maplibregl.LngLatBounds()
 
     validStops.forEach((stop, index) => {
       if (!stop.location) {
         return
       }
 
-      if (!window.google?.maps?.marker?.AdvancedMarkerElement) {
-        console.warn('AdvancedMarkerElement not available; check Maps JS API version and mapId.')
-        return
+      const pin = document.createElement('div')
+      pin.className = 'map-pin'
+      pin.textContent = `${index + 1}`
+      pin.setAttribute('data-stop-id', stop.id)
+
+      const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
+        .setLngLat([stop.location.lng, stop.location.lat])
+        .addTo(map)
+
+      const showPopup = () => {
+        const popup =
+          popupRef.current ??
+          new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
+
+        popupRef.current = popup
+        popup.setLngLat([stop.location!.lng, stop.location!.lat])
+        popup.setHTML(formatStopInfoContent(stop))
+        popup.addTo(map)
       }
 
-      const marker = new window.google.maps.marker.AdvancedMarkerElement({
-        map,
-        position: stop.location,
-        title: stop.source?.name ? `${stop.label} • ${stop.source.name}` : stop.label,
-        content: (() => {
-          const pin = document.createElement('div')
-          pin.className = 'map-pin'
-          pin.textContent = `${index + 1}`
-          pin.setAttribute('data-stop-id', stop.id)
-          return pin
-        })(),
-      })
+      const hidePopup = () => {
+        popupRef.current?.remove()
+      }
 
-      // Add event listeners for hover and double-click
-      marker.addListener('mouseover', () => {
-        hoveredStopIdRef.current = stop.id
+      pin.addEventListener('mouseenter', () => {
         onStopHover?.(stop.id)
-
-        // Create or update InfoWindow
-        if (!infoWindowRef.current) {
-          infoWindowRef.current = new window.google.maps.InfoWindow()
-        }
-
-        const infoWindow = infoWindowRef.current
-        infoWindow.setContent(formatStopInfoContent(stop))
-        infoWindow.open(map, marker)
-
-        // Visual feedback on marker
-        const pinElement = marker.content as HTMLElement
-        if (pinElement) {
-          pinElement.style.transform = 'scale(1.2)'
-          pinElement.style.zIndex = '999'
-        }
+        showPopup()
       })
 
-      marker.addListener('mouseout', () => {
-        hoveredStopIdRef.current = null
+      pin.addEventListener('mouseleave', () => {
         onStopHover?.(null)
-
-        // Hide InfoWindow
-        if (infoWindowRef.current) {
-          infoWindowRef.current.close()
-        }
-
-        // Reset marker visual
-        const pinElement = marker.content as HTMLElement
-        if (pinElement) {
-          pinElement.style.transform = 'scale(1)'
-          pinElement.style.zIndex = ''
-        }
+        hidePopup()
       })
 
-      marker.addListener('click', () => {
-        // Show InfoWindow on click for accessibility
-        if (!infoWindowRef.current) {
-          infoWindowRef.current = new window.google.maps.InfoWindow()
-        }
-
-        const infoWindow = infoWindowRef.current
-        infoWindow.setContent(formatStopInfoContent(stop))
-        infoWindow.open(map, marker)
+      pin.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        showPopup()
       })
 
-      marker.addListener('dblclick', () => {
+      pin.addEventListener('dblclick', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
         onStopDoubleClick?.(stop.id)
       })
 
       markersRef.current.push(marker)
-
-      bounds.extend(stop.location)
+      bounds.extend([stop.location.lng, stop.location.lat])
     })
 
-    // Calculate routes between consecutive stops (gated by routesEnabled)
     const calculateRoutes = async () => {
       if (validStops.length < 2) return
       if (!routesEnabled) return
@@ -227,17 +233,6 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
 
       routeCalculationInFlight.current = true
       console.log('Calculating routes between', validStops.length, 'stops')
-
-      // Clear existing route polylines and labels before recalculating
-      routesRef.current.forEach((segment) => {
-        segment.polyline.setMap(null)
-      })
-      routesRef.current = []
-
-      routeLabelsRef.current.forEach((label) => {
-        label.map = null
-      })
-      routeLabelsRef.current = []
 
       try {
         for (let i = 0; i < validStops.length - 1; i++) {
@@ -253,76 +248,86 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
           )
 
           try {
-            // Use shared routes service with caching
-            const routeResponse = await computeRoute(
-              {
-                origin,
-                destination,
-                avoidTolls: false,
-                avoidHighways: false,
-                avoidFerries: false,
-              },
-              apiKey
-            )
+            const routeResponse = await computeRoute({
+              origin,
+              destination,
+              avoidTolls: false,
+              avoidHighways: false,
+              avoidFerries: false,
+            })
 
             const polylineData = routeResponse.polyline
-
-            if (polylineData && window.google?.maps?.geometry?.encoding) {
-              // Decode polyline
-              const path = window.google.maps.geometry.encoding.decodePath(
-                polylineData
-              )
-              console.log('Decoded polyline path length:', path.length)
-
-              const polyline = new window.google.maps.Polyline({
-                map,
-                path,
-                strokeColor: '#f59e0b',
-                strokeOpacity: 0.8,
-                strokeWeight: 3,
-                zIndex: 1,
-              })
-
-              const distance = formatDistance(routeResponse.distanceMeters)
-              const duration = formatDuration(routeResponse.duration)
-
-              console.log(`Route ${i + 1}: ${distance} • ${duration}`)
-
-              routesRef.current.push({
-                distance,
-                duration,
-                polyline,
-              })
-
-              // Add label at midpoint
-              if (path.length > 0) {
-                const midpoint = path[Math.floor(path.length / 2)]
-                const durationText = duration === 'N/A'
-                  ? '↝'
-                  : duration
-                      .replace(/\s/g, '')
-                      .replace('minutes', 'm')
-                      .replace('minute', 'm')
-                      .replace('hours', 'h')
-                      .replace('hour', 'h')
-                      .replace('days', 'd')
-                      .replace('day', 'd')
-
-                const labelContent = document.createElement('div')
-                labelContent.className = 'route-label'
-                labelContent.textContent = durationText
-
-                const label = new window.google.maps.marker.AdvancedMarkerElement({
-                  map,
-                  position: midpoint,
-                  title: `${validStops[i].label} → ${validStops[i + 1].label}\n${distance} • ${duration}`,
-                  content: labelContent,
-                })
-                routeLabelsRef.current.push(label)
-              }
-            } else {
+            if (!polylineData) {
               console.warn('No polyline data in route', i)
+              continue
             }
+
+            const decoded = polyline.decode(polylineData)
+            const coordinates = decoded.map(([lat, lng]: [number, number]) => [lng, lat])
+
+            if (coordinates.length === 0) {
+              console.warn('Empty polyline for route', i)
+              continue
+            }
+
+            const sourceId = `route-source-${i}`
+            const layerId = `route-line-${i}`
+
+            map.addSource(sourceId, {
+              type: 'geojson',
+              data: {
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates,
+                },
+                properties: {},
+              },
+            })
+
+            map.addLayer({
+              id: layerId,
+              type: 'line',
+              source: sourceId,
+              layout: {
+                'line-join': 'round',
+                'line-cap': 'round',
+              },
+              paint: {
+                'line-color': '#f59e0b',
+                'line-width': 3,
+                'line-opacity': 0.8,
+              },
+            })
+
+            routeSourceIdsRef.current.push(sourceId)
+            routeLayerIdsRef.current.push(layerId)
+
+            const distance = formatDistance(routeResponse.distanceMeters)
+            const duration = formatDuration(routeResponse.duration)
+
+            const midpoint = coordinates[Math.floor(coordinates.length / 2)]
+            const durationText =
+              duration === 'N/A'
+                ? '↝'
+                : duration
+                    .replace(/\s/g, '')
+                    .replace('minutes', 'm')
+                    .replace('minute', 'm')
+                    .replace('hours', 'h')
+                    .replace('hour', 'h')
+                    .replace('days', 'd')
+                    .replace('day', 'd')
+
+            const labelContent = document.createElement('div')
+            labelContent.className = 'route-label'
+            labelContent.textContent = durationText
+            labelContent.title = `${validStops[i].label} → ${validStops[i + 1].label}\n${distance} • ${duration}`
+
+            const label = new maplibregl.Marker({ element: labelContent, anchor: 'center' })
+              .setLngLat(midpoint as [number, number])
+              .addTo(map)
+            routeLabelsRef.current.push(label)
           } catch (err) {
             console.error(`Error calculating route ${i + 1}:`, err)
           }
@@ -333,62 +338,55 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
     }
 
     void calculateRoutes()
-    
-    if (validStops.length >= 1) {
-      map.fitBounds(bounds, 60)
+
+    if (validStops.length === 1) {
+      const stop = validStops[0]
+      if (stop.location) {
+        map.setCenter([stop.location.lng, stop.location.lat])
+        map.setZoom(8)
+      }
+    } else if (validStops.length > 1) {
+      map.fitBounds(bounds, { padding: 60, duration: 0 })
     }
 
-    // Cleanup: reset in-flight guard when effect re-runs or unmounts
     return () => {
       routeCalculationInFlight.current = false
     }
-  }, [apiKey, mapsLoaded, stops, onStopHover, onStopDoubleClick, routesEnabled])
+  }, [mapReady, stops, onStopHover, onStopDoubleClick, routesEnabled])
 
-  // Track map bounds for campsite search
   useEffect(() => {
-    if (!mapsLoaded || !mapRef.current || !onBoundsChange) {
+    if (!mapReady || !mapRef.current || !onBoundsChange) {
       return
     }
 
     const map = mapRef.current
     const emitBounds = () => {
       const bounds = map.getBounds()
-      if (!bounds) {
-        return
-      }
-
       const ne = bounds.getNorthEast()
       const sw = bounds.getSouthWest()
-      
+
       onBoundsChange({
-        neLat: ne.lat(),
-        neLng: ne.lng(),
-        swLat: sw.lat(),
-        swLng: sw.lng(),
+        neLat: ne.lat,
+        neLng: ne.lng,
+        swLat: sw.lat,
+        swLng: sw.lng,
       })
     }
 
-    // Emit initial bounds when map bounds change
-    window.google?.maps?.event?.addListenerOnce(map, 'bounds_changed', emitBounds)
-
-    // Emit bounds on idle (after user stops panning/zooming)
-    const idleListener = window.google?.maps?.event?.addListener(map, 'idle', emitBounds)
+    emitBounds()
+    map.on('moveend', emitBounds)
 
     return () => {
-      if (idleListener) {
-        window.google?.maps?.event?.removeListener(idleListener)
-      }
+      map.off('moveend', emitBounds)
     }
-  }, [mapsLoaded, onBoundsChange])
+  }, [mapReady, onBoundsChange])
 
-  // Handle clicks on InfoWindow titles to navigate to timeline
   useEffect(() => {
     const handleInfoWindowClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement
       if (target && target.hasAttribute('data-stop-nav-id')) {
         const stopId = target.getAttribute('data-stop-nav-id')
         if (stopId) {
-          // Trigger double-click callback to navigate
           onStopDoubleClick?.(stopId)
         }
       }
@@ -411,12 +409,12 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
           <h2>Route map</h2>
           <p>Stop markers and the overall route.</p>
         </div>
-        <span className="chip">Google Maps</span>
+        <span className="chip">MapLibre + OSM</span>
       </div>
       {!routesEnabled && (
         <div style={{ padding: '16px', background: 'var(--color-surface-strong)', borderRadius: '8px', margin: '0 16px 16px' }}>
           <p style={{ margin: '0 0 12px', fontSize: '0.9em', color: 'var(--color-text-muted)' }}>
-            Route calculation is disabled by default to reduce API costs. Click below to enable map and route visualization.
+            Route calculation is disabled by default to reduce API costs. Click below to enable route visualization.
           </p>
           <button
             onClick={handleEnableRoutes}
@@ -436,9 +434,9 @@ export const TripMap = ({ stops, mapsLoaded, mapsError, apiKey, onBoundsChange, 
         </div>
       )}
       <div className="map-canvas" ref={mapContainerRef}>
-        {!mapsLoaded && routesEnabled && (
+        {!mapReady && (
           <div className="map-overlay">
-            <p>{mapsError ?? 'Loading Google Maps...'}</p>
+            <p>{mapError ?? 'Loading map...'}</p>
           </div>
         )}
       </div>

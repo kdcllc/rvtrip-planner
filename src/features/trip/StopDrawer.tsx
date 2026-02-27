@@ -15,7 +15,6 @@ type StopDrawerProps = {
   isOpen: boolean
   stop: TripStop | null
   mode: 'add' | 'edit'
-  mapsLoaded: boolean
   predictions: SuggestionItem[]
   validationState: StopFormValidationState
   error: string
@@ -32,7 +31,6 @@ export const StopDrawer = ({
   isOpen,
   stop,
   mode,
-  mapsLoaded,
   predictions,
   validationState,
   error,
@@ -122,7 +120,6 @@ export const StopDrawer = ({
             isEditing={mode === 'edit'}
             values={formValues}
             predictions={predictions}
-            mapsLoaded={mapsLoaded}
             mapBounds={mapBounds}
             onFieldChange={onFieldChange}
             onSelectPrediction={onSelectPrediction}

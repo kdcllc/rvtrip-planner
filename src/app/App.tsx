@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import './App.css'
-import { GOOGLE_MAPS_API_KEY } from '../config/env'
+import { OPENROUTE_API_KEY } from '../config/env'
 import { TripMap } from '../features/map/TripMap'
-import { useGoogleMaps } from '../features/map/hooks/useGoogleMaps'
 import { TripForm, type TripFormRef } from '../features/trip/TripForm'
 import type { TripStop, TripStopSourceName, TripsState } from '../domain/trip/types'
 import { TripSelector } from '../features/trip/TripSelector'
@@ -38,6 +37,7 @@ import {
   type DriveTripPayload,
   parseDriveTripPayload,
 } from '../services/drive/tripDriveSync'
+import { geocodeAddress } from '../services/geocoding/geocodingService'
 import { ImportTripModal } from '../components/common/ImportTripModal'
 import { FloatingActionButtons } from '../components/common/FloatingActionButtons'
 import { DeleteTripModal } from '../components/common/DeleteTripModal'
@@ -46,6 +46,8 @@ import { createId } from '../utils/id'
 import { downloadTripPdf } from '../services/print/printTripPdf'
 import type { TripPrintData } from '../domain/trip/print'
 import { useRoutesEnabled } from '../hooks/useRoutesEnabled'
+import { createOpenSourceRoutingProvider } from '../services/maps/openSourceRouting'
+import { setRoutingProvider } from '../services/maps/routesService'
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -99,10 +101,12 @@ function App() {
   const driveSync = useGoogleDriveSync(tripsState, setTripsState)
   const [routesEnabled] = useRoutesEnabled()
 
-  const { loaded: mapsLoaded, error: mapsError } = useGoogleMaps(
-    GOOGLE_MAPS_API_KEY,
-    routesEnabled
-  )
+  useEffect(() => {
+    const provider = createOpenSourceRoutingProvider({
+      openRouteServiceApiKey: OPENROUTE_API_KEY || undefined,
+    })
+    setRoutingProvider(provider)
+  }, [])
 
   const currentTrip = getCurrentTrip(tripsState)
   const currentStops = useMemo(() => currentTrip?.stops ?? [], [currentTrip])
@@ -712,7 +716,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!mapsLoaded || geocodingInFlight.current) {
+    if (geocodingInFlight.current) {
       return
     }
 
@@ -732,13 +736,12 @@ function App() {
       for (const stop of pendingStops) {
         updateStop(stop.id, { status: 'geocoding' })
         try {
-          const geocoder = new google.maps.Geocoder()
-          const result = await geocoder.geocode({ address: stop.address })
+          const result = await geocodeAddress(stop.address)
           if (cancelled) {
             return
           }
 
-          if (!result.results[0]) {
+          if (!result?.location) {
             // For manual entries, don't show error status
             // They're allowed to have no coordinates
             updateStop(stop.id, { 
@@ -747,12 +750,12 @@ function App() {
             continue
           }
 
-          const location = result.results[0].geometry.location
           updateStop(stop.id, {
-            location: { lat: location.lat(), lng: location.lng() },
+            location: result.location,
             status: 'ready',
           })
-        } catch {
+        } catch (error) {
+          console.error('Geocoding error:', error)
           if (!cancelled) {
             // For manual entries, don't show error status
             updateStop(stop.id, { 
@@ -772,7 +775,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [mapsLoaded, currentStops, updateStop])
+  }, [currentStops, updateStop])
 
   const forecastCandidates = useMemo(() => {
     return currentStops
@@ -835,7 +838,7 @@ function App() {
 
   // Calculate distances for all consecutive stop pairs
   useEffect(() => {
-    if (!currentTrip || currentStops.length < 2 || !mapsLoaded || !routesEnabled) {
+    if (!currentTrip || currentStops.length < 2 || !routesEnabled) {
       return
     }
 
@@ -869,10 +872,7 @@ function App() {
 
     const calculateDistancesAsync = async () => {
       try {
-        const updatedStops = await calculateTripDistances(
-          currentStops,
-          GOOGLE_MAPS_API_KEY
-        )
+        const updatedStops = await calculateTripDistances(currentStops)
         
         // Update trip with new distance data
         setTripsState((prev) => {
@@ -901,7 +901,7 @@ function App() {
     }
 
     void calculateDistancesAsync()
-  }, [currentTrip, currentStops, mapsLoaded, routesEnabled])
+  }, [currentTrip, currentStops, routesEnabled])
 
   // Create a stable key for cost calculation trigger
   // Only changes when stops with distances change or MPG changes
@@ -1166,7 +1166,7 @@ function App() {
           </div>
           <div className="hero-card-row">
             <span>Maps</span>
-            <strong>{mapsLoaded ? 'Ready' : mapsError ? 'Needs key' : 'Loading'}</strong>
+            <strong>OpenStreetMap</strong>
           </div>
           <div className="hero-card-row">
             <span>Weather</span>
@@ -1196,7 +1196,6 @@ function App() {
             onRemoveStop={removeStop}
             onUpdateStop={updateStop}
             onReorderStop={reorderStops}
-            mapsLoaded={mapsLoaded}
             weatherByStopId={weatherByStopId}
             weatherErrors={weatherErrors}
             selectedStopIds={selectedStopIds}
@@ -1211,9 +1210,6 @@ function App() {
         <section className="panel panel-map">
           <TripMap
             stops={currentStops}
-            mapsLoaded={mapsLoaded}
-            mapsError={mapsError}
-            apiKey={GOOGLE_MAPS_API_KEY}
             onBoundsChange={setMapBounds}
             onStopHover={handleStopHover}
             onStopDoubleClick={handleStopDoubleClick}

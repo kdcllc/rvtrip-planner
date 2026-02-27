@@ -46,6 +46,10 @@ export const calculateNights = (startDate: string, endDate: string): number => {
   try {
     const start = new Date(startDate)
     const end = new Date(endDate)
+    // Check if dates are valid
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return 0
+    }
     const msPerDay = 24 * 60 * 60 * 1000
     return Math.round((end.getTime() - start.getTime()) / msPerDay)
   } catch {
@@ -56,8 +60,8 @@ export const calculateNights = (startDate: string, endDate: string): number => {
 /**
  * Calculate total trip cost (fuel + accommodation)
  */
-export const calculateTripTotalCost = (stops: TripStop[], mpg?: number, gasPricePerGallon?: number): number => {
-  const fuelCost = mpg && gasPricePerGallon ? calculateTripTotalFuelCost(stops) : 0
+export const calculateTripTotalCost = (stops: TripStop[]): number => {
+  const fuelCost = calculateTripTotalFuelCost(stops)
   const accommodationCost = calculateTripTotalAccommodationCost(stops)
   return Math.round((fuelCost + accommodationCost) * 100) / 100
 }

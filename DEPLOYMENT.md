@@ -33,7 +33,10 @@ This project supports two deployment approaches for GitHub Actions CI/CD:
 
 **Required GitHub Secrets:**
 - `AZURE_STATIC_WEB_APPS_TOKEN` - Deployment token from Azure
-- `VITE_GOOGLE_MAPS_API_KEY` - For building the app
+
+**Optional GitHub Secrets:**
+- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
+- `VITE_OPENROUTE_API_KEY` - Add third routing fallback
 
 **Best for:** Most scenarios, especially when you only need to deploy a static web app.
 
@@ -56,7 +59,7 @@ This project supports two deployment approaches for GitHub Actions CI/CD:
 **Required GitHub Configuration:**
 - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 - Variables: `AZURE_ENV_NAME`, `AZURE_LOCATION`
-- Plus application secrets: `VITE_GOOGLE_MAPS_API_KEY`
+- Plus optional application secrets: `VITE_GOOGLE_DRIVE_CLIENT_ID`, `VITE_OPENROUTE_API_KEY`
 
 **Best for:** Complex infrastructure, multiple Azure services, or enterprise security requirements.
 
@@ -67,7 +70,7 @@ This project supports two deployment approaches for GitHub Actions CI/CD:
 1. **Azure Developer CLI** - [Install azd](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 2. **Azure Subscription** - You need an active Azure subscription
 3. **Node.js and npm** - Already installed (required for building the app)
-4. **Google Maps API Key** - Already configured in `.env` file
+4. **(Optional)** OpenRouteService API key or Google Drive Client ID - See `.env.example` for details
 
 ## Phase 1: Initial Setup and Provisioning
 
@@ -242,13 +245,15 @@ Add the required secrets to your GitHub repository.
 | Secret Name | Value | Description |
 |-------------|-------|-------------|
 | `AZURE_STATIC_WEB_APPS_TOKEN` | Token from Step 9 | Deployment token for Azure Static Web Apps |
-| `VITE_GOOGLE_MAPS_API_KEY` | Your Google Maps API key | Required for building the app (from `.env` file) |
 
-**Optional Secrets:**
+**Optional Secrets (for enhanced features):**
 
 | Secret Name | Value | Description |
 |-------------|-------|-------------|
-| `VITE_GOOGLE_MAPS_MAP_ID` | Your Google Maps Map ID | If using a custom map style |
+| `VITE_GOOGLE_DRIVE_CLIENT_ID` | OAuth 2.0 Client ID | Enable Google Drive cloud sync for trips |
+| `VITE_OPENROUTE_API_KEY` | OpenRouteService API key | Add third routing fallback (free tier: 2,000 req/day) |
+
+**Note:** The app works with **no API keys required by default**. These are optional enhancements only.
 
 ### Step 11: Verify Workflow Configuration
 
@@ -360,15 +365,17 @@ azd down
 ## Environment Variables
 
 ### Local Development
-Set in `.env` file:
-- `VITE_GOOGLE_MAPS_API_KEY` - Your Google Maps API key
-- `VITE_GOOGLE_MAPS_MAP_ID` - (Optional) Google Maps Map ID
+Set in `.env` file (all optional):
+- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
+- `VITE_OPENROUTE_API_KEY` - Add third routing fallback (free tier)
+
+**Note:** The app works with no environment variables - these are optional enhancements only.
 
 ### GitHub Actions (Token-Based Approach)
 Set as repository secrets:
 - `AZURE_STATIC_WEB_APPS_TOKEN` - **Required** - Deployment token from Azure
-- `VITE_GOOGLE_MAPS_API_KEY` - **Required** - For building the app
-- `VITE_GOOGLE_MAPS_MAP_ID` - Optional - For custom map styles
+- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Optional - Enable Google Drive sync
+- `VITE_OPENROUTE_API_KEY` - Optional - Add routing fallback
 
 ### GitHub Actions (OIDC Approach - Alternative)
 **Note:** Not currently used. Available in git history if needed.
@@ -379,7 +386,7 @@ Would be automatically configured by `azd pipeline config`:
 - `AZURE_SUBSCRIPTION_ID` (secret)
 - `AZURE_ENV_NAME` (variable)
 - `AZURE_LOCATION` (variable)
-- Plus: `VITE_GOOGLE_MAPS_API_KEY` (secret)
+- Plus optional: `VITE_GOOGLE_DRIVE_CLIENT_ID` (secret), `VITE_OPENROUTE_API_KEY` (secret)
 
 ---
 
@@ -407,7 +414,7 @@ The active workflow (`.github/workflows/azure-dev.yml`) uses token-based authent
 2. **Ensure required secrets are configured:**
    - Go to GitHub → Settings → Secrets and variables → Actions
    - Verify `AZURE_STATIC_WEB_APPS_TOKEN` secret exists
-   - Verify `VITE_GOOGLE_MAPS_API_KEY` secret exists
+   - Optional: Add `VITE_GOOGLE_DRIVE_CLIENT_ID` or `VITE_OPENROUTE_API_KEY` for enhanced features
 
 3. **If you need the OIDC/azd approach:**
    - The OIDC-based workflow was removed for simplicity
@@ -415,15 +422,15 @@ The active workflow (`.github/workflows/azure-dev.yml`) uses token-based authent
    - Requires running `azd pipeline config` locally to set up federated credentials
    - Requires additional secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 
-### Build Fails with "Missing API Key"
+### Build Completes Successfully
 
-**Error:** Build fails with Google Maps API key errors.
+**Note:** The app uses free, open-source mapping services by default - no API keys required!
 
-**Solution:**
-1. Go to GitHub → Settings → Secrets and variables → Actions
-2. Verify `VITE_GOOGLE_MAPS_API_KEY` secret exists
-3. Ensure the value is correct (copy from your `.env` file)
-4. Check the workflow file exports the secret in the `env:` section
+Optional enhancements only:
+1. Google Drive sync: Add `VITE_GOOGLE_DRIVE_CLIENT_ID` secret
+2. Routing fallback: Add `VITE_OPENROUTE_API_KEY` secret
+
+If builds fail, check the workflow logs for specific errors.
 
 ### Deployment Token Invalid or Expired
 

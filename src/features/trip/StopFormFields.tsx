@@ -9,7 +9,7 @@ export type SuggestionItem = {
   id: string
   mainText: string
   secondaryText: string
-  prediction: unknown
+  location?: { lat: number; lng: number }
 }
 
 type SiteType = {
@@ -145,7 +145,6 @@ type StopFormFieldsProps = {
   isEditing?: boolean
   values: Partial<StopFormValues>
   predictions: SuggestionItem[]
-  mapsLoaded: boolean
   mapBounds?: MapBounds
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
@@ -159,7 +158,6 @@ export const StopFormFields = ({
   isEditing = false,
   values,
   predictions,
-  mapsLoaded,
   mapBounds,
   onFieldChange,
   onSelectPrediction,
@@ -325,7 +323,7 @@ export const StopFormFields = ({
           placeholder="Add parking details, check-in info, or reminders."
         />
       </label>
-      {!isEditing && mapsLoaded && mapBounds && (
+      {!isEditing && mapBounds && (
         <CampsiteSearch
           address={values.address || ''}
           mapBounds={mapBounds}

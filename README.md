@@ -8,46 +8,57 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
 - Manual stop list with arrival and departure dates
 - Optional starting point that does not require dates
-- Google Maps route with numbered markers
-- **Cost-optimized routing:** Routes are calculated only when explicitly requested by user (prevents bot/automated API costs)
+- **Free Open-Source Mapping:** Uses OpenStreetMap, MapLibre GL JS, and free routing APIs (no API keys required by default)
+- **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data)
 - Fuel cost estimation based on vehicle MPG and gas prices
 - Export/import trip data as JSON
-- Google Drive sync for cloud backup
-- Address autocomplete and validation
+- Google Drive sync for cloud backup (optional)
+- Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
 
-## Cost Optimization
+## Open-Source Stack
 
-To reduce Google Maps API costs, this application implements several protections:
+This application uses **free, open-source services** with no API keys required by default:
 
-1. **User-Gated Routes:** Map loading and route calculations are **disabled by default**. Users must explicitly click "Calculate Routes" in the map panel to enable them. This prevents:
-   - Bots from triggering billable API calls
-   - Automatic route calculations on every page load
-   - Unnecessary API usage for users who only want to manage stops
+- **Maps:** [MapLibre GL JS](https://maplibre.org/) with [OpenStreetMap](https://www.openstreetmap.org/) tiles
+- **Routing:** [OSRM](http://project-osrm.org/) demo servers with automatic fallback to German OSM routing server
+- **Geocoding:** [Photon](https://photon.komoot.io/) (primary) and [Nominatim](https://nominatim.org/) (fallback)
+- **Autocomplete:** [Photon](https://photon.komoot.io/)
+- **Weather:** NOAA and Open-Meteo (free)
+- **Caching:** All API responses are cached in browser localStorage with intelligent TTLs (5min for autocomplete, 7 days for geocoding, 24hr for routes)
 
-2. **Route Caching:** Routes are cached in memory to avoid duplicate API calls between map rendering and distance calculations
+### Optional Enhancements
 
-3. **Bot Deterrence:** `robots.txt` blocks well-behaved crawlers (additional protection requires API key restrictions)
+For improved reliability, you can add:
 
-### Recommended API Key Security
+- **OpenRouteService API Key** (free tier available): Adds a third routing fallback when OSRM servers are unreachable
+  - Sign up at [openrouteservice.org](https://openrouteservice.org/dev/#/signup)
+  - Add `VITE_OPENROUTE_API_KEY` to your `.env` file
+  - Free tier: 2,000 requests/day
 
-Protect your Google API keys in the [Google Cloud Console](https://console.cloud.google.com/):
+- **Google Drive Client ID** (optional): Enable cloud sync/backup of trips
+  - Create OAuth 2.0 credentials in [Google Cloud Console](https://console.cloud.google.com/)
+  - Add `VITE_GOOGLE_DRIVE_CLIENT_ID` to your `.env` file
 
-1. **HTTP Referrer Restrictions:**
-   - Add your domain(s): `https://yourdomain.azurestaticapps.net/*`
-   - Add localhost for dev: `http://localhost:*`
+## Routing Architecture
 
-2. **API Restrictions:**
-   - Only enable required APIs:
-     - Maps JavaScript API
-     - Places API
-     - Routes API
-     - Geocoding API (if used)
+The app tries routing services in this order:
 
-3. **Quotas & Budgets:**
-   - Set daily/monthly quotas for each API
-   - Configure billing alerts
+1. **OSRM Demo** (`router.project-osrm.org`) - Primary free routing
+2. **OpenStreetMap Germany** (`routing.openstreetmap.de`) - Fallback OSRM instance
+3. **OpenRouteService** - Final fallback (requires free API key)
+
+If all routing services fail, the app continues to work - you just won't see distances or route lines on the map. Each route pair is tried independently, so partial failures don't break the entire trip.
+
+### Rate Limiting & Batching
+
+To be respectful to free public APIs, route requests are automatically batched:
+- **Batch size:** 2 concurrent requests at a time
+- **Delay between batches:** 500ms
+- **Example:** A 10-stop trip calculates 9 routes in 5 batches over ~2.5 seconds
+
+Geocoding (address → coordinates) runs sequentially in the background with built-in caching (7-day TTL), and autocomplete queries are debounced (250ms) with aggressive caching (5-minute TTL).
 
 ## Local Development Setup
 
@@ -56,10 +67,13 @@ Protect your Google API keys in the [Google Cloud Console](https://console.cloud
    npm install
    ```
 
-2. Create a `.env` file based on `.env.example` and add your Google Maps API key
+2. (Optional) Create a `.env` file for enhanced features:
    ```bash
-   VITE_GOOGLE_MAPS_API_KEY=your_key_here
-   VITE_GOOGLE_MAPS_MAP_ID=your_map_id  # Optional for Advanced Markers
+   # OpenRouteService (optional - for routing fallback)
+   VITE_OPENROUTE_API_KEY=your_free_key_from_openrouteservice.org
+   
+   # Google Drive (optional - for cloud sync)
+   VITE_GOOGLE_DRIVE_CLIENT_ID=your_oauth_client_id
    ```
 
 3. Start the development server
@@ -67,23 +81,7 @@ Protect your Google API keys in the [Google Cloud Console](https://console.cloud
    npm run dev
    ```
 
-## Getting a Google Maps API key
-
-1. Sign in to the [Google Cloud Console](https://console.cloud.google.com/) and create or select a project
-2. Enable the following APIs:
-   - Maps JavaScript API
-   - Places API
-   - Routes API
-   - Geocoding API (optional, for address lookups)
-3. (Recommended) Create a Map ID in Google Cloud Maps Platform for Advanced Markers
-4. Create an API key
-5. **IMPORTANT:** Restrict the key for security and cost control:
-   - Add HTTP referrer restrictions (your domain + localhost)
-   - Restrict to only the APIs listed above
-   - Set daily quotas and budget alerts
-6. Copy the key into your `.env` file as `VITE_GOOGLE_MAPS_API_KEY`
-
-> **Note:** Without proper API key restrictions, your key could be used by bots or unauthorized sites, leading to unexpected costs.
+The app works immediately with no configuration - all mapping and routing services are free and require no API keys!
 
 ## Deployment to Azure
 
@@ -142,6 +140,10 @@ To set up automated deployment from GitHub:
 azd pipeline config
 ```
 
+Optionally, add these GitHub secrets for enhanced features (both are optional):
+- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
+- `VITE_OPENROUTE_API_KEY` - Add third routing fallback
+
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
 - **Fuel Costs:** Estimated based on your vehicle's MPG (configurable in settings) and current gas prices.
@@ -151,11 +153,16 @@ azd pipeline config
 
 - **Frontend:** React 19 + TypeScript + Vite
 - **Hosting:** Azure Static Web Apps
-- **APIs:** Google Maps (JS, Places, Routes), NOAA Weather, Open-Meteo Climate
+- **Mapping:** MapLibre GL JS + OpenStreetMap tiles (free)
+- **Routing:** OSRM + OpenRouteService (free, with optional API key)
+- **Geocoding:** Photon + Nominatim (free)
+- **Weather:** NOAA + Open-Meteo (free)
 - **State:** React Context + localStorage (no backend)
-- **Cost Optimization:** User-gated routing, in-memory caching, bot deterrence
+- **Cost Optimization:** Multi-server fallback, intelligent caching, request batching
 
 ## Notes
 
-- Weather is pulled for the exact date range you provide per stop.
-- If the Google Maps key is missing, the map panel will show a warning.
+- **No API keys required by default** - the app works immediately out of the box
+- Weather is pulled for the exact date range you provide per stop
+- Route requests are batched and cached to respect free public APIs
+- All data persists in browser localStorage - use Google Drive sync or JSON export for backup

@@ -865,6 +865,14 @@
   font-weight: 700;
   border: 2px solid #fff;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+  cursor: pointer;
+  transition: transform 0.15s ease-out;
+  transform-origin: center center;
+}
+
+.map-pin:hover {
+  transform: scale(1.2);
+  z-index: 999;
 }
 
 .route-label {

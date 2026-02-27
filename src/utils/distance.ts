@@ -52,20 +52,16 @@ export type DistanceResult = {
  */
 export const fetchDistanceBetweenStops = async (
   origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number },
-  apiKey: string
+  destination: { lat: number; lng: number }
 ): Promise<DistanceResult> => {
   try {
-    const routeResponse = await computeRoute(
-      {
-        origin,
-        destination,
-        avoidTolls: false,
-        avoidHighways: false,
-        avoidFerries: false,
-      },
-      apiKey
-    )
+    const routeResponse = await computeRoute({
+      origin,
+      destination,
+      avoidTolls: false,
+      avoidHighways: false,
+      avoidFerries: false,
+    })
 
     return {
       distanceMeters: routeResponse.distanceMeters,
@@ -81,9 +77,33 @@ export const fetchDistanceBetweenStops = async (
  * Calculate and update distances for all consecutive stop pairs in a trip
  * Returns updated stops with distanceFromPreviousMeters populated
  */
+/**
+ * Process promises in batches with delay between batches
+ * to avoid overwhelming free public APIs
+ */
+const processBatches = async <T>(
+  items: Array<() => Promise<T>>,
+  batchSize: number,
+  delayMs: number
+): Promise<T[]> => {
+  const results: T[] = []
+  
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    const batchResults = await Promise.all(batch.map(fn => fn()))
+    results.push(...batchResults)
+    
+    // Add delay between batches (except after the last batch)
+    if (i + batchSize < items.length) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+  
+  return results
+}
+
 export const calculateTripDistances = async (
-  stops: TripStop[],
-  apiKey: string
+  stops: TripStop[]
 ): Promise<TripStop[]> => {
   const validStops = stops.filter((stop) => stop.location)
 
@@ -93,23 +113,29 @@ export const calculateTripDistances = async (
 
   const updatedStops = [...stops]
 
-  // Fetch all inter-stop distances in parallel for better performance
-  const distancePromises = validStops.slice(1).map((currentStop, idx) => {
-    const prevStop = validStops[idx]
-    if (!prevStop.location || !currentStop.location) {
-      return Promise.resolve(null)
+  // Create route request functions (lazy execution for batching)
+  const routeRequests = validStops.slice(1).map((currentStop, idx) => {
+    return async () => {
+      const prevStop = validStops[idx]
+      if (!prevStop.location || !currentStop.location) {
+        return null
+      }
+      
+      try {
+        return await fetchDistanceBetweenStops(
+          prevStop.location,
+          currentStop.location
+        )
+      } catch (error) {
+        console.error(`Failed to calculate distance for stop ${idx + 1}:`, error)
+        return null
+      }
     }
-    return fetchDistanceBetweenStops(
-      prevStop.location,
-      currentStop.location,
-      apiKey
-    ).catch((error) => {
-      console.error(`Failed to calculate distance for stop ${idx + 1}:`, error)
-      return null
-    })
   })
 
-  const distances = await Promise.all(distancePromises)
+  // Process routes in batches to avoid overwhelming free APIs
+  // 2 concurrent requests with 500ms delay between batches
+  const distances = await processBatches(routeRequests, 2, 500)
 
   // Update stops with distance results
   distances.forEach((result, idx) => {

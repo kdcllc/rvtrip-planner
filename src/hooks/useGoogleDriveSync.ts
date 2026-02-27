@@ -682,6 +682,7 @@ export function useGoogleDriveSync(
       }
     },
     [
+      applyDriveTrip,
       checksums,
       ensureFolder,
       fileMap,

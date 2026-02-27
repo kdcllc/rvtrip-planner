@@ -1,5 +1,4 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { GOOGLE_MAPS_API_KEY } from '../../config/env'
 import { formatDateRange, formatTime } from '../../utils/date'
 import { createId } from '../../utils/id'
 import { formatDistance } from '../../utils/distance'
@@ -19,6 +18,8 @@ import {
   type SuggestionItem,
 } from './StopFormFields'
 import type { MapBounds } from '../../services/campsiteSearch'
+import { fetchAutocompleteSuggestions } from '../../services/geocoding/autocompleteService'
+import { geocodeAddress } from '../../services/geocoding/geocodingService'
 
 const STARTING_POINT_LABEL = 'Starting point'
 
@@ -28,7 +29,6 @@ type TripFormProps = {
   onRemoveStop: (stopId: string) => void
   onUpdateStop: (stopId: string, updates: Partial<TripStop>) => void
   onReorderStop: (stopId: string, direction: 'up' | 'down') => void
-  mapsLoaded: boolean
   weatherByStopId?: Record<string, StopForecast>
   weatherErrors?: Record<string, string>
   selectedStopIds: Set<string>
@@ -55,7 +55,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   onRemoveStop,
   onUpdateStop,
   onReorderStop,
-  mapsLoaded,
   weatherByStopId = {},
   weatherErrors = {},
   selectedStopIds,
@@ -101,21 +100,11 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
   const [drawerPredictions, setDrawerPredictions] = useState<SuggestionItem[]>([])
   const [drawerError, setDrawerError] = useState('')
-  const drawerSessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
   const drawerDebounceRef = useRef<number | null>(null)
-
-  // Initialize session tokens
-  useEffect(() => {
-    if (!mapsLoaded || !window.google?.maps?.places) {
-      return
-    }
-
-    drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
-  }, [mapsLoaded, drawerState.isOpen])
 
   // Drawer autocomplete effect
   useEffect(() => {
-    if (!mapsLoaded || !drawerState.isOpen) {
+    if (!drawerState.isOpen) {
       return
     }
 
@@ -140,89 +129,34 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return
     }
 
-    drawerDebounceRef.current = window.setTimeout(() => {
-      const places = google.maps.places as unknown as {
-        AutocompleteSuggestion?: {
-          fetchAutocompleteSuggestions?: (options: unknown) => Promise<{
-            suggestions?: Array<{ placePrediction?: unknown }>
-          }>
-        }
-      }
-
-      if (!places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
-        setDrawerValidationState((prev) => ({
-          ...prev,
-          predictionStatus: 'blocked',
-        }))
-        return
-      }
-
+    drawerDebounceRef.current = window.setTimeout(async () => {
       setDrawerValidationState((prev) => ({
         ...prev,
         predictionStatus: 'loading',
       }))
 
-      const sessionToken =
-        drawerSessionTokenRef.current ??
-        new google.maps.places.AutocompleteSessionToken()
-      drawerSessionTokenRef.current = sessionToken
-
-      places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-        input: trimmedAddress,
-        sessionToken,
-        includedPrimaryTypes: ['geocode'],
-      })
-        .then((response) => {
-          const suggestions = response?.suggestions ?? []
-          const items: SuggestionItem[] = suggestions
-            .map((suggestion) => {
-              const prediction = suggestion.placePrediction as
-                | {
-                    text?: { text?: string }
-                    structuredFormat?: {
-                      mainText?: { text?: string }
-                      secondaryText?: { text?: string }
-                    }
-                  }
-                | undefined
-
-              if (!prediction) {
-                return null
-              }
-
-              const mainText =
-                prediction.structuredFormat?.mainText?.text ??
-                prediction.text?.text ??
-                ''
-              const secondaryText =
-                prediction.structuredFormat?.secondaryText?.text ?? ''
-
-              if (!mainText) {
-                return null
-              }
-
-              return {
-                id: `${mainText}-${secondaryText}`,
-                mainText,
-                secondaryText,
-                prediction: suggestion.placePrediction,
-              }
-            })
-            .filter((item): item is SuggestionItem => item !== null)
-
-          setDrawerPredictions(items)
-          setDrawerValidationState((prev) => ({
-            ...prev,
-            predictionStatus: items.length === 0 ? 'empty' : 'idle',
-          }))
-        })
-        .catch(() => {
-          setDrawerPredictions([])
-          setDrawerValidationState((prev) => ({
-            ...prev,
-            predictionStatus: 'blocked',
-          }))
-        })
+      try {
+        const result = await fetchAutocompleteSuggestions(trimmedAddress)
+        const suggestionItems: SuggestionItem[] = result.suggestions.map(s => ({
+          id: s.id,
+          mainText: s.mainText,
+          secondaryText: s.secondaryText,
+          location: s.location ?? undefined,
+        }))
+        
+        setDrawerPredictions(suggestionItems)
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          predictionStatus: suggestionItems.length === 0 ? 'empty' : 'idle',
+        }))
+      } catch (error) {
+        console.error('Autocomplete error:', error)
+        setDrawerPredictions([])
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          predictionStatus: 'blocked',
+        }))
+      }
     }, 250)
 
     return () => {
@@ -230,13 +164,18 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         window.clearTimeout(drawerDebounceRef.current)
       }
     }
-  }, [drawerFormValues.address, drawerFormValues.manualAddress, mapsLoaded, drawerState.isOpen, drawerValidationState.status, drawerValidationState.lastValidatedAddress])
+  }, [drawerFormValues.address, drawerFormValues.manualAddress, drawerState.isOpen, drawerValidationState.status, drawerValidationState.lastValidatedAddress])
 
   // Drawer prediction selection
   const selectDrawerPrediction = async (item: SuggestionItem) => {
+    // Combine mainText and secondaryText to form complete address
+    const fullAddress = item.secondaryText 
+      ? `${item.mainText}, ${item.secondaryText}`
+      : item.mainText
+    
     setDrawerFormValues((prev) => ({
       ...prev,
-      address: item.mainText,
+      address: fullAddress,
       location: null,
     }))
     setDrawerPredictions([])
@@ -245,48 +184,38 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       ...prev,
       status: 'valid',
       message: 'Loading address details...',
-      lastValidatedAddress: item.mainText,
+      lastValidatedAddress: fullAddress,
     }))
 
-    const prediction = item.prediction as
-      | {
-          toPlace?: () => google.maps.places.Place
-        }
-      | undefined
-
-    if (!prediction?.toPlace) {
-      setDrawerValidationState((prev) => ({
-        ...prev,
-        status: 'invalid',
-        message: 'Address details unavailable.',
-      }))
-      return
-    }
-
     try {
-      const place = prediction.toPlace()
-      await place.fetchFields({ fields: ['formattedAddress', 'location'] })
-      const placeLocation = place.location
-
-      // Keep the user's selected address (item.mainText) as-is
-      // Don't override with Google's formatted address which may abbreviate street names
-      setDrawerValidationState((prev) => ({
-        ...prev,
-        lastValidatedAddress: item.mainText,
-      }))
-
-      if (placeLocation) {
+      // If the suggestion already has location data, use it directly
+      if (item.location) {
         setDrawerFormValues((prev) => ({
           ...prev,
-          location: {
-            lat: placeLocation.lat(),
-            lng: placeLocation.lng(),
-          },
+          location: item.location!,
         }))
         setDrawerValidationState((prev) => ({
           ...prev,
           status: 'valid',
           message: 'Address selected.',
+          lastValidatedAddress: fullAddress,
+        }))
+        return
+      }
+
+      // Otherwise, geocode the selected address
+      const result = await geocodeAddress(fullAddress)
+      
+      if (result?.location) {
+        setDrawerFormValues((prev) => ({
+          ...prev,
+          location: result.location,
+        }))
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'valid',
+          message: 'Address selected.',
+          lastValidatedAddress: fullAddress,
         }))
       } else {
         setDrawerValidationState((prev) => ({
@@ -295,9 +224,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
           message: 'Address could not be located.',
         }))
       }
-
-      drawerSessionTokenRef.current = new google.maps.places.AutocompleteSessionToken()
-    } catch {
+    } catch (error) {
+      console.error('Geocoding error:', error)
       setDrawerValidationState((prev) => ({
         ...prev,
         status: 'invalid',
@@ -319,15 +247,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return true
     }
 
-    if (!GOOGLE_MAPS_API_KEY) {
-      setDrawerValidationState((prev) => ({
-        ...prev,
-        status: 'invalid',
-        message: 'Missing Google Maps API key.',
-      }))
-      return false
-    }
-
     setDrawerValidationState((prev) => ({
       ...prev,
       status: 'validating',
@@ -335,36 +254,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }))
 
     try {
-      const response = await fetch(
-        `https://addressvalidation.googleapis.com/v1:validateAddress?key=${GOOGLE_MAPS_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            address: {
-              addressLines: [addressText],
-            },
-          }),
-        },
-      )
+      const result = await geocodeAddress(addressText)
 
-      if (!response.ok) {
-        setDrawerValidationState((prev) => ({
-          ...prev,
-          status: 'invalid',
-          message: 'Address validation failed. Try again.',
-        }))
-        return false
-      }
-
-      const data = await response.json()
-      const geocode = data?.result?.geocode?.location
-      const formattedAddress = data?.result?.address?.formattedAddress
-      const isValid = Boolean(geocode?.latitude && geocode?.longitude)
-
-      if (!isValid) {
+      if (!result?.location) {
         setDrawerValidationState((prev) => ({
           ...prev,
           status: 'invalid',
@@ -375,19 +267,20 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
       setDrawerFormValues((prev) => ({
         ...prev,
-        address: formattedAddress || addressText,
-        location: { lat: geocode.latitude, lng: geocode.longitude },
+        address: result.address,
+        location: result.location,
       }))
       setDrawerValidationState((prev) => ({
         ...prev,
         status: 'valid',
         message: 'Address confirmed.',
-        lastValidatedAddress: formattedAddress || addressText,
+        lastValidatedAddress: result.address,
       }))
       setDrawerPredictions([])
 
       return true
-    } catch {
+    } catch (error) {
+      console.error('Address validation error:', error)
       setDrawerValidationState((prev) => ({
         ...prev,
         status: 'invalid',
@@ -526,10 +419,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       isOpen: true,
       mode: 'add',
     })
-    drawerSessionTokenRef.current =
-      mapsLoaded && window.google?.maps?.places
-        ? new google.maps.places.AutocompleteSessionToken()
-        : null
   }
 
   // Expose openAddDrawer via ref for external callers
@@ -575,10 +464,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       mode: 'edit',
       stopId: stop.id,
     })
-    drawerSessionTokenRef.current =
-      mapsLoaded && window.google?.maps?.places
-        ? new google.maps.places.AutocompleteSessionToken()
-        : null
   }
 
   // Close drawer
@@ -1004,7 +889,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         isOpen={drawerState.isOpen}
         stop={drawerState.stopId ? stops.find((s) => s.id === drawerState.stopId) ?? null : null}
         mode={drawerState.mode}
-        mapsLoaded={mapsLoaded}
         predictions={drawerPredictions}
         validationState={drawerValidationState}
         error={drawerError}

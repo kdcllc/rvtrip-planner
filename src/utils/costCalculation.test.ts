@@ -12,7 +12,7 @@ describe('costCalculation', () => {
   describe('calculateFuelCost', () => {
     it('should calculate fuel cost correctly', () => {
       const cost = calculateFuelCost(100000, 10, 3.5) // 100km (100000m), 10 mpg, $3.50/gal
-      expect(cost).toBeCloseTo(21.7, 1)
+      expect(cost).toBeCloseTo(21.75, 2)
     })
 
     it('should return undefined if distance is missing', () => {
