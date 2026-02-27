@@ -19,13 +19,13 @@ export type RouteResponse = {
 
 type CacheKey = string
 
-// In-memory cache for route responses with LRU + TTL
+// In-memory cache for route responses with LRU eviction
+// Routes are cached indefinitely based on origin/destination coordinates
+// Entries are evicted only when hitting MAX_CACHE_SIZE via LRU (least recently used)
 const MAX_CACHE_SIZE = 100
-const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minutes
 
 type CachedEntry = {
   value: RouteResponse
-  expiresAt: number
 }
 
 class RouteCache {
@@ -41,12 +41,7 @@ class RouteCache {
       return undefined
     }
 
-    if (Date.now() > entry.expiresAt) {
-      this.map.delete(key)
-      return undefined
-    }
-
-    // Refresh LRU order
+    // Refresh LRU order (move to end)
     this.map.delete(key)
     this.map.set(key, entry)
 
@@ -57,13 +52,14 @@ class RouteCache {
     if (this.map.has(key)) {
       this.map.delete(key)
     } else if (this.map.size >= MAX_CACHE_SIZE) {
+      // Evict least recently used (oldest insertion)
       const oldestKey = this.map.keys().next().value as CacheKey | undefined
       if (oldestKey) {
         this.map.delete(oldestKey)
       }
     }
 
-    this.map.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS })
+    this.map.set(key, { value })
   }
 
   clear() {

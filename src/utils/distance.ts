@@ -93,22 +93,28 @@ export const calculateTripDistances = async (
 
   const updatedStops = [...stops]
 
-  for (let i = 1; i < validStops.length; i++) {
-    const prevStop = validStops[i - 1]
-    const currentStop = validStops[i]
-
+  // Fetch all inter-stop distances in parallel for better performance
+  const distancePromises = validStops.slice(1).map((currentStop, idx) => {
+    const prevStop = validStops[idx]
     if (!prevStop.location || !currentStop.location) {
-      continue
+      return Promise.resolve(null)
     }
+    return fetchDistanceBetweenStops(
+      prevStop.location,
+      currentStop.location,
+      apiKey
+    ).catch((error) => {
+      console.error(`Failed to calculate distance for stop ${idx + 1}:`, error)
+      return null
+    })
+  })
 
-    try {
-      const result = await fetchDistanceBetweenStops(
-        prevStop.location,
-        currentStop.location,
-        apiKey
-      )
+  const distances = await Promise.all(distancePromises)
 
-      // Find and update the current stop in the original array
+  // Update stops with distance results
+  distances.forEach((result, idx) => {
+    if (result !== null) {
+      const currentStop = validStops[idx + 1]
       const stopIndex = updatedStops.findIndex((s) => s.id === currentStop.id)
       if (stopIndex !== -1) {
         updatedStops[stopIndex] = {
@@ -116,11 +122,8 @@ export const calculateTripDistances = async (
           distanceFromPreviousMeters: result.distanceMeters,
         }
       }
-    } catch (error) {
-      console.error(`Failed to calculate distance for stop ${i}:`, error)
-      // Continue with next stop, don't fail entire calculation
     }
-  }
+  })
 
   return updatedStops
 }

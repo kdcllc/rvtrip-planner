@@ -3,7 +3,7 @@ import './App.css'
 import { GOOGLE_MAPS_API_KEY } from '../config/env'
 import { TripMap } from '../features/map/TripMap'
 import { useGoogleMaps } from '../features/map/hooks/useGoogleMaps'
-import { TripForm } from '../features/trip/TripForm'
+import { TripForm, type TripFormRef } from '../features/trip/TripForm'
 import type { TripStop, TripStopSourceName, TripsState } from '../domain/trip/types'
 import { TripSelector } from '../features/trip/TripSelector'
 import { VehicleSettingsModal } from '../features/trip/VehicleSettingsModal'
@@ -24,7 +24,7 @@ import {
   downloadICalendar,
 } from '../services/calendar/calendarService'
 import { gasPriceService } from '../services/gas/gasPriceService'
-import { calculateTripDistances } from '../utils/distance'
+import { calculateTripDistances, formatDistance } from '../utils/distance'
 import { calculateStopCosts, calculateTripTotalAccommodationCost } from '../utils/costCalculation'
 import { buildTripPrintStops, calculateTotalDistanceMeters } from '../utils/print'
 import { useVehicleSettingsContext } from '../hooks/useVehicleSettings'
@@ -88,6 +88,7 @@ function App() {
   const [pendingDeleteTripId, setPendingDeleteTripId] = useState<string | null>(null)
   const geocodingInFlight = useRef(false)
   const mapPanelRef = useRef<HTMLElement | null>(null)
+  const tripFormRef = useRef<TripFormRef>(null)
   const weatherInFlight = useRef<Set<string>>(new Set())
   const gasPriceInFlight = useRef<Set<string>>(new Set())
   const distanceCalculationInFlight = useRef(false)
@@ -109,6 +110,12 @@ function App() {
   const tripTotalFuelCost = useMemo(() => {
     return currentStops.reduce((total, stop) => {
       return total + (stop.estimatedFuelCost ?? 0)
+    }, 0)
+  }, [currentStops])
+
+  const tripTotalDistanceMeters = useMemo(() => {
+    return currentStops.reduce((total, stop) => {
+      return total + (stop.distanceFromPreviousMeters ?? 0)
     }, 0)
   }, [currentStops])
 
@@ -612,17 +619,12 @@ function App() {
   }, [])
 
   const handleAddStop = useCallback(() => {
-    const formPanel = document.querySelector('.panel-form')
-    if (formPanel) {
-      formPanel.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // Give the scroll time to complete, then try to focus the first form input
-      setTimeout(() => {
-        const addButton = document.querySelector('.panel-form button[aria-label*="Add"]') as HTMLButtonElement
-        if (addButton) {
-          addButton.click()
-        }
-      }, 300)
-    }
+    // Scroll to top smoothly
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // Open the drawer for adding a new stop
+    setTimeout(() => {
+      tripFormRef.current?.openAddDrawer()
+    }, 300)
   }, [])
 
   const handleRequestDeleteTrip = useCallback((tripId: string) => {
@@ -1171,6 +1173,12 @@ function App() {
             <strong>Hybrid (NOAA+Climate)</strong>
           </div>
           <div className="hero-card-row">
+            <span>Total Distance</span>
+            <strong>
+              {tripTotalDistanceMeters > 0 ? formatDistance(tripTotalDistanceMeters) : 'N/A'}
+            </strong>
+          </div>
+          <div className="hero-card-row">
             <span>Estimated Fuel Cost</span>
             <strong>
               {tripTotalFuelCost > 0 ? `$${tripTotalFuelCost.toFixed(2)}` : 'Data not available'}
@@ -1182,6 +1190,7 @@ function App() {
       <main className="grid">
         <section className="panel panel-form">
           <TripForm
+            ref={tripFormRef}
             stops={currentStops}
             onAddStop={addStop}
             onRemoveStop={removeStop}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { GOOGLE_MAPS_API_KEY } from '../../config/env'
 import { formatDateRange, formatTime } from '../../utils/date'
 import { createId } from '../../utils/id'
@@ -45,7 +45,11 @@ type DrawerState = {
   stopId?: string
 }
 
-export const TripForm = ({
+export type TripFormRef = {
+  openAddDrawer: () => void
+}
+
+export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm({
   stops,
   onAddStop,
   onRemoveStop,
@@ -60,7 +64,7 @@ export const TripForm = ({
   onClearStopSelection,
   mapBounds,
   currentStopId,
-}: TripFormProps) => {
+}: TripFormProps, ref) {
   // Add form state (for inline form - now removed, kept for reference)
   // All form state is now managed by drawer component
 
@@ -236,10 +240,12 @@ export const TripForm = ({
       location: null,
     }))
     setDrawerPredictions([])
+    // Mark as valid immediately to prevent autocomplete effect from re-fetching
     setDrawerValidationState((prev) => ({
       ...prev,
-      status: 'idle',
-      message: '',
+      status: 'valid',
+      message: 'Loading address details...',
+      lastValidatedAddress: item.mainText,
     }))
 
     const prediction = item.prediction as
@@ -260,24 +266,14 @@ export const TripForm = ({
     try {
       const place = prediction.toPlace()
       await place.fetchFields({ fields: ['formattedAddress', 'location'] })
-      const formattedAddress = place.formattedAddress
       const placeLocation = place.location
 
-      if (formattedAddress) {
-        setDrawerFormValues((prev) => ({
-          ...prev,
-          address: formattedAddress,
-        }))
-        setDrawerValidationState((prev) => ({
-          ...prev,
-          lastValidatedAddress: formattedAddress,
-        }))
-      } else {
-        setDrawerValidationState((prev) => ({
-          ...prev,
-          lastValidatedAddress: item.mainText,
-        }))
-      }
+      // Keep the user's selected address (item.mainText) as-is
+      // Don't override with Google's formatted address which may abbreviate street names
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        lastValidatedAddress: item.mainText,
+      }))
 
       if (placeLocation) {
         setDrawerFormValues((prev) => ({
@@ -462,10 +458,22 @@ export const TripForm = ({
 
   // Drawer form field change handler
   const handleDrawerFieldChange = (field: keyof StopFormValues, value: string | boolean | { lat: number; lng: number } | null) => {
-    setDrawerFormValues((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
+    setDrawerFormValues((prev) => {
+      const updated = {
+        ...prev,
+        [field]: value,
+      }
+
+      // When arrival date is set, auto-set departure to next day if not already set
+      if (field === 'startDate' && typeof value === 'string' && value && !prev.endDate) {
+        const arrivalDate = new Date(value + 'T00:00:00')
+        const nextDay = new Date(arrivalDate)
+        nextDay.setDate(nextDay.getDate() + 1)
+        updated.endDate = nextDay.toISOString().split('T')[0]
+      }
+
+      return updated
+    })
 
     // Reset validation on field change  
     if (field === 'address') {
@@ -523,6 +531,11 @@ export const TripForm = ({
         ? new google.maps.places.AutocompleteSessionToken()
         : null
   }
+
+  // Expose openAddDrawer via ref for external callers
+  useImperativeHandle(ref, () => ({
+    openAddDrawer,
+  }))
 
   // Open drawer for editing a stop
   const openEditDrawer = (stop: TripStop) => {
@@ -1005,4 +1018,4 @@ export const TripForm = ({
       />
     </div>
   )
-}
+})
