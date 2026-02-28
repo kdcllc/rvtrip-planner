@@ -76,6 +76,7 @@ function App() {
   const [importStatus, setImportStatus] = useState('')
   const [printError, setPrintError] = useState('')
   const [printStatus, setPrintStatus] = useState('')
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [pendingImport, setPendingImport] = useState<{
     payload: DriveTripPayload
     skippedStops: number
@@ -342,6 +343,10 @@ function App() {
   }, [currentTrip, selectedStopIds])
 
   const exportTripPdf = useCallback(async () => {
+    if (isExportingPdf) {
+      return
+    }
+
     setPrintError('')
     setPrintStatus('')
 
@@ -359,6 +364,8 @@ function App() {
       setPrintError('No stops to print.')
       return
     }
+
+    setIsExportingPdf(true)
 
     try {
       const printStops = buildTripPrintStops(stopsToPrint, weatherByStopId)
@@ -390,8 +397,17 @@ function App() {
       setPrintError(
         `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
+    } finally {
+      setIsExportingPdf(false)
     }
-  }, [currentTrip, selectedStopIds, weatherByStopId, tripTotalFuelCost, tripTotalAccommodationCost])
+  }, [
+    currentTrip,
+    isExportingPdf,
+    selectedStopIds,
+    weatherByStopId,
+    tripTotalFuelCost,
+    tripTotalAccommodationCost,
+  ])
 
   const mergeStops = useCallback(
     (existing: TripStop[], imported: TripStop[]) => {
@@ -1121,9 +1137,17 @@ function App() {
                 className="ghost"
                 type="button"
                 onClick={() => void exportTripPdf()}
-                disabled={currentStops.length === 0}
+                disabled={currentStops.length === 0 || isExportingPdf}
+                aria-busy={isExportingPdf}
               >
-                Print / PDF
+                {isExportingPdf ? (
+                  <span className="button-loading">
+                    <span className="button-loading-spinner" aria-hidden="true" />
+                    Generating PDF...
+                  </span>
+                ) : (
+                  'Print / PDF'
+                )}
               </button>
               <button
                 className="ghost"
@@ -1188,6 +1212,15 @@ function App() {
       </header>
 
       <main className="grid">
+        <section className="panel panel-map">
+          <TripMap
+            stops={currentStops}
+            onBoundsChange={setMapBounds}
+            onStopHover={handleStopHover}
+            onStopDoubleClick={handleStopDoubleClick}
+          />
+        </section>
+
         <section className="panel panel-form">
           <TripForm
             ref={tripFormRef}
@@ -1204,15 +1237,7 @@ function App() {
             onClearStopSelection={clearStopSelection}
             mapBounds={mapBounds}
             currentStopId={currentStopId}
-          />
-        </section>
-
-        <section className="panel panel-map">
-          <TripMap
-            stops={currentStops}
-            onBoundsChange={setMapBounds}
-            onStopHover={handleStopHover}
-            onStopDoubleClick={handleStopDoubleClick}
+            onCurrentStopChange={handleStopHover}
           />
         </section>
       </main>

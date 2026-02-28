@@ -1,0 +1,318 @@
+/* Timeline Container */
+.trip-timeline {
+  position: relative;
+  width: 100%;
+  margin-bottom: 20px;
+  animation: fade-in 0.6s ease-out;
+  overflow-x: auto;
+  overflow-y: visible;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 40px;
+}
+
+/* Inner scrollable content wrapper */
+.timeline-inner {
+  position: relative;
+  width: 100%;
+  padding: 60px 0 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 80px;
+  overflow: visible;
+  z-index: 1;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.trip-timeline::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+.trip-timeline {
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Date Markers Row */
+.timeline-markers {
+  position: relative;
+  height: 20px;
+  margin: 0;
+  padding: 24px 12px 0 12px;
+  flex-shrink: 0;
+}
+
+.timeline-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-marker-tick {
+  width: 1px;
+  height: 8px;
+  background: var(--color-border);
+}
+
+.timeline-marker-label {
+  font-size: 0.8rem;
+  color: var(--color-accent-dark);
+  white-space: nowrap;
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  background: var(--color-accent-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+/* Timeline Bar */
+.timeline-bar {
+  position: relative;
+  height: 6px;
+  background: linear-gradient(
+    to right,
+    var(--color-surface-strong),
+    rgba(245, 158, 11, 0.15),
+    var(--color-surface-strong)
+  );
+  border-radius: 999px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-border);
+  margin: 0 12px;
+  padding: 0;
+  flex-shrink: 0;
+  min-width: 100%;
+  width: 100%;
+  overflow: visible;
+}
+
+/* Gap Indicators (dashed segments between stops) */
+.timeline-gap {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3px;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--color-text-muted) 0,
+    var(--color-text-muted) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Stop Indicators */
+.timeline-stop {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.2s ease;
+}
+
+.timeline-stop:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  z-index: 5;
+}
+
+.timeline-stop:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* Stop segment - shows duration as a bar */
+.timeline-stop-segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  background: linear-gradient(135deg, var(--color-accent) 0%, #d97706 100%);
+  border: 2px solid var(--color-accent-dark);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+  transition: all 0.2s ease;
+  
+  /* Width is set inline via style prop to scale with timeline */
+  min-width: 24px; /* Minimum width for pass-through stops */
+}
+
+.timeline-stop-segment[data-duration="0"] {
+  background: linear-gradient(135deg, var(--color-text-muted) 0%, var(--color-border) 100%);
+  opacity: 0.8;
+  width: 24px; /* Fixed width for pass-through */
+}
+
+/* For longer stays, cap at max width */
+.timeline-stop:hover .timeline-stop-segment {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.5);
+  border-width: 3px;
+}
+
+.timeline-stop--active .timeline-stop-segment {
+  background: linear-gradient(135deg, #d97706 0%, var(--color-accent-dark) 100%);
+  border-color: var(--color-accent-dark);
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.6),
+    0 0 0 4px rgba(245, 158, 11, 0.2);
+  animation: pulse-timeline 2s ease-in-out infinite;
+}
+
+/* Duration label inside the segment */
+.timeline-stop-duration-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Stop Tooltip */
+.timeline-stop-tooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.9);
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: var(--shadow-soft);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 1000;
+}
+
+.timeline-stop:hover .timeline-stop-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.timeline-stop-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--color-border);
+}
+
+.timeline-stop-tooltip-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-accent-dark);
+  margin-bottom: 2px;
+}
+
+.timeline-stop-tooltip-dates {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+}
+
+.timeline-stop-tooltip-duration {
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Pulse animation for active stop */
+@keyframes pulse-timeline {
+  0%,
+  100% {
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.6),
+      0 0 0 4px rgba(245, 158, 11, 0.2);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.8),
+      0 0 0 6px rgba(245, 158, 11, 0.3);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .trip-timeline {
+    padding: 16px 0 12px 0;
+    margin-bottom: 16px;
+  }
+
+  .timeline-markers {
+    padding: 0 12px;
+  }
+
+  .timeline-bar {
+    margin: 0 12px;
+  }
+
+  .timeline-marker-label {
+    font-size: 0.7rem;
+    padding: 2px 4px;
+  }
+
+  .timeline-marker-label:not(:first-child):not(:last-child) {
+    display: none; /* Hide intermediate markers on mobile */
+  }
+
+  .timeline-stop-segment {
+    height: 18px;
+  }
+
+  .timeline-stop-duration-label {
+    font-size: 0.65rem;
+  }
+
+  .timeline-stop-tooltip {
+    font-size: 0.8rem;
+  }
+
+  .timeline-stop-tooltip-label {
+    font-size: 0.8rem;
+  }
+
+  .timeline-stop-tooltip-dates,
+  .timeline-stop-tooltip-duration {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .timeline-markers {
+    padding: 0 8px;
+  }
+
+  .timeline-bar {
+    margin: 0 8px;
+  }
+}
+
+/* Fade-in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

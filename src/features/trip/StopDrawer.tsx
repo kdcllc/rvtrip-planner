@@ -22,6 +22,7 @@ type StopDrawerProps = {
   mapBounds?: MapBounds
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
+  onGenerateSourceUrl: () => void
   onSave: () => void
   onCancel: () => void
   onDelete?: () => void
@@ -38,6 +39,7 @@ export const StopDrawer = ({
   mapBounds,
   onFieldChange,
   onSelectPrediction,
+  onGenerateSourceUrl,
   onSave,
   onCancel,
   onDelete,
@@ -123,6 +125,7 @@ export const StopDrawer = ({
             mapBounds={mapBounds}
             onFieldChange={onFieldChange}
             onSelectPrediction={onSelectPrediction}
+            onGenerateSourceUrl={onGenerateSourceUrl}
             distanceFromPreviousMeters={stop?.distanceFromPreviousMeters}
             estimatedFuelCost={stop?.estimatedFuelCost}
           />

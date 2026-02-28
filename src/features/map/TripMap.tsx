@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import maplibregl, { type StyleSpecification } from 'maplibre-gl'
+import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import polyline from '@mapbox/polyline'
 import type { TripStop } from '../../domain/trip/types'
@@ -7,6 +7,12 @@ import type { MapBounds } from '../../services/campsiteSearch'
 import { formatDistance, formatDuration } from '../../utils/distance'
 import { computeRoute } from '../../services/maps/routesService'
 import { useRoutesEnabled } from '../../hooks/useRoutesEnabled'
+import {
+  OSM_STYLE,
+  createStopMarkerElement,
+  createRouteLabelElement,
+  formatDurationForLabel,
+} from '../../services/maps/mapUtils'
 
 type TripMapProps = {
   stops: TripStop[]
@@ -16,29 +22,6 @@ type TripMapProps = {
 }
 
 const DEFAULT_CENTER: [number, number] = [-115.1398, 36.1699]
-
-const OSM_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    'osm-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      attribution:
-        '© OpenStreetMap contributors, Tiles courtesy of OpenStreetMap and HOT',
-    },
-  },
-  layers: [
-    {
-      id: 'osm-tiles',
-      type: 'raster',
-      source: 'osm-tiles',
-    },
-  ],
-}
 
 const formatStopInfoContent = (stop: TripStop): string => {
   const dateRange = `${new Date(stop.startDate).toLocaleDateString()} – ${new Date(stop.endDate).toLocaleDateString()}`
@@ -72,7 +55,9 @@ const formatStopInfoContent = (stop: TripStop): string => {
 
   return `
     <div style="font-family: Arial, sans-serif; padding: 8px; max-width: 280px;">
-      <h3 style="margin: 0 0 4px 0; font-size: 1.1em; cursor: pointer; color: #0066cc; text-decoration: underline;" data-stop-nav-id="${stop.id}">${stop.label}</h3>
+      <h3 style="margin: 0 0 4px 0; font-size: 1.1em;">
+        <button type="button" style="padding: 0; border: 0; background: transparent; cursor: pointer; color: #0066cc; text-decoration: underline; font: inherit; text-align: left;" data-stop-nav-id="${stop.id}">${stop.label}</button>
+      </h3>
       <p style="margin: 0 0 4px 0; font-size: 0.75em; color: #999;">Click title to view in timeline</p>
       <p style="margin: 0 0 4px 0; font-size: 0.9em; color: #666;">${stop.address}</p>
       <p style="margin: 0 0 4px 0; font-size: 0.9em;"><strong>${dateRange}</strong></p>
@@ -93,6 +78,10 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
   const routeLayerIdsRef = useRef<string[]>([])
   const routeSourceIdsRef = useRef<string[]>([])
   const popupRef = useRef<maplibregl.Popup | null>(null)
+  const popupCleanupRef = useRef<(() => void) | null>(null)
+  const popupCloseTimeoutRef = useRef<number | null>(null)
+  const markerHoveringRef = useRef(false)
+  const popupHoveringRef = useRef(false)
   const routeCalculationInFlight = useRef(false)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
@@ -127,6 +116,10 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
     }
 
     return () => {
+      if (popupCloseTimeoutRef.current !== null) {
+        window.clearTimeout(popupCloseTimeoutRef.current)
+      }
+      popupCleanupRef.current?.()
       mapRef.current?.remove()
       mapRef.current = null
       setMapReady(false)
@@ -141,10 +134,38 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
     const map = mapRef.current
     const validStops = stops.filter((stop) => stop.location)
 
-    if (popupRef.current) {
-      popupRef.current.remove()
+    const clearPopupCloseTimeout = () => {
+      if (popupCloseTimeoutRef.current !== null) {
+        window.clearTimeout(popupCloseTimeoutRef.current)
+        popupCloseTimeoutRef.current = null
+      }
     }
-    onStopHover?.(null)
+
+    const removePopup = () => {
+      clearPopupCloseTimeout()
+      popupCleanupRef.current?.()
+      popupCleanupRef.current = null
+      popupRef.current?.remove()
+      popupHoveringRef.current = false
+      markerHoveringRef.current = false
+      onStopHover?.(null)
+    }
+
+    const schedulePopupClose = () => {
+      clearPopupCloseTimeout()
+      popupCloseTimeoutRef.current = window.setTimeout(() => {
+        popupCloseTimeoutRef.current = null
+        if (markerHoveringRef.current || popupHoveringRef.current) {
+          return
+        }
+
+        removePopup()
+      }, 220)
+    }
+
+    if (popupRef.current) {
+      removePopup()
+    }
 
     markersRef.current.forEach((marker) => marker.remove())
     markersRef.current = []
@@ -173,16 +194,17 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
         return
       }
 
-      const pin = document.createElement('div')
-      pin.className = 'map-pin'
-      pin.textContent = `${index + 1}`
-      pin.setAttribute('data-stop-id', stop.id)
+        const pin = createStopMarkerElement(index, stop.id)
+      pin.setAttribute('role', 'button')
+      pin.setAttribute('aria-label', `Stop ${index + 1}: ${stop.label}. Open stop details.`)
+      pin.tabIndex = 0
 
       const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
         .setLngLat([stop.location.lng, stop.location.lat])
         .addTo(map)
 
       const showPopup = () => {
+        clearPopupCloseTimeout()
         const popup =
           popupRef.current ??
           new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 })
@@ -191,25 +213,66 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
         popup.setLngLat([stop.location!.lng, stop.location!.lat])
         popup.setHTML(formatStopInfoContent(stop))
         popup.addTo(map)
-      }
 
-      const hidePopup = () => {
-        popupRef.current?.remove()
+        const popupElement = popup.getElement()
+        const handlePopupMouseEnter = () => {
+          popupHoveringRef.current = true
+          clearPopupCloseTimeout()
+          onStopHover?.(stop.id)
+        }
+        const handlePopupMouseLeave = () => {
+          popupHoveringRef.current = false
+          schedulePopupClose()
+        }
+
+        popupCleanupRef.current?.()
+        popupElement.addEventListener('mouseenter', handlePopupMouseEnter)
+        popupElement.addEventListener('mouseleave', handlePopupMouseLeave)
+        popupCleanupRef.current = () => {
+          popupElement.removeEventListener('mouseenter', handlePopupMouseEnter)
+          popupElement.removeEventListener('mouseleave', handlePopupMouseLeave)
+        }
       }
 
       pin.addEventListener('mouseenter', () => {
+        markerHoveringRef.current = true
+        onStopHover?.(stop.id)
+        showPopup()
+      })
+
+      pin.addEventListener('focus', () => {
+        markerHoveringRef.current = true
         onStopHover?.(stop.id)
         showPopup()
       })
 
       pin.addEventListener('mouseleave', () => {
-        onStopHover?.(null)
-        hidePopup()
+        markerHoveringRef.current = false
+        schedulePopupClose()
+      })
+
+      pin.addEventListener('blur', () => {
+        markerHoveringRef.current = false
+        schedulePopupClose()
       })
 
       pin.addEventListener('click', (event) => {
         event.preventDefault()
         event.stopPropagation()
+        markerHoveringRef.current = true
+        onStopHover?.(stop.id)
+        showPopup()
+      })
+
+      pin.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+        markerHoveringRef.current = true
+        onStopHover?.(stop.id)
         showPopup()
       })
 
@@ -307,21 +370,9 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
             const duration = formatDuration(routeResponse.duration)
 
             const midpoint = coordinates[Math.floor(coordinates.length / 2)]
-            const durationText =
-              duration === 'N/A'
-                ? '↝'
-                : duration
-                    .replace(/\s/g, '')
-                    .replace('minutes', 'm')
-                    .replace('minute', 'm')
-                    .replace('hours', 'h')
-                    .replace('hour', 'h')
-                    .replace('days', 'd')
-                    .replace('day', 'd')
+            const durationText = formatDurationForLabel(duration)
 
-            const labelContent = document.createElement('div')
-            labelContent.className = 'route-label'
-            labelContent.textContent = durationText
+            const labelContent = createRouteLabelElement(durationText)
             labelContent.title = `${validStops[i].label} → ${validStops[i + 1].label}\n${distance} • ${duration}`
 
             const label = new maplibregl.Marker({ element: labelContent, anchor: 'center' })
@@ -350,6 +401,9 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
     }
 
     return () => {
+      clearPopupCloseTimeout()
+      popupCleanupRef.current?.()
+      popupCleanupRef.current = null
       routeCalculationInFlight.current = false
     }
   }, [mapReady, stops, onStopHover, onStopDoubleClick, routesEnabled])
@@ -383,12 +437,16 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
 
   useEffect(() => {
     const handleInfoWindowClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      if (target && target.hasAttribute('data-stop-nav-id')) {
-        const stopId = target.getAttribute('data-stop-nav-id')
-        if (stopId) {
-          onStopDoubleClick?.(stopId)
-        }
+      const target = event.target as HTMLElement | null
+      const trigger = target?.closest<HTMLElement>('[data-stop-nav-id]')
+
+      if (!trigger) {
+        return
+      }
+
+      const stopId = trigger.getAttribute('data-stop-nav-id')
+      if (stopId) {
+        onStopDoubleClick?.(stopId)
       }
     }
 

@@ -148,6 +148,7 @@ type StopFormFieldsProps = {
   mapBounds?: MapBounds
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
+  onGenerateSourceUrl: () => void
   addressInputRef?: React.RefObject<HTMLInputElement>
   distanceFromPreviousMeters?: number
   estimatedFuelCost?: number
@@ -161,6 +162,7 @@ export const StopFormFields = ({
   mapBounds,
   onFieldChange,
   onSelectPrediction,
+  onGenerateSourceUrl,
   addressInputRef,
   distanceFromPreviousMeters,
   estimatedFuelCost,
@@ -362,11 +364,20 @@ export const StopFormFields = ({
         </label>
         <label>
           Listing URL
-          <input
-            value={values.sourceUrl || ''}
-            onChange={(event) => onFieldChange('sourceUrl', event.target.value)}
-            placeholder="https://..."
-          />
+          <div className="listing-url-row">
+            <input
+              value={values.sourceUrl || ''}
+              onChange={(event) => onFieldChange('sourceUrl', event.target.value)}
+              placeholder="https://..."
+            />
+            <button
+              className="ghost small"
+              type="button"
+              onClick={onGenerateSourceUrl}
+            >
+              Generate TruckMap URL
+            </button>
+          </div>
         </label>
         <label>
           Site type

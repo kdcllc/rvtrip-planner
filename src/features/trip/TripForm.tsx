@@ -20,6 +20,8 @@ import {
 import type { MapBounds } from '../../services/campsiteSearch'
 import { fetchAutocompleteSuggestions } from '../../services/geocoding/autocompleteService'
 import { geocodeAddress } from '../../services/geocoding/geocodingService'
+import { buildTruckMapPlaceUrl } from '../../utils/truckMapUrl'
+import { TripTimeline } from './TripTimeline'
 
 const STARTING_POINT_LABEL = 'Starting point'
 
@@ -37,6 +39,7 @@ type TripFormProps = {
   onClearStopSelection: () => void
   mapBounds?: MapBounds
   currentStopId?: string | null
+  onCurrentStopChange?: (stopId: string | null) => void
 }
 
 type DrawerState = {
@@ -63,6 +66,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   onClearStopSelection,
   mapBounds,
   currentStopId,
+  onCurrentStopChange,
 }: TripFormProps, ref) {
   // Add form state (for inline form - now removed, kept for reference)
   // All form state is now managed by drawer component
@@ -101,6 +105,84 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   const [drawerPredictions, setDrawerPredictions] = useState<SuggestionItem[]>([])
   const [drawerError, setDrawerError] = useState('')
   const drawerDebounceRef = useRef<number | null>(null)
+  const carouselRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollStopsCarousel = (direction: 'left' | 'right') => {
+    const container = carouselRef.current
+    if (!container) {
+      return
+    }
+
+    const firstCard = container.querySelector<HTMLElement>('.stop-item')
+    if (!firstCard) {
+      return
+    }
+
+    // Scroll by one card width plus gap (12px) to show next card
+    const cardWidth = firstCard.offsetWidth
+    const gap = 12
+    const scrollStep = cardWidth + gap
+    const multiplier = direction === 'left' ? -1 : 1
+
+    container.scrollBy({
+      left: scrollStep * multiplier,
+      behavior: 'smooth',
+    })
+  }
+
+  // Track which stop is currently visible in the carousel and update timeline highlighting
+  useEffect(() => {
+    if (!carouselRef?.current || !onCurrentStopChange) return
+
+    const carousel = carouselRef.current
+    const handleStopChange = onCurrentStopChange // Capture in local variable
+
+    const updateVisibleStop = () => {
+      const stopElements = carousel.querySelectorAll<HTMLElement>('.stop-item')
+      if (stopElements.length === 0) return
+
+      // Find the stop that's most centered in the viewport
+      const carouselCenter = carousel.scrollLeft + carousel.clientWidth / 2
+      
+      // Use Array.from to avoid forEach type inference issues
+      const stopArray = Array.from(stopElements)
+      let closestStop: HTMLElement | null = null
+      let closestDistance = Infinity
+
+      for (const stopElement of stopArray) {
+        const stopCenter = stopElement.offsetLeft + stopElement.offsetWidth / 2
+        const distance = Math.abs(stopCenter - carouselCenter)
+        if (distance < closestDistance) {
+          closestDistance = distance
+          closestStop = stopElement
+        }
+      }
+
+      // Extract and use the stop ID if found
+      if (closestStop) {
+        const stopId = closestStop.getAttribute('data-stop-id')
+        if (stopId) {
+          handleStopChange(stopId)
+        }
+      }
+    }
+
+    // Update on scroll with debouncing for performance
+    let scrollTimeout: number
+    const handleScroll = () => {
+      clearTimeout(scrollTimeout)
+      scrollTimeout = window.setTimeout(updateVisibleStop, 50)
+    }
+
+    carousel.addEventListener('scroll', handleScroll)
+    // Initial update
+    updateVisibleStop()
+
+    return () => {
+      carousel.removeEventListener('scroll', handleScroll)
+      clearTimeout(scrollTimeout)
+    }
+  }, [stops.length, onCurrentStopChange])
 
   // Drawer autocomplete effect
   useEffect(() => {
@@ -347,6 +429,35 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       '_blank',
       'noopener,noreferrer'
     )
+  }
+
+  const handleOpenStopInMaps = (stop: TripStop) => {
+    if (!stop.address) {
+      return
+    }
+
+    const validation = validateStopsForMaps([stop])
+    if (!validation.valid) {
+      console.warn('Cannot open in Google Maps:', validation.error)
+      return
+    }
+
+    try {
+      const url = buildGoogleMapsDirectionsUrl([stop])
+      openInGoogleMaps(url)
+    } catch (err) {
+      console.error('Failed to open Google Maps:', err)
+    }
+  }
+
+  // Timeline stop click handler - scrolls carousel to the selected stop
+  const handleTimelineStopClick = (stopId: string) => {
+    const stopElement = carouselRef.current?.querySelector(
+      `.stop-item[data-stop-id="${stopId}"]`
+    )
+    if (stopElement) {
+      stopElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }
   }
 
   // Drawer form field change handler
@@ -672,6 +783,31 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }
   }
 
+  const handleGenerateTruckMapUrl = () => {
+    const generatedUrl = buildTruckMapPlaceUrl(drawerFormValues.address || '')
+
+    if (!generatedUrl) {
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        status: 'invalid',
+        message:
+          'Add a full address (for example: City, State, USA) to generate a TruckMap URL.',
+      }))
+      return
+    }
+
+    setDrawerError('')
+    setDrawerFormValues((prev) => ({
+      ...prev,
+      sourceUrl: generatedUrl,
+    }))
+    setDrawerValidationState((prev) => ({
+      ...prev,
+      status: 'valid',
+      message: 'TruckMap URL generated from address.',
+    }))
+  }
+
   return (
     <div className="form-wrap">
       <div className="panel-header">
@@ -679,7 +815,35 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
           <h2>Trip stops</h2>
           <p>List each stop with dates and an address.</p>
         </div>
-        <span className="chip">{stops.length} planned</span>
+        <div className="stop-header-actions">
+          {stops.length > 0 ? (
+            <div
+              className="stop-carousel-controls"
+              role="group"
+              aria-label="Scroll trip stops"
+            >
+              <button
+                className="ghost small"
+                type="button"
+                onClick={() => scrollStopsCarousel('left')}
+                aria-label="Scroll stops left"
+                title="Scroll stops left"
+              >
+                ←
+              </button>
+              <button
+                className="ghost small"
+                type="button"
+                onClick={() => scrollStopsCarousel('right')}
+                aria-label="Scroll stops right"
+                title="Scroll stops right"
+              >
+                →
+              </button>
+            </div>
+          ) : null}
+          <span className="chip">{stops.length} planned</span>
+        </div>
       </div>
 
       <button 
@@ -738,7 +902,20 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         </div>
       )}
 
-      <div className="stop-list">
+      {/* Timeline - shows visual overview of trip dates */}
+      <TripTimeline
+        stops={stops}
+        onStopClick={handleTimelineStopClick}
+        currentStopId={currentStopId ?? null}
+        carouselRef={carouselRef}
+      />
+
+      <div
+        ref={carouselRef}
+        className={`stop-list ${stops.length === 0 ? 'stop-list--empty' : ''}`}
+        role="region"
+        aria-label="Trip stops carousel"
+      >
         {stops.length === 0 ? (
           <div className="empty-state">
             <p>No stops yet. Start by adding your first destination.</p>
@@ -753,6 +930,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
             const canMoveDown =
               !isLast &&
               (stops[index + 1].label === STARTING_POINT_LABEL) === isStartingPoint
+            const truckMapUrl = buildTruckMapPlaceUrl(stop.address)
+            const hasTruckMapSourceUrl =
+              Boolean(stop.source?.url) && stop.source?.url === truckMapUrl
 
             return (
               <div key={stop.id} className="stop-item" data-stop-id={stop.id}>
@@ -768,7 +948,18 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
                   <div>
                     <h3>{stop.label}</h3>
-                    <p className="muted">{stop.address}</p>
+                    {stop.address ? (
+                      <button
+                        className="address-link"
+                        type="button"
+                        onClick={() => handleOpenStopInMaps(stop)}
+                        title="Click to open in Google Maps"
+                      >
+                        📍 {stop.address}
+                      </button>
+                    ) : (
+                      <p className="muted">No address</p>
+                    )}
                     <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
                     {(stop.checkInTime || stop.checkOutTime) && (
                       <p className="times">
@@ -791,46 +982,60 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                         )}
                       </div>
                     )}
-                    {stop.address ? (
-                      <button
-                        className="coverage-link"
-                        type="button"
-                        onClick={() => void openCoverageMap(stop.address)}
-                      >
-                        Check T-Mobile coverage
-                      </button>
-                    ) : null}
-                    {stop.source ? (
-                      <div className="stop-source">
-                        <span className="source-badge">{stop.source.name}</span>
-                        {stop.source.url ? (
-                          <a
-                            className="source-link"
-                            href={stop.source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            View listing
-                          </a>
+                    <div className="stop-action-buttons">
+                      {stop.address ? (
+                        <button
+                          className="action-icon-button"
+                          type="button"
+                          onClick={() => void openCoverageMap(stop.address)}
+                          title="Check T-Mobile coverage"
+                        >
+                          📶
+                        </button>
+                      ) : null}
+                      {truckMapUrl && !hasTruckMapSourceUrl ? (
+                        <a
+                          className="action-icon-button"
+                          href={truckMapUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open in TruckMap"
+                        >
+                          🚚
+                        </a>
+                      ) : null}
+                    </div>
+                    {(stop.source || stop.manualEntry) && (
+                      <div className="source-info-group">
+                        <div className="source-header">
+                          {stop.source ? (
+                            <span className="source-badge">{stop.source.name}</span>
+                          ) : null}
+                          {stop.manualEntry ? (
+                            <span className="source-badge manual-badge">Manual</span>
+                          ) : null}
+                          {stop.source?.url ? (
+                            <a
+                              className="source-link"
+                              href={stop.source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View listing
+                            </a>
+                          ) : null}
+                        </div>
+                        {stop.source?.siteType ? (
+                          <p className="source-detail">Type: {stop.source.siteType}</p>
+                        ) : null}
+                        {stop.source?.fees ? (
+                          <p className="source-detail">Fees: {stop.source.fees}</p>
+                        ) : null}
+                        {stop.source?.amenities ? (
+                          <p className="source-detail">Amenities: {stop.source.amenities}</p>
                         ) : null}
                       </div>
-                    ) : null}
-                    {stop.source?.siteType ? (
-                      <p className="source-detail">Type: {stop.source.siteType}</p>
-                    ) : null}
-                    {stop.source?.fees ? (
-                      <p className="source-detail">Fees: {stop.source.fees}</p>
-                    ) : null}
-                    {stop.source?.amenities ? (
-                      <p className="source-detail">
-                        Amenities: {stop.source.amenities}
-                      </p>
-                    ) : null}
-                    {stop.manualEntry ? (
-                      <div className="stop-source">
-                        <span className="source-badge manual-badge">Manual</span>
-                      </div>
-                    ) : null}
+                    )}
                     {stop.note ? <p className="stop-note">{stop.note}</p> : null}
                     <p className={`status status-${stop.status ?? 'idle'}`}>
                       {stop.status === 'geocoding' && 'Locating address'}
@@ -873,11 +1078,15 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                     </div>
                   </div>
                 </article>
-                <StopWeatherForecast
-                  stop={stop}
-                  forecast={weatherByStopId[stop.id]}
-                  error={weatherErrors[stop.id]}
-                />
+                {(weatherByStopId[stop.id] || weatherErrors[stop.id]) && (
+                  <div className="stop-weather-container">
+                    <StopWeatherForecast
+                      stop={stop}
+                      forecast={weatherByStopId[stop.id]}
+                      error={weatherErrors[stop.id]}
+                    />
+                  </div>
+                )}
               </div>
             )
           })
@@ -896,6 +1105,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         mapBounds={mapBounds}
         onFieldChange={handleDrawerFieldChange}
         onSelectPrediction={selectDrawerPrediction}
+        onGenerateSourceUrl={handleGenerateTruckMapUrl}
         onSave={saveDrawerChanges}
         onCancel={closeDrawer}
         onDelete={drawerState.mode === 'edit' ? handleDrawerDelete : undefined}
