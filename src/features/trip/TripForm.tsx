@@ -104,8 +104,14 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
   const [drawerPredictions, setDrawerPredictions] = useState<SuggestionItem[]>([])
   const [drawerError, setDrawerError] = useState('')
+  const [isValidatingAddress, setIsValidatingAddress] = useState(false)
   const drawerDebounceRef = useRef<number | null>(null)
+  const drawerValidationStateRef = useRef<StopFormValidationState>(drawerValidationState)
   const carouselRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    drawerValidationStateRef.current = drawerValidationState
+  }, [drawerValidationState])
 
   const scrollStopsCarousel = (direction: 'left' | 'right') => {
     const container = carouselRef.current
@@ -190,7 +196,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return
     }
 
-    // Skip autocomplete if manual address mode is enabled
+    // Skip autocomplete if manual address mode is enabled.
     if (drawerFormValues.manualAddress) {
       return
     }
@@ -204,14 +210,20 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return
     }
 
-    if (
-      drawerValidationState.status === 'valid' &&
-      trimmedAddress === drawerValidationState.lastValidatedAddress
-    ) {
-      return
-    }
-
     drawerDebounceRef.current = window.setTimeout(async () => {
+      const currentValidationState = drawerValidationStateRef.current
+      if (
+        currentValidationState.status === 'valid' &&
+        trimmedAddress === currentValidationState.lastValidatedAddress
+      ) {
+        setDrawerPredictions([])
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          predictionStatus: 'idle',
+        }))
+        return
+      }
+
       setDrawerValidationState((prev) => ({
         ...prev,
         predictionStatus: 'loading',
@@ -219,13 +231,13 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
       try {
         const result = await fetchAutocompleteSuggestions(trimmedAddress)
-        const suggestionItems: SuggestionItem[] = result.suggestions.map(s => ({
-          id: s.id,
-          mainText: s.mainText,
-          secondaryText: s.secondaryText,
-          location: s.location ?? undefined,
+        const suggestionItems: SuggestionItem[] = result.suggestions.map((suggestion) => ({
+          id: suggestion.id,
+          mainText: suggestion.mainText,
+          secondaryText: suggestion.secondaryText,
+          location: suggestion.location ?? undefined,
         }))
-        
+
         setDrawerPredictions(suggestionItems)
         setDrawerValidationState((prev) => ({
           ...prev,
@@ -246,7 +258,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         window.clearTimeout(drawerDebounceRef.current)
       }
     }
-  }, [drawerFormValues.address, drawerFormValues.manualAddress, drawerState.isOpen, drawerValidationState.status, drawerValidationState.lastValidatedAddress])
+  }, [drawerFormValues.address, drawerFormValues.manualAddress, drawerState.isOpen])
 
   // Drawer prediction selection
   const selectDrawerPrediction = async (item: SuggestionItem) => {
@@ -372,6 +384,26 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }
   }
 
+  // Validate current address without saving - for user feedback
+  const validateCurrentAddress = async () => {
+    setIsValidatingAddress(true)
+    try {
+      const addressText = (drawerFormValues.address || '').trim()
+      if (!addressText) {
+        setDrawerValidationState((prev) => ({
+          ...prev,
+          status: 'invalid',
+          message: 'Address is empty.',
+        }))
+        return
+      }
+
+      await validateAddress(addressText)
+    } finally {
+      setIsValidatingAddress(false)
+    }
+  }
+
   const handleOpenAllInMaps = () => {
     const validation = validateStopsForMaps(stops)
     if (!validation.valid) {
@@ -481,17 +513,27 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
     // Reset validation on field change  
     if (field === 'address') {
+      const nextAddress = typeof value === 'string' ? value.trim() : ''
       setDrawerValidationState((prev) => ({
         ...prev,
         status: 'idle',
         message: '',
         lastValidatedAddress: '',
+        predictionStatus: nextAddress.length >= 3 ? prev.predictionStatus : 'idle',
       }))
+
+      if (nextAddress.length < 3) {
+        setDrawerPredictions([])
+      }
     }
 
-    // Clear predictions when manual address mode is enabled
-    if (field === 'manualAddress' && value === true) {
+    // Clear predictions when manual address mode is toggled.
+    if (field === 'manualAddress') {
       setDrawerPredictions([])
+      setDrawerValidationState((prev) => ({
+        ...prev,
+        predictionStatus: 'idle',
+      }))
     }
   }
 
@@ -660,6 +702,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       }
     }
 
+    // Resolve final location value (may be updated by manual geocoding)
+    let finalLocation = drawerFormValues.location
+
     // Skip validation if manual address mode is enabled
     if (!drawerFormValues.manualAddress) {
       const isValidated = await validateAddress(drawerFormValues.address || '')
@@ -668,11 +713,33 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         return
       }
     } else {
-      // For manual addresses, attempt best-effort geocoding in background
-      // but don't block saving if it fails
-      validateAddress(drawerFormValues.address || '').catch(() => {
-        // Silently fail - manual entry allows bypassing validation
-      })
+      // For manual addresses, attempt geocoding to populate coordinates for map display.
+      // Don't block saving if geocoding fails, but ensure location is included if it succeeds.
+      const addressToGeocode = (drawerFormValues.address || '').trim()
+      if (addressToGeocode) {
+        try {
+          console.log('[saveDrawerChanges] Geocoding manual address:', addressToGeocode)
+          const result = await geocodeAddress(addressToGeocode)
+          console.log('[saveDrawerChanges] Geocoding result:', result)
+          if (result?.location) {
+            finalLocation = result.location
+            console.log('[saveDrawerChanges] Set finalLocation to:', finalLocation)
+            // Also update state for consistency and future reference
+            setDrawerFormValues((prev) => ({
+              ...prev,
+              address: result.address,
+              location: result.location,
+            }))
+          } else {
+            console.warn('[saveDrawerChanges] Geocoding returned no location:', result)
+          }
+        } catch (error) {
+          // Manual entry allows saving even if geocoding fails
+          console.error('[saveDrawerChanges] Manual address geocoding failed:', error)
+        }
+      } else {
+        console.warn('[saveDrawerChanges] Manual address is empty after trim')
+      }
     }
 
     const resolvedLabel = isStartingPoint
@@ -723,8 +790,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
               amenities: trimmedAmenities || undefined,
             }
           : undefined,
-        location: drawerFormValues.location ?? undefined,
-        status: drawerFormValues.location ? 'ready' : 'idle',
+        location: finalLocation ?? undefined,
+        status: finalLocation ? 'ready' : 'idle',
         reservationStatus: (drawerFormValues.reservationStatus as 'reserved' | 'unreserved' | '') || undefined,
         confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
         siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
@@ -760,8 +827,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
               amenities: trimmedAmenities || undefined,
             }
           : undefined,
-        status: drawerFormValues.location ? 'ready' : 'idle',
-        location: drawerFormValues.location ?? undefined,
+        status: finalLocation ? 'ready' : 'idle',
+        location: finalLocation ?? undefined,
         reservationStatus: (drawerFormValues.reservationStatus as 'reserved' | 'unreserved' | '') || undefined,
         confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
         siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
@@ -1103,9 +1170,11 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         error={drawerError}
         formValues={drawerFormValues}
         mapBounds={mapBounds}
+        isValidatingAddress={isValidatingAddress}
         onFieldChange={handleDrawerFieldChange}
         onSelectPrediction={selectDrawerPrediction}
         onGenerateSourceUrl={handleGenerateTruckMapUrl}
+        onValidateCurrentAddress={validateCurrentAddress}
         onSave={saveDrawerChanges}
         onCancel={closeDrawer}
         onDelete={drawerState.mode === 'edit' ? handleDrawerDelete : undefined}

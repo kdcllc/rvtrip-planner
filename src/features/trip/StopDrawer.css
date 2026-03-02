@@ -103,7 +103,7 @@
 }
 
 /* Form controls inside drawer */
-.stop-drawer-content input,
+.stop-drawer-content input:not([type='checkbox']):not([type='radio']),
 .stop-drawer-content select,
 .stop-drawer-content textarea {
   appearance: none;
@@ -124,12 +124,27 @@
   padding-right: 32px;
 }
 
-.stop-drawer-content input:focus,
+.stop-drawer-content input:not([type='checkbox']):not([type='radio']):focus,
 .stop-drawer-content select:focus,
 .stop-drawer-content textarea:focus {
   outline: none;
   border-color: var(--color-accent);
   background: var(--color-surface);
+}
+
+.stop-drawer-content input[type='checkbox'] {
+  appearance: auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: var(--color-accent);
+  border: none;
+  background: transparent;
+}
+
+.manual-address-hint {
+  margin: -2px 0 2px;
+  font-size: 0.8rem;
 }
 
 /* Drawer Footer */

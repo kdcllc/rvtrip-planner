@@ -10,20 +10,35 @@ export type MapsValidationResult = {
 }
 
 /**
+ * Helper to check if a stop has a valid query (either coordinates or address)
+ * @param stop - Trip stop to validate
+ * @returns True if stop can be used in a maps query
+ */
+function isStopValidForMaps(stop: TripStop): boolean {
+  // Valid if has coordinates
+  if (stop.location?.lat != null && stop.location?.lng != null) {
+    return true
+  }
+  // Valid if has address text (will use as fallback)
+  if (stop.address && stop.address.trim().length > 0) {
+    return true
+  }
+  return false
+}
+
+/**
  * Validate stops for Google Maps URL generation
  * @param stops - Array of trip stops to validate
  * @returns Validation result with valid stops and any error message
  */
 export function validateStopsForMaps(stops: TripStop[]): MapsValidationResult {
-  // Filter to stops with valid coordinates
-  const validStops = stops.filter(
-    (stop) => stop.location?.lat != null && stop.location?.lng != null
-  )
+  // Filter to stops with valid coordinates or address text
+  const validStops = stops.filter(isStopValidForMaps)
 
   if (validStops.length === 0) {
     return {
       valid: false,
-      error: 'No stops have valid coordinates. Please add addresses and wait for geocoding.',
+      error: 'No stops have valid addresses or coordinates. Please add stops with addresses.',
       validStops: [],
     }
   }
@@ -40,6 +55,20 @@ export function validateStopsForMaps(stops: TripStop[]): MapsValidationResult {
     valid: true,
     validStops,
   }
+}
+
+/**
+ * Build a query string for a stop (either coordinates or address)
+ * @param stop - Trip stop to build query for
+ * @returns Query string for use in Google Maps URL
+ */
+function buildStopQuery(stop: TripStop): string {
+  // Prefer coordinates if available
+  if (stop.location?.lat != null && stop.location?.lng != null) {
+    return `${stop.location.lat},${stop.location.lng}`
+  }
+  // Fall back to address text
+  return encodeURIComponent(stop.address)
 }
 
 /**
@@ -69,16 +98,17 @@ export function buildGoogleMapsDirectionsUrl(
   // Single stop - show on map
   if (validStops.length === 1) {
     const stop = validStops[0]
-    return `https://www.google.com/maps/search/?api=1&query=${stop.location!.lat},${stop.location!.lng}`
+    const query = buildStopQuery(stop)
+    return `https://www.google.com/maps/search/?api=1&query=${query}`
   }
 
   // Multiple stops - create directions with waypoints
-  const origin = `${validStops[0].location!.lat},${validStops[0].location!.lng}`
-  const destination = `${validStops[validStops.length - 1].location!.lat},${validStops[validStops.length - 1].location!.lng}`
+  const origin = buildStopQuery(validStops[0])
+  const destination = buildStopQuery(validStops[validStops.length - 1])
 
   const waypoints = validStops
     .slice(1, -1)
-    .map((stop) => `${stop.location!.lat},${stop.location!.lng}`)
+    .map(buildStopQuery)
     .join('|')
 
   let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`

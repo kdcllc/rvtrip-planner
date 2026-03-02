@@ -736,12 +736,21 @@ function App() {
       return
     }
 
+    // Find stops that need geocoding, prioritizing manual entries
+    // Include stops that don't have location yet, excluding those in error state
     const pendingStops = currentStops.filter(
       (stop) =>
-        !stop.location && stop.status !== 'geocoding' && stop.status !== 'error',
+        !stop.location && stop.status !== 'error',
     )
 
-    if (pendingStops.length === 0) {
+    // Sort to prioritize manual entries first (they should be geocoded ASAP)
+    const sortedPendingStops = pendingStops.sort((a, b) => {
+      const aIsManual = a.manualEntry ? 1 : 0
+      const bIsManual = b.manualEntry ? 1 : 0
+      return bIsManual - aIsManual // manualEntry: true comes first
+    })
+
+    if (sortedPendingStops.length === 0) {
       return
     }
 
@@ -749,7 +758,7 @@ function App() {
     let cancelled = false
 
     const run = async () => {
-      for (const stop of pendingStops) {
+      for (const stop of sortedPendingStops) {
         updateStop(stop.id, { status: 'geocoding' })
         try {
           const result = await geocodeAddress(stop.address)
@@ -794,6 +803,8 @@ function App() {
   }, [currentStops, updateStop])
 
   const forecastCandidates = useMemo(() => {
+    // Include stops with location that have date range
+    // This will also include manual addresses once they're geocoded
     return currentStops
       .filter((stop) => stop.location && stop.startDate && stop.endDate)
       .map((stop) => ({

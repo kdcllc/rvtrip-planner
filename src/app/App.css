@@ -377,6 +377,50 @@
   width: 100%;
 }
 
+.address-validation-message {
+  font-size: 0.75rem;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.address-validation-message.validating {
+  color: #7c3aed;
+  background-color: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+}
+
+.address-validation-message.valid {
+  color: #059669;
+  background-color: rgba(5, 150, 105, 0.1);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+.address-validation-message.invalid {
+  color: #dc2626;
+  background-color: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+
+:root[data-theme="dark"] .address-validation-message.validating {
+  color: #c4b5fd;
+  background-color: rgba(196, 181, 253, 0.15);
+  border-color: rgba(196, 181, 253, 0.3);
+}
+
+:root[data-theme="dark"] .address-validation-message.valid {
+  color: #6ee7b7;
+  background-color: rgba(110, 231, 183, 0.15);
+  border-color: rgba(110, 231, 183, 0.3);
+}
+
+:root[data-theme="dark"] .address-validation-message.invalid {
+  color: #fca5a5;
+  background-color: rgba(252, 165, 165, 0.15);
+  border-color: rgba(252, 165, 165, 0.3);
+}
+
 .address-suggestions {
   position: absolute;
   top: calc(100% + 6px);
@@ -456,6 +500,33 @@
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
+.ghost-compact {
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.ghost-compact:hover {
+  background-color: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.ghost-compact:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.ghost-compact:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .ghost:hover {
   background-color: var(--color-accent-soft);
   border-color: var(--color-accent);
@@ -494,6 +565,14 @@
   color: #c2410c;
   font-size: 0.85rem;
   margin: 0;
+}
+
+.field-error {
+  color: #c2410c;
+  font-size: 0.75rem;
+  margin: 4px 0 0 0;
+  padding: 4px 6px;
+  line-height: 1.3;
 }
 
 .stop-list {

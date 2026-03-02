@@ -146,9 +146,13 @@ type StopFormFieldsProps = {
   values: Partial<StopFormValues>
   predictions: SuggestionItem[]
   mapBounds?: MapBounds
+  validationState?: StopFormValidationState
+  error?: string
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
   onGenerateSourceUrl: () => void
+  onValidateCurrentAddress?: () => void
+  isValidatingAddress?: boolean
   addressInputRef?: React.RefObject<HTMLInputElement>
   distanceFromPreviousMeters?: number
   estimatedFuelCost?: number
@@ -160,9 +164,13 @@ export const StopFormFields = ({
   values,
   predictions,
   mapBounds,
+  validationState,
+  error,
   onFieldChange,
   onSelectPrediction,
   onGenerateSourceUrl,
+  onValidateCurrentAddress,
+  isValidatingAddress,
   addressInputRef,
   distanceFromPreviousMeters,
   estimatedFuelCost,
@@ -170,6 +178,14 @@ export const StopFormFields = ({
 }: StopFormFieldsProps) => {
   const internalAddressRef = useRef<HTMLInputElement | null>(null)
   const ref = addressInputRef || internalAddressRef
+
+  // Map error messages to fields
+  const errorMap = {
+    titleError: error?.toLowerCase().includes('title') || error?.toLowerCase().includes('label'),
+    addressError: error?.toLowerCase().includes('address'),
+    dateError: error?.toLowerCase().includes('date') || error?.toLowerCase().includes('arrival') || error?.toLowerCase().includes('departure'),
+    timeError: error?.toLowerCase().includes('check-in') || error?.toLowerCase().includes('check-out'),
+  }
 
   return (
     <div className="form-grid">
@@ -182,6 +198,7 @@ export const StopFormFields = ({
             placeholder="Grand Canyon Village"
             disabled={values.isStartPoint}
           />
+          {errorMap.titleError && <p className="field-error">{error}</p>}
         </label>
       )}
       {!isEditing && (
@@ -211,7 +228,20 @@ export const StopFormFields = ({
         </label>
       )}
       <label>
-        Address
+        <span className="label-row">
+          Address
+          {!values.manualAddress && values.address && predictions.length === 0 && onValidateCurrentAddress && (
+            <button
+              className="ghost-compact"
+              type="button"
+              onClick={onValidateCurrentAddress}
+              disabled={isValidatingAddress}
+              title="Validate this address without selecting from suggestions"
+            >
+              {isValidatingAddress ? 'Validating...' : 'Validate'}
+            </button>
+          )}
+        </span>
         <div className="address-field">
           <input
             ref={ref}
@@ -227,8 +257,24 @@ export const StopFormFields = ({
               }, 150)
             }}
             placeholder="Grand Canyon Village, AZ"
-            disabled={values.manualAddress}
           />
+          {isValidatingAddress && (
+            <p className="address-validation-message validating">
+              Validating address...
+            </p>
+          )}
+          {!isValidatingAddress && validationState?.message && validationState.lastValidatedAddress === values.address && (
+            <p
+              className={`address-validation-message ${validationState.status === 'invalid' ? 'invalid' : 'valid'}`}
+            >
+              {validationState.message}
+            </p>
+          )}
+          {!isValidatingAddress && !validationState?.message && errorMap.addressError && (
+            <p className="address-validation-message invalid">
+              {error}
+            </p>
+          )}
           {predictions.length > 0 && !values.manualAddress ? (
             <div className="address-suggestions" role="listbox">
               {predictions.map((prediction) => (
@@ -254,7 +300,7 @@ export const StopFormFields = ({
         </div>
       </label>
       <label>
-        Manual address
+        Manual address entry
         <input
           type="checkbox"
           checked={values.manualAddress || false}
@@ -264,6 +310,11 @@ export const StopFormFields = ({
           }}
         />
       </label>
+      <p className="manual-address-hint muted" role="status" aria-live="polite">
+        {values.manualAddress
+          ? 'Manual entry is ON. Suggestions and required address validation are bypassed for this stop.'
+          : 'Manual entry is OFF. Type an address and pick a suggestion to validate before saving.'}
+      </p>
       <label>
         Arrival
         <input
@@ -272,6 +323,7 @@ export const StopFormFields = ({
           onChange={(event) => onFieldChange('startDate', event.target.value)}
           disabled={values.isStartPoint}
         />
+        {errorMap.dateError && <p className="field-error">{error}</p>}
       </label>
       <label>
         {values.isStartPoint ? 'Departure (used for weather)' : 'Departure'}
@@ -307,6 +359,7 @@ export const StopFormFields = ({
               onChange={(event) => onFieldChange('checkOutTime', event.target.value)}
               placeholder="11:00 AM"
             />
+            {errorMap.timeError && <p className="field-error">{error}</p>}
           </label>
         </>
       )}

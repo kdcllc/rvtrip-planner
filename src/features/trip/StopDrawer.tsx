@@ -20,9 +20,11 @@ type StopDrawerProps = {
   error: string
   formValues: Partial<StopFormValues>
   mapBounds?: MapBounds
+  isValidatingAddress?: boolean
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
   onGenerateSourceUrl: () => void
+  onValidateCurrentAddress?: () => void
   onSave: () => void
   onCancel: () => void
   onDelete?: () => void
@@ -37,9 +39,11 @@ export const StopDrawer = ({
   error,
   formValues,
   mapBounds,
+  isValidatingAddress,
   onFieldChange,
   onSelectPrediction,
   onGenerateSourceUrl,
+  onValidateCurrentAddress,
   onSave,
   onCancel,
   onDelete,
@@ -123,32 +127,24 @@ export const StopDrawer = ({
             values={formValues}
             predictions={predictions}
             mapBounds={mapBounds}
+            validationState={validationState}
+            error={error}
             onFieldChange={onFieldChange}
             onSelectPrediction={onSelectPrediction}
             onGenerateSourceUrl={onGenerateSourceUrl}
+            onValidateCurrentAddress={onValidateCurrentAddress}
+            isValidatingAddress={isValidatingAddress}
             distanceFromPreviousMeters={stop?.distanceFromPreviousMeters}
             estimatedFuelCost={stop?.estimatedFuelCost}
           />
 
-          {error && <p className="form-error">{error}</p>}
-          {!error && validationState.message && (
-            <p
-              className={
-                validationState.status === 'invalid'
-                  ? 'form-error'
-                  : 'muted'
-              }
-            >
-              {validationState.message}
-            </p>
-          )}
-          {!error && validationState.predictionStatus === 'blocked' && (
+          {!validationState.message && validationState.predictionStatus === 'blocked' && (
             <p className="form-error">
-              Autocomplete is blocked. Check Places API, billing, and API key
-              restrictions.
+              Autocomplete is unavailable right now. Check network access and
+              geocoding provider availability.
             </p>
           )}
-          {!error && validationState.predictionStatus === 'empty' && (
+          {!validationState.message && validationState.predictionStatus === 'empty' && (
             <p className="muted">No address suggestions yet.</p>
           )}
         </div>

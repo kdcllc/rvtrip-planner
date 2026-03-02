@@ -50,7 +50,7 @@ export const TripTimeline = forwardRef<HTMLDivElement, TripTimelineProps>(
     // Add scroll listener
     carousel.addEventListener('scroll', handleCarouselScroll)
     return () => carousel.removeEventListener('scroll', handleCarouselScroll)
-  }, [stops.length])
+  }, [carouselRef])
   // Calculate timeline data
   const timelineData = useMemo(() => {
     // Need at least 2 stops for a meaningful timeline
