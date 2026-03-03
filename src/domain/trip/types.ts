@@ -42,6 +42,9 @@ export type TripStop = {
   siteNumber?: string
   contactPhone?: string
   nightlyCost?: number
+  actualGasCost?: number
+  actualFoodCost?: number
+  actualMiscCost?: number
   reservationNote?: string
 }
 

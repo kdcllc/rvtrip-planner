@@ -3,6 +3,10 @@ import {
   calculateFuelCost,
   calculateTripTotalFuelCost,
   calculateTripTotalAccommodationCost,
+  calculateTripTotalActualGasCost,
+  calculateTripTotalActualFoodCost,
+  calculateTripTotalActualMiscCost,
+  calculateTripTotalActualCost,
   calculateNights,
   calculateTripTotalCost,
 } from './costCalculation'
@@ -204,6 +208,130 @@ describe('costCalculation', () => {
     it('should handle empty stops array', () => {
       const total = calculateTripTotalCost([])
       expect(total).toEqual(0)
+    })
+  })
+
+  describe('calculateTripTotalActualGasCost', () => {
+    it('should sum all actual gas costs', () => {
+      const stops: TripStop[] = [
+        {
+          id: '1',
+          label: 'Stop 1',
+          address: 'Address 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          actualGasCost: 20.25,
+        },
+        {
+          id: '2',
+          label: 'Stop 2',
+          address: 'Address 2',
+          startDate: '2024-01-02',
+          endDate: '2024-01-03',
+          actualGasCost: 39.75,
+        },
+      ]
+
+      expect(calculateTripTotalActualGasCost(stops)).toEqual(60)
+    })
+  })
+
+  describe('calculateTripTotalActualFoodCost', () => {
+    it('should sum all actual food costs', () => {
+      const stops: TripStop[] = [
+        {
+          id: '1',
+          label: 'Stop 1',
+          address: 'Address 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          actualFoodCost: 45.5,
+        },
+        {
+          id: '2',
+          label: 'Stop 2',
+          address: 'Address 2',
+          startDate: '2024-01-02',
+          endDate: '2024-01-03',
+          actualFoodCost: 14.5,
+        },
+      ]
+
+      expect(calculateTripTotalActualFoodCost(stops)).toEqual(60)
+    })
+  })
+
+  describe('calculateTripTotalActualMiscCost', () => {
+    it('should sum all actual misc costs', () => {
+      const stops: TripStop[] = [
+        {
+          id: '1',
+          label: 'Stop 1',
+          address: 'Address 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          actualMiscCost: 12.25,
+        },
+        {
+          id: '2',
+          label: 'Stop 2',
+          address: 'Address 2',
+          startDate: '2024-01-02',
+          endDate: '2024-01-03',
+        },
+      ]
+
+      expect(calculateTripTotalActualMiscCost(stops)).toEqual(12.25)
+    })
+  })
+
+  describe('calculateTripTotalActualCost', () => {
+    it('should sum actual gas, food, and misc costs', () => {
+      const stops: TripStop[] = [
+        {
+          id: '1',
+          label: 'Stop 1',
+          address: 'Address 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          actualGasCost: 20,
+          actualFoodCost: 30,
+          actualMiscCost: 10,
+        },
+        {
+          id: '2',
+          label: 'Stop 2',
+          address: 'Address 2',
+          startDate: '2024-01-02',
+          endDate: '2024-01-03',
+          actualGasCost: 15,
+          actualFoodCost: 25,
+          actualMiscCost: 5,
+        },
+      ]
+
+      expect(calculateTripTotalActualCost(stops)).toEqual(105)
+    })
+
+    it('should round to 2 decimal places', () => {
+      const stops: TripStop[] = [
+        {
+          id: '1',
+          label: 'Stop 1',
+          address: 'Address 1',
+          startDate: '2024-01-01',
+          endDate: '2024-01-02',
+          actualGasCost: 1.335,
+          actualFoodCost: 2.335,
+          actualMiscCost: 3.335,
+        },
+      ]
+
+      expect(calculateTripTotalActualCost(stops)).toEqual(7.01)
+    })
+
+    it('should handle empty stops array', () => {
+      expect(calculateTripTotalActualCost([])).toEqual(0)
     })
   })
 })

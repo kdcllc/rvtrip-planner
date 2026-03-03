@@ -102,6 +102,46 @@
   gap: 16px;
 }
 
+.stop-drawer-content .form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.stop-drawer-content .form-grid > label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.stop-drawer-content .form-grid input:not([type='checkbox']):not([type='radio']),
+.stop-drawer-content .form-grid select,
+.stop-drawer-content .form-grid textarea {
+  width: 100%;
+}
+
+.stop-drawer-content .source-section,
+.stop-drawer-content .cost-section,
+.stop-drawer-content .reservation-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--color-surface-strong);
+  border: 1px solid var(--color-border);
+}
+
+.stop-drawer-content .source-header,
+.stop-drawer-content .cost-header,
+.stop-drawer-content .reservation-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
 /* Form controls inside drawer */
 .stop-drawer-content input:not([type='checkbox']):not([type='radio']),
 .stop-drawer-content select,

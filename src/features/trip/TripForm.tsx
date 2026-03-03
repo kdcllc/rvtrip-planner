@@ -558,6 +558,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       siteNumber: '',
       contactPhone: '',
       nightlyCost: '',
+      actualGasCost: '',
+      actualFoodCost: '',
+      actualMiscCost: '',
       reservationNote: '',
     })
     setDrawerValidationState({
@@ -602,6 +605,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       siteNumber: stop.siteNumber || '',
       contactPhone: stop.contactPhone || '',
       nightlyCost: stop.nightlyCost ? String(stop.nightlyCost) : '',
+      actualGasCost: stop.actualGasCost ? String(stop.actualGasCost) : '',
+      actualFoodCost: stop.actualFoodCost ? String(stop.actualFoodCost) : '',
+      actualMiscCost: stop.actualMiscCost ? String(stop.actualMiscCost) : '',
       reservationNote: stop.reservationNote || '',
     })
     setDrawerValidationState({
@@ -642,6 +648,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       siteNumber: '',
       contactPhone: '',
       nightlyCost: '',
+      actualGasCost: '',
+      actualFoodCost: '',
+      actualMiscCost: '',
       reservationNote: '',
     })
     setDrawerValidationState({
@@ -763,6 +772,18 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       Boolean(trimmedAmenities)
     const resolvedSourceName =
       drawerFormValues.sourceName || (hasSourceDetails ? 'Other' : '')
+    const parseOptionalNumber = (value?: string): number | undefined => {
+      if (!value || !value.trim()) {
+        return undefined
+      }
+
+      const parsed = Number.parseFloat(value)
+      if (!Number.isFinite(parsed)) {
+        return undefined
+      }
+
+      return parsed
+    }
 
     if (drawerState.mode === 'edit' && drawerState.stopId) {
       // Update existing stop
@@ -796,7 +817,10 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
         siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
         contactPhone: (drawerFormValues.contactPhone || '').trim() || undefined,
-        nightlyCost: drawerFormValues.nightlyCost ? parseFloat(drawerFormValues.nightlyCost) : undefined,
+        nightlyCost: parseOptionalNumber(drawerFormValues.nightlyCost),
+        actualGasCost: parseOptionalNumber(drawerFormValues.actualGasCost),
+        actualFoodCost: parseOptionalNumber(drawerFormValues.actualFoodCost),
+        actualMiscCost: parseOptionalNumber(drawerFormValues.actualMiscCost),
         reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onUpdateStop(drawerState.stopId, updates)
@@ -833,7 +857,10 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         confirmationNumber: (drawerFormValues.confirmationNumber || '').trim() || undefined,
         siteNumber: (drawerFormValues.siteNumber || '').trim() || undefined,
         contactPhone: (drawerFormValues.contactPhone || '').trim() || undefined,
-        nightlyCost: drawerFormValues.nightlyCost ? parseFloat(drawerFormValues.nightlyCost) : undefined,
+        nightlyCost: parseOptionalNumber(drawerFormValues.nightlyCost),
+        actualGasCost: parseOptionalNumber(drawerFormValues.actualGasCost),
+        actualFoodCost: parseOptionalNumber(drawerFormValues.actualFoodCost),
+        actualMiscCost: parseOptionalNumber(drawerFormValues.actualMiscCost),
         reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onAddStop(newStop)
@@ -883,32 +910,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
           <p>List each stop with dates and an address.</p>
         </div>
         <div className="stop-header-actions">
-          {stops.length > 0 ? (
-            <div
-              className="stop-carousel-controls"
-              role="group"
-              aria-label="Scroll trip stops"
-            >
-              <button
-                className="ghost small"
-                type="button"
-                onClick={() => scrollStopsCarousel('left')}
-                aria-label="Scroll stops left"
-                title="Scroll stops left"
-              >
-                ←
-              </button>
-              <button
-                className="ghost small"
-                type="button"
-                onClick={() => scrollStopsCarousel('right')}
-                aria-label="Scroll stops right"
-                title="Scroll stops right"
-              >
-                →
-              </button>
-            </div>
-          ) : null}
           <span className="chip">{stops.length} planned</span>
         </div>
       </div>
@@ -968,6 +969,35 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
           </div>
         </div>
       )}
+
+      {stops.length > 0 ? (
+        <div className="stop-flow-controls">
+          <div
+            className="stop-carousel-controls"
+            role="group"
+            aria-label="Scroll trip stops"
+          >
+            <button
+              className="ghost small"
+              type="button"
+              onClick={() => scrollStopsCarousel('left')}
+              aria-label="Scroll stops left"
+              title="Scroll stops left"
+            >
+              ←
+            </button>
+            <button
+              className="ghost small"
+              type="button"
+              onClick={() => scrollStopsCarousel('right')}
+              aria-label="Scroll stops right"
+              title="Scroll stops right"
+            >
+              →
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Timeline - shows visual overview of trip dates */}
       <TripTimeline
@@ -1125,22 +1155,22 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                       <button
                         className="ghost stop-reorder-button"
                         type="button"
-                        aria-label="Move stop up"
+                        aria-label="Move stop left"
                         onClick={() => onReorderStop(stop.id, 'up')}
                         disabled={!canMoveUp}
-                        title={canMoveUp ? 'Move up' : 'Cannot move up'}
+                        title={canMoveUp ? 'Move left' : 'Cannot move left'}
                       >
-                        ↑
+                        &lt;
                       </button>
                       <button
                         className="ghost stop-reorder-button"
                         type="button"
-                        aria-label="Move stop down"
+                        aria-label="Move stop right"
                         onClick={() => onReorderStop(stop.id, 'down')}
                         disabled={!canMoveDown}
-                        title={canMoveDown ? 'Move down' : 'Cannot move down'}
+                        title={canMoveDown ? 'Move right' : 'Cannot move right'}
                       >
-                        ↓
+                        &gt;
                       </button>
                     </div>
                   </div>

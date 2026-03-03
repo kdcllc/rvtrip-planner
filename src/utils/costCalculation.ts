@@ -40,6 +40,43 @@ export const calculateTripTotalAccommodationCost = (stops: TripStop[]): number =
 }
 
 /**
+ * Calculate total actual gas cost for a trip
+ */
+export const calculateTripTotalActualGasCost = (stops: TripStop[]): number => {
+  return stops.reduce((total, stop) => {
+    return total + (stop.actualGasCost ?? 0)
+  }, 0)
+}
+
+/**
+ * Calculate total actual food cost for a trip
+ */
+export const calculateTripTotalActualFoodCost = (stops: TripStop[]): number => {
+  return stops.reduce((total, stop) => {
+    return total + (stop.actualFoodCost ?? 0)
+  }, 0)
+}
+
+/**
+ * Calculate total actual misc cost for a trip
+ */
+export const calculateTripTotalActualMiscCost = (stops: TripStop[]): number => {
+  return stops.reduce((total, stop) => {
+    return total + (stop.actualMiscCost ?? 0)
+  }, 0)
+}
+
+/**
+ * Calculate total actual stop expenses (gas + food + misc)
+ */
+export const calculateTripTotalActualCost = (stops: TripStop[]): number => {
+  const actualGasCost = calculateTripTotalActualGasCost(stops)
+  const actualFoodCost = calculateTripTotalActualFoodCost(stops)
+  const actualMiscCost = calculateTripTotalActualMiscCost(stops)
+  return Math.round((actualGasCost + actualFoodCost + actualMiscCost) * 100) / 100
+}
+
+/**
  * Calculate number of nights between dates (exclusive of end date)
  */
 export const calculateNights = (startDate: string, endDate: string): number => {

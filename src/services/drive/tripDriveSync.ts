@@ -81,6 +81,9 @@ export function createStopsChecksum(stops: TripStop[]): string {
     siteNumber: stop.siteNumber ?? '',
     contactPhone: stop.contactPhone ?? '',
     nightlyCost: stop.nightlyCost ?? null,
+    actualGasCost: stop.actualGasCost ?? null,
+    actualFoodCost: stop.actualFoodCost ?? null,
+    actualMiscCost: stop.actualMiscCost ?? null,
     reservationNote: stop.reservationNote ?? '',
   }))
 
@@ -276,6 +279,9 @@ function sanitizeStop(
     ? stopData.contactPhone.trim().slice(0, 50)
     : undefined
   const nightlyCost = typeof stopData.nightlyCost === 'number' ? stopData.nightlyCost : undefined
+  const actualGasCost = typeof stopData.actualGasCost === 'number' ? stopData.actualGasCost : undefined
+  const actualFoodCost = typeof stopData.actualFoodCost === 'number' ? stopData.actualFoodCost : undefined
+  const actualMiscCost = typeof stopData.actualMiscCost === 'number' ? stopData.actualMiscCost : undefined
   const reservationNote = typeof stopData.reservationNote === 'string'
     ? stopData.reservationNote.trim().slice(0, 200)
     : undefined
@@ -300,6 +306,9 @@ function sanitizeStop(
     siteNumber,
     contactPhone,
     nightlyCost,
+    actualGasCost,
+    actualFoodCost,
+    actualMiscCost,
     reservationNote,
   }
 }

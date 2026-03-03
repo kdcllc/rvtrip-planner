@@ -129,6 +129,9 @@ export type StopFormValues = {
   siteNumber: string
   contactPhone: string
   nightlyCost: string
+  actualGasCost: string
+  actualFoodCost: string
+  actualMiscCost: string
   reservationNote: string
 }
 
@@ -178,6 +181,10 @@ export const StopFormFields = ({
 }: StopFormFieldsProps) => {
   const internalAddressRef = useRef<HTMLInputElement | null>(null)
   const ref = addressInputRef || internalAddressRef
+  const actualGasCost = Number.parseFloat(values.actualGasCost || '0') || 0
+  const actualFoodCost = Number.parseFloat(values.actualFoodCost || '0') || 0
+  const actualMiscCost = Number.parseFloat(values.actualMiscCost || '0') || 0
+  const actualStopTotal = actualGasCost + actualFoodCost + actualMiscCost
 
   // Map error messages to fields
   const errorMap = {
@@ -528,6 +535,52 @@ export const StopFormFields = ({
                 ? `$${estimatedFuelCost.toFixed(2)}`
                 : 'Data not available'}
             </p>
+          </div>
+        </label>
+        <label>
+          Actual gas cost
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={values.actualGasCost || ''}
+            onChange={(event) => onFieldChange('actualGasCost', event.target.value)}
+            placeholder="e.g., 62.50"
+          />
+        </label>
+        <label>
+          Actual food cost
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={values.actualFoodCost || ''}
+            onChange={(event) => onFieldChange('actualFoodCost', event.target.value)}
+            placeholder="e.g., 48.25"
+          />
+        </label>
+        <label>
+          Actual misc cost
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={values.actualMiscCost || ''}
+            onChange={(event) => onFieldChange('actualMiscCost', event.target.value)}
+            placeholder="e.g., 15.00"
+          />
+        </label>
+        <label>
+          Actual stop total
+          <div
+            style={{
+              padding: '10px 12px',
+              backgroundColor: 'var(--color-surface-strong)',
+              borderRadius: '12px',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <p style={{ margin: 0, color: 'inherit' }}>${actualStopTotal.toFixed(2)}</p>
           </div>
         </label>
       </div>

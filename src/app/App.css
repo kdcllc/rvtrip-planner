@@ -195,6 +195,11 @@
   gap: 6px;
 }
 
+.stop-flow-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .stop-carousel-controls .ghost.small {
   min-width: 40px;
   height: 36px;
@@ -1386,6 +1391,10 @@
 @media (max-width: 600px) {
   .map-wrap {
     gap: 12px;
+  }
+
+  .stop-flow-controls {
+    justify-content: flex-start;
   }
 
   .stop-header-actions {

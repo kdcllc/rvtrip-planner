@@ -24,7 +24,14 @@ import {
 } from '../services/calendar/calendarService'
 import { gasPriceService } from '../services/gas/gasPriceService'
 import { calculateTripDistances, formatDistance } from '../utils/distance'
-import { calculateStopCosts, calculateTripTotalAccommodationCost } from '../utils/costCalculation'
+import {
+  calculateStopCosts,
+  calculateTripTotalAccommodationCost,
+  calculateTripTotalActualCost,
+  calculateTripTotalActualGasCost,
+  calculateTripTotalActualFoodCost,
+  calculateTripTotalActualMiscCost,
+} from '../utils/costCalculation'
 import { buildTripPrintStops, calculateTotalDistanceMeters } from '../utils/print'
 import { useVehicleSettingsContext } from '../hooks/useVehicleSettings'
 import type { GasPriceLookupResult } from '../domain/gas/types'
@@ -128,6 +135,36 @@ function App() {
     return calculateTripTotalAccommodationCost(currentStops)
   }, [currentStops])
 
+  const tripTotalActualCost = useMemo(() => {
+    return calculateTripTotalActualCost(currentStops)
+  }, [currentStops])
+
+  const tripTotalActualGasCost = useMemo(() => {
+    return calculateTripTotalActualGasCost(currentStops)
+  }, [currentStops])
+
+  const tripTotalActualFoodCost = useMemo(() => {
+    return calculateTripTotalActualFoodCost(currentStops)
+  }, [currentStops])
+
+  const tripTotalActualMiscCost = useMemo(() => {
+    return calculateTripTotalActualMiscCost(currentStops)
+  }, [currentStops])
+
+  const tripFuelDelta = useMemo(() => {
+    return Math.round((tripTotalActualGasCost - tripTotalFuelCost) * 100) / 100
+  }, [tripTotalActualGasCost, tripTotalFuelCost])
+
+  const formatDeltaCurrency = (value: number): string => {
+    if (value > 0) {
+      return `+$${value.toFixed(2)}`
+    }
+    if (value < 0) {
+      return `-$${Math.abs(value).toFixed(2)}`
+    }
+    return '$0.00'
+  }
+
   // Auto-save trips state to localStorage
   useEffect(() => {
     if (tripsState.trips.length > 0) {
@@ -146,13 +183,26 @@ function App() {
         const updatedTrips = [...prev.trips]
         const trip = updatedTrips[tripIndex]
 
-        // Keep starting points at the beginning, append others
+        // Keep starting points at the beginning, sort others chronologically
         const startingPoints = trip.stops.filter((s) => s.label === 'Starting point')
         const otherStops = trip.stops.filter((s) => s.label !== 'Starting point')
+        
+        // Add new stop and sort by date
+        const allOtherStops = stop.label === 'Starting point' ? otherStops : [...otherStops, stop]
+        
+        // Sort stops chronologically by startDate
+        // Stops without dates go to the end
+        allOtherStops.sort((a, b) => {
+          if (!a.startDate && !b.startDate) return 0
+          if (!a.startDate) return 1
+          if (!b.startDate) return -1
+          return a.startDate.localeCompare(b.startDate)
+        })
+        
         const newStops =
           stop.label === 'Starting point'
-            ? [stop, ...otherStops]
-            : [...startingPoints, ...otherStops, stop]
+            ? [stop, ...allOtherStops]
+            : [...startingPoints, ...allOtherStops]
 
         updatedTrips[tripIndex] = {
           ...trip,
@@ -383,6 +433,11 @@ function App() {
         totalDistanceMeters,
         totalFuelCost: tripTotalFuelCost,
         totalAccommodationCost: tripTotalAccommodationCost,
+        totalActualCost: tripTotalActualCost,
+        totalActualGasCost: tripTotalActualGasCost,
+        totalActualFoodCost: tripTotalActualFoodCost,
+        totalActualMiscCost: tripTotalActualMiscCost,
+        totalFuelDelta: tripFuelDelta,
       }
 
       const dateStamp = new Date().toISOString().slice(0, 10)
@@ -407,6 +462,11 @@ function App() {
     weatherByStopId,
     tripTotalFuelCost,
     tripTotalAccommodationCost,
+    tripTotalActualCost,
+    tripTotalActualGasCost,
+    tripTotalActualFoodCost,
+    tripTotalActualMiscCost,
+    tripFuelDelta,
   ])
 
   const mergeStops = useCallback(
@@ -1218,6 +1278,28 @@ function App() {
             <strong>
               {tripTotalFuelCost > 0 ? `$${tripTotalFuelCost.toFixed(2)}` : 'Data not available'}
             </strong>
+          </div>
+          <div className="hero-card-row">
+            <span>Actual Stop Expenses</span>
+            <strong>
+              ${tripTotalActualCost.toFixed(2)}
+            </strong>
+          </div>
+          <div className="hero-card-row">
+            <span>Actual Gas</span>
+            <strong>${tripTotalActualGasCost.toFixed(2)}</strong>
+          </div>
+          <div className="hero-card-row">
+            <span>Actual Food</span>
+            <strong>${tripTotalActualFoodCost.toFixed(2)}</strong>
+          </div>
+          <div className="hero-card-row">
+            <span>Actual Misc</span>
+            <strong>${tripTotalActualMiscCost.toFixed(2)}</strong>
+          </div>
+          <div className="hero-card-row">
+            <span>Fuel Delta (Est vs Actual)</span>
+            <strong>{formatDeltaCurrency(tripFuelDelta)}</strong>
           </div>
         </div>
       </header>

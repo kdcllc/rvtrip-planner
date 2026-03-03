@@ -44,6 +44,22 @@ const formatWeatherSummary = (summary?: TripWeatherSummary) => {
   return `${tempRange}. ${precipLabel}. ${conditionLabel}.`
 }
 
+const formatDeltaCurrency = (value?: number) => {
+  if (value === undefined) {
+    return 'N/A'
+  }
+
+  if (value > 0) {
+    return `+$${value.toFixed(2)}`
+  }
+
+  if (value < 0) {
+    return `-$${Math.abs(value).toFixed(2)}`
+  }
+
+  return '$0.00'
+}
+
 export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => {
   const exportedDate = new Date(data.exportedAt)
   const exportedLabel = Number.isNaN(exportedDate.getTime())
@@ -99,6 +115,42 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
               : 'N/A'}
           </p>
         </div>
+        <div>
+          <p className="summary-label">Actual stop expenses</p>
+          <p className="summary-value">
+            {data.totalActualCost !== undefined
+              ? `$${data.totalActualCost.toFixed(2)}`
+              : 'N/A'}
+          </p>
+        </div>
+        <div>
+          <p className="summary-label">Actual gas</p>
+          <p className="summary-value">
+            {data.totalActualGasCost !== undefined
+              ? `$${data.totalActualGasCost.toFixed(2)}`
+              : 'N/A'}
+          </p>
+        </div>
+        <div>
+          <p className="summary-label">Actual food</p>
+          <p className="summary-value">
+            {data.totalActualFoodCost !== undefined
+              ? `$${data.totalActualFoodCost.toFixed(2)}`
+              : 'N/A'}
+          </p>
+        </div>
+        <div>
+          <p className="summary-label">Actual misc</p>
+          <p className="summary-value">
+            {data.totalActualMiscCost !== undefined
+              ? `$${data.totalActualMiscCost.toFixed(2)}`
+              : 'N/A'}
+          </p>
+        </div>
+        <div>
+          <p className="summary-label">Fuel delta (Est vs Actual)</p>
+          <p className="summary-value">{formatDeltaCurrency(data.totalFuelDelta)}</p>
+        </div>
       </section>
 
       <section className="trip-print-stops">
@@ -137,6 +189,21 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                 {stop.nightlyCost ? (
                   <p>
                     <strong>Nightly cost:</strong> ${stop.nightlyCost.toFixed(2)}
+                  </p>
+                ) : null}
+                {stop.actualGasCost !== undefined ? (
+                  <p>
+                    <strong>Actual gas:</strong> ${stop.actualGasCost.toFixed(2)}
+                  </p>
+                ) : null}
+                {stop.actualFoodCost !== undefined ? (
+                  <p>
+                    <strong>Actual food:</strong> ${stop.actualFoodCost.toFixed(2)}
+                  </p>
+                ) : null}
+                {stop.actualMiscCost !== undefined ? (
+                  <p>
+                    <strong>Actual misc:</strong> ${stop.actualMiscCost.toFixed(2)}
                   </p>
                 ) : null}
                 <p>

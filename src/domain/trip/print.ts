@@ -20,4 +20,9 @@ export type TripPrintData = {
   totalDistanceMeters?: number
   totalFuelCost?: number
   totalAccommodationCost?: number
+  totalActualCost?: number
+  totalActualGasCost?: number
+  totalActualFoodCost?: number
+  totalActualMiscCost?: number
+  totalFuelDelta?: number
 }
