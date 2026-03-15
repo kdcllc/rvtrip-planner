@@ -55,6 +55,12 @@ import type { TripPrintData } from '../domain/trip/print'
 import { useRoutesEnabled } from '../hooks/useRoutesEnabled'
 import { createOpenSourceRoutingProvider } from '../services/maps/openSourceRouting'
 import { setRoutingProvider } from '../services/maps/routesService'
+import { getRelevantStopIdForDate } from '../utils/date'
+
+const getTodayKey = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
 
 function App() {
   const allowedSourceNames = useMemo(
@@ -96,12 +102,14 @@ function App() {
   const [heroTab, setHeroTab] = useState<'actions' | 'drive'>('actions')
   const [isMapVisible, setIsMapVisible] = useState(true)
   const [pendingDeleteTripId, setPendingDeleteTripId] = useState<string | null>(null)
+  const [todayKey, setTodayKey] = useState(getTodayKey)
   const geocodingInFlight = useRef(false)
   const mapPanelRef = useRef<HTMLElement | null>(null)
   const tripFormRef = useRef<TripFormRef>(null)
   const weatherInFlight = useRef<Set<string>>(new Set())
   const gasPriceInFlight = useRef<Set<string>>(new Set())
   const distanceCalculationInFlight = useRef(false)
+  const lastAutoFocusSignatureRef = useRef('')
   const previousLocationsRef = useRef<string>('')
   const previousMpgRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -116,8 +124,56 @@ function App() {
     setRoutingProvider(provider)
   }, [])
 
+  useEffect(() => {
+    const now = new Date()
+    const msUntilMidnight =
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime()
+    const timeout = setTimeout(() => setTodayKey(getTodayKey()), msUntilMidnight)
+    return () => clearTimeout(timeout)
+  }, [todayKey])
+
   const currentTrip = getCurrentTrip(tripsState)
   const currentStops = useMemo(() => currentTrip?.stops ?? [], [currentTrip])
+  const preferredStopId = useMemo(
+    () => getRelevantStopIdForDate(currentStops, new Date()),
+    [currentStops, todayKey]
+  )
+  const stopDateSignature = useMemo(() => {
+    if (!currentTrip) {
+      return ''
+    }
+
+    return `${currentTrip.id}|${currentStops
+      .map((stop) => `${stop.id}:${stop.startDate}:${stop.endDate}`)
+      .join('|')}`
+  }, [currentStops, currentTrip])
+
+  useEffect(() => {
+    if (!currentTrip) {
+      lastAutoFocusSignatureRef.current = ''
+      if (currentStopId !== null) {
+        setCurrentStopId(null)
+      }
+      return
+    }
+
+    const hasSelectedStop = currentStops.some((stop) => stop.id === currentStopId)
+    const shouldRefreshFocus = lastAutoFocusSignatureRef.current !== stopDateSignature
+    lastAutoFocusSignatureRef.current = stopDateSignature
+
+    if (!preferredStopId) {
+      if (!hasSelectedStop && currentStopId !== null) {
+        setCurrentStopId(null)
+      }
+      return
+    }
+
+    if (shouldRefreshFocus || !hasSelectedStop || currentStopId === null) {
+      if (currentStopId !== preferredStopId) {
+        setCurrentStopId(preferredStopId)
+      }
+    }
+  }, [currentStopId, currentStops, currentTrip, preferredStopId, stopDateSignature])
 
   const tripTotalFuelCost = useMemo(() => {
     return currentStops.reduce((total, stop) => {
@@ -1330,6 +1386,8 @@ function App() {
             onClearStopSelection={clearStopSelection}
             mapBounds={mapBounds}
             currentStopId={currentStopId}
+            autoFocusStopId={preferredStopId}
+            autoFocusKey={stopDateSignature}
             onCurrentStopChange={handleStopHover}
           />
         </section>

@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { formatDateRange, formatTime } from '../../utils/date'
+import { formatDateRangeWithDays, formatTime } from '../../utils/date'
 import { createId } from '../../utils/id'
 import { formatDistance } from '../../utils/distance'
 import {
@@ -39,6 +39,8 @@ type TripFormProps = {
   onClearStopSelection: () => void
   mapBounds?: MapBounds
   currentStopId?: string | null
+  autoFocusStopId?: string | null
+  autoFocusKey?: string
   onCurrentStopChange?: (stopId: string | null) => void
 }
 
@@ -66,6 +68,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   onClearStopSelection,
   mapBounds,
   currentStopId,
+  autoFocusStopId,
+  autoFocusKey,
   onCurrentStopChange,
 }: TripFormProps, ref) {
   // Add form state (for inline form - now removed, kept for reference)
@@ -112,6 +116,24 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   useEffect(() => {
     drawerValidationStateRef.current = drawerValidationState
   }, [drawerValidationState])
+
+  useEffect(() => {
+    if (!carouselRef.current || !autoFocusStopId) {
+      return
+    }
+
+    const stopElement = carouselRef.current.querySelector<HTMLElement>(
+      `.stop-item[data-stop-id="${autoFocusStopId}"]`
+    )
+
+    if (!stopElement) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      stopElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    })
+  }, [autoFocusKey, autoFocusStopId])
 
   const scrollStopsCarousel = (direction: 'left' | 'right') => {
     const container = carouselRef.current
@@ -1057,7 +1079,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                     ) : (
                       <p className="muted">No address</p>
                     )}
-                    <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                    <p className="dates">{formatDateRangeWithDays(stop.startDate, stop.endDate)}</p>
                     {(stop.checkInTime || stop.checkOutTime) && (
                       <p className="times">
                         {stop.checkInTime && `Check-in: ${formatTime(stop.checkInTime)}`}

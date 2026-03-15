@@ -1,3 +1,5 @@
+import type { TripStop } from '../domain/trip/types'
+
 export const formatDateRange = (startDate: string, endDate: string) => {
   if (!startDate || !endDate) {
     return 'Dates not set'
@@ -22,6 +24,30 @@ export const formatDate = (date: string) => {
     month: 'short',
     day: 'numeric',
   })
+}
+
+/**
+ * Formats a date range with day-of-week for each date
+ * For single-day ranges (startDate === endDate), returns only the single date with day-of-week
+ * For multi-day ranges, returns "Weekday, Mon Day - Weekday, Mon Day" format
+ * @param startDate - Start date in YYYY-MM-DD format
+ * @param endDate - End date in YYYY-MM-DD format
+ * @returns Formatted date range with day-of-week (e.g., "Sat, Mar 15 - Sun, Mar 17" or "Sat, Mar 15")
+ */
+export const formatDateRangeWithDays = (startDate: string, endDate: string) => {
+  if (!startDate || !endDate) {
+    return 'Dates not set'
+  }
+
+  const start = formatDate(startDate)
+  const end = formatDate(endDate)
+
+  // For single-day stays, return just one date
+  if (startDate === endDate) {
+    return start
+  }
+
+  return `${start} - ${end}`
 }
 
 /**
@@ -228,4 +254,54 @@ export const getDateMarkersForRange = (
   }
 
   return markers
+}
+
+const padDatePart = (value: number) => value.toString().padStart(2, '0')
+
+const toLocalDateKey = (referenceDate: Date) => {
+  return `${referenceDate.getFullYear()}-${padDatePart(referenceDate.getMonth() + 1)}-${padDatePart(referenceDate.getDate())}`
+}
+
+const compareTripStopDates = (left: TripStop, right: TripStop) => {
+  const startDateComparison = left.startDate.localeCompare(right.startDate)
+  if (startDateComparison !== 0) {
+    return startDateComparison
+  }
+
+  return left.endDate.localeCompare(right.endDate)
+}
+
+const isDatedStop = (stop: TripStop) => Boolean(stop.startDate && stop.endDate)
+
+export const getRelevantStopForDate = (
+  stops: TripStop[],
+  referenceDate: Date = new Date()
+): TripStop | null => {
+  const datedStops = stops.filter(isDatedStop).slice().sort(compareTripStopDates)
+  if (datedStops.length === 0) {
+    return null
+  }
+
+  const referenceDateKey = toLocalDateKey(referenceDate)
+
+  const currentStop = datedStops.find(
+    (stop: TripStop) => stop.startDate <= referenceDateKey && stop.endDate >= referenceDateKey
+  )
+  if (currentStop) {
+    return currentStop
+  }
+
+  const upcomingStop = datedStops.find((stop: TripStop) => stop.startDate > referenceDateKey)
+  if (upcomingStop) {
+    return upcomingStop
+  }
+
+  return datedStops[datedStops.length - 1]
+}
+
+export const getRelevantStopIdForDate = (
+  stops: TripStop[],
+  referenceDate: Date = new Date()
+) => {
+  return getRelevantStopForDate(stops, referenceDate)?.id ?? null
 }

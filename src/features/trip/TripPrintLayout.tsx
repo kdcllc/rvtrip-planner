@@ -1,6 +1,6 @@
 import './TripPrintLayout.css'
 import type { TripPrintData, TripWeatherSummary } from '../../domain/trip/print'
-import { formatDateRange, formatTime } from '../../utils/date'
+import { formatDateRangeWithDays, formatTime } from '../../utils/date'
 import { formatDistance } from '../../utils/distance'
 
 type TripPrintLayoutProps = {
@@ -162,7 +162,7 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                 <div>
                   <h3>{stop.label}</h3>
                   <p className="muted">{stop.address}</p>
-                  <p className="dates">{formatDateRange(stop.startDate, stop.endDate)}</p>
+                  <p className="dates">{formatDateRangeWithDays(stop.startDate, stop.endDate)}</p>
                   {(stop.checkInTime || stop.checkOutTime) && (
                     <p className="times">
                       {stop.checkInTime && `Check-in: ${formatTime(stop.checkInTime)}`}

@@ -65,8 +65,14 @@ import {
 
 const DRIVE_FOLDER_NAME = 'Trip Planner'
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email profile'
+const DRIVE_RECONNECT_MESSAGE = 'Google session expired. Reconnect to keep syncing.'
 
-export type DriveAuthStatus = 'signed-out' | 'loading' | 'signed-in' | 'error'
+export type DriveAuthStatus =
+  | 'signed-out'
+  | 'loading'
+  | 'signed-in'
+  | 'reconnect-required'
+  | 'error'
 export type DriveSyncStatus = 'idle' | 'syncing' | 'error'
 
 type TokenResponse = {
@@ -251,30 +257,40 @@ export function useGoogleDriveSync(
     [],
   )
 
-  const refreshAccessToken = useCallback(async (silent = true) => {
-    try {
-      const response = await withTimeout(
-        requestAccessTokenSilent(),
-        6000,
-        'Silent refresh timed out. Please sign in again.',
-      )
-      await applyTokenResponse(response)
-      return true
-    } catch (refreshError) {
-      console.error('Token refresh failed:', refreshError)
-
-      if (!silent) {
-        // Explicit refresh failed - show error
-        setError(refreshError instanceof Error ? refreshError.message : 'Token refresh failed')
-      }
-
-      // After failed refresh, clear token
+  const clearDriveSession = useCallback(
+    (nextStatus: Extract<DriveAuthStatus, 'signed-out' | 'reconnect-required'>, nextError: string | null) => {
+      accessTokenRef.current = null
+      tokenExpiresAtRef.current = null
+      folderIdRef.current = null
       clearAccessToken()
       setUserInfo(null)
-      setAuthStatus('signed-out')
+      setConflicts([])
+      setSyncStatus('idle')
+      setAuthStatus(nextStatus)
+      setError(nextError)
+    },
+    [],
+  )
+
+  const requireReconnect = useCallback(
+    (message = DRIVE_RECONNECT_MESSAGE) => {
+      clearDriveSession('reconnect-required', message)
+    },
+    [clearDriveSession],
+  )
+
+  const hasUsableAccessToken = useCallback(() => {
+    if (!accessTokenRef.current) {
       return false
     }
-  }, [applyTokenResponse, requestAccessTokenSilent, withTimeout])
+
+    if (isTokenNearExpiry(30)) {
+      requireReconnect()
+      return false
+    }
+
+    return true
+  }, [requireReconnect])
 
   const withDriveAuthRetry = useCallback(
     async <T,>(operation: () => Promise<T>): Promise<T> => {
@@ -282,15 +298,13 @@ export function useGoogleDriveSync(
         return await operation()
       } catch (error) {
         if (error instanceof DriveApiError && error.status === 401) {
-          const refreshed = await refreshAccessToken(true)
-          if (refreshed) {
-            return await operation()
-          }
+          requireReconnect()
+          throw new Error(DRIVE_RECONNECT_MESSAGE)
         }
         throw error
       }
     },
-    [refreshAccessToken],
+    [requireReconnect],
   )
 
 
@@ -888,7 +902,7 @@ export function useGoogleDriveSync(
 
   const syncAll = useCallback(
     async (reason: 'initial' | 'manual' | 'queue' | 'auto') => {
-      if (!accessTokenRef.current) return
+      if (!hasUsableAccessToken()) return
       if (!isOnline) {
         setSyncStatus('idle')
         if (reason !== 'auto') {
@@ -916,7 +930,7 @@ export function useGoogleDriveSync(
         setError(syncError instanceof Error ? syncError.message : 'Unable to sync with Drive')
       }
     },
-    [isOnline, syncTripsWithDrive, tripsState],
+    [hasUsableAccessToken, isOnline, syncTripsWithDrive, tripsState],
   )
 
   const syncNow = useCallback(async () => {
@@ -953,15 +967,8 @@ export function useGoogleDriveSync(
       await revokeGoogleAccess(token)
     }
 
-    accessTokenRef.current = null
-    tokenExpiresAtRef.current = null
-    folderIdRef.current = null
-    clearAccessToken()
-    setUserInfo(null)
-    setAuthStatus('signed-out')
-    setConflicts([])
-    setSyncStatus('idle')
-  }, [])
+    clearDriveSession('signed-out', null)
+  }, [clearDriveSession])
 
   useEffect(() => {
     if (!hasClientId) return
@@ -1005,7 +1012,7 @@ export function useGoogleDriveSync(
   }, [])
 
   const flushQueue = useCallback(async () => {
-    if (!accessTokenRef.current || queue.size === 0 || !isOnline) return
+    if (!hasUsableAccessToken() || queue.size === 0 || !isOnline) return
 
     const queuedTrips = tripsState.trips.filter((trip) => queue.has(trip.id))
     if (queuedTrips.length === 0) {
@@ -1028,7 +1035,7 @@ export function useGoogleDriveSync(
       setSyncStatus('error')
       setError(syncError instanceof Error ? syncError.message : 'Unable to sync queued trips')
     }
-  }, [isOnline, queue, tripsState.trips, uploadTrip])
+  }, [hasUsableAccessToken, isOnline, queue, tripsState.trips, uploadTrip])
 
   useEffect(() => {
     if (authStatus !== 'signed-in') return
@@ -1085,14 +1092,13 @@ export function useGoogleDriveSync(
     if (authStatus !== 'signed-in') return
 
     const interval = setInterval(() => {
-      if (isTokenNearExpiry()) {
-        // Use silent mode (prompt: 'none') - no user interaction needed if they're still logged into Google
-        void refreshAccessToken(true)
+      if (isTokenNearExpiry(30)) {
+        requireReconnect()
       }
     }, 30000) // Check every 30 seconds
 
     return () => clearInterval(interval)
-  }, [authStatus, refreshAccessToken])
+  }, [authStatus, requireReconnect])
 
   return {
     authStatus,

@@ -35,15 +35,18 @@ export function DriveSyncControls({
       }).format(new Date(lastSyncAt))
     : null
   const connectedLabel = userInfo?.email ?? userInfo?.name
+  const reconnectRequired = authStatus === 'reconnect-required'
+  const statusText = reconnectRequired
+    ? 'Google Drive session expired'
+    : `Google Drive connected${connectedLabel ? ` as ${connectedLabel}` : ''}`
+  const connectLabel = reconnectRequired ? 'Reconnect Google Drive' : 'Connect Google Drive'
 
   return (
     <div className="drive-sync">
       <div>
         {authStatus === 'signed-in' ? (
           <>
-            <span className="drive-sync-status">
-              Google Drive connected{connectedLabel ? ` as ${connectedLabel}` : ''}
-            </span>
+            <span className="drive-sync-status">{statusText}</span>
             <button
               className="ghost"
               type="button"
@@ -57,14 +60,17 @@ export function DriveSyncControls({
             </button>
           </>
         ) : (
-          <button
-            className="ghost"
-            type="button"
-            onClick={onSignIn}
-            disabled={!hasClientId || !gisReady || authStatus === 'loading'}
-          >
-            {authStatus === 'loading' ? '🔌 Connecting…' : '🔌 Connect Google Drive'}
-          </button>
+          <>
+            {reconnectRequired ? <span className="drive-sync-status">{statusText}</span> : null}
+            <button
+              className="ghost"
+              type="button"
+              onClick={onSignIn}
+              disabled={!hasClientId || !gisReady || authStatus === 'loading'}
+            >
+              {authStatus === 'loading' ? '🔌 Connecting…' : `🔌 ${connectLabel}`}
+            </button>
+          </>
         )}
       </div>
 
