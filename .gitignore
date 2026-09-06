@@ -25,3 +25,5 @@ dist-ssr
 
 # Azure Developer CLI
 !.azure/
+_kit/
+_goals/breaker-state.json
