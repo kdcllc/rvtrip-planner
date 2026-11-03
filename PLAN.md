@@ -14,6 +14,14 @@ staying entirely within the Azure subscription for **$0/month steady-state**
   **auto-pause delay = 15 minutes** (not the 60-min default) and
   **`freeLimitExhaustionBehavior = AutoPause`** (set explicitly in Bicep — see risks).
 - **Auth:** classic DB-based username/password with hashed passwords (no SWA built-in auth / no OAuth IdP).
+- **Login is required for the entire app (decided 2026-09-07).** No anonymous mode. This
+  supersedes the earlier "keep localStorage as the anonymous/offline fallback" plan and
+  changes the live demo — visitors see a login screen, not the planner.
+- **Registration is gated by a shared invite code (decided 2026-09-07)** held in app
+  settings. Not merely a policy choice: a public URL plus open registration is a *cost and
+  availability* vector, since anyone keeping the database awake exhausts the monthly
+  vCore-second grant and takes the app offline until the 1st of the next month.
+- **Google Drive sync is removed (decided 2026-09-07)** — superseded by server storage.
 - **Password reset:** included in v1 (requires transactional email).
 - **DB billing:** free offer, auto-pause on grant exhaustion (hard $0 ceiling).
 - **Hosting: CLOSED 2026-09-07 — Static Web Apps Free + built-in *managed* Functions**
@@ -472,9 +480,13 @@ A shared session-validation helper guards both (reads cookie → looks up `sessi
 
 ## Phase 5 — Frontend integration
 
-- **Auth screens:** login, register, forgot-password, reset-password (reset page reads token from URL).
-- **The one code seam:** `src/services/storage/tripStorage.ts` — when authenticated, `loadTripsFromStorage` / `saveTripsToStorage` call `/api/trips`; keep localStorage as the anonymous/offline fallback. Add auth/user state to `App.tsx`.
-- **Migration:** on first login, if localStorage has trips, `PUT` them to the backend (reuse existing export-JSON logic), then treat the server as source of truth.
+**Amended 2026-09-07** — the anonymous/offline fallback is removed; see the decision note below.
+
+- **Auth screens:** login, register (invite code required), forgot-password, reset-password (reset page reads token from URL).
+- **The whole app is behind auth.** Unauthenticated visitors get the login screen, not the planner.
+- **The one code seam:** `src/services/storage/tripStorage.ts` — `loadTripsFromStorage` / `saveTripsToStorage` call `/api/trips`. **No localStorage fallback path**; localStorage is read exactly once, for the first-login import below. Add auth/user state to `App.tsx`.
+- **Migration:** on first successful login, if localStorage holds trips, `PUT` them to the backend once (reuse existing export-JSON logic), then clear localStorage and treat the server as source of truth.
+- **Google Drive sync is removed** — `src/services/drive/*`, its UI affordance, the Google entries in the CSP (`script-src`/`connect-src`), and `VITE_GOOGLE_DRIVE_CLIENT_ID`. Server storage supersedes it.
 
 ## Phase 6 — Config & deploy
 
@@ -491,7 +503,11 @@ A shared session-validation helper guards both (reads cookie → looks up `sessi
 
 ## Security checklist (must-haves)
 
-- [ ] argon2id (or bcrypt), never plain/SHA
+- [ ] **Node built-in `crypto.scrypt`** (decided 2026-09-07), never plain/SHA. Chosen over
+      argon2id because the standard `argon2` package is a native module and the SWA
+      managed-Functions hosting sandbox is undocumented — a failed native build breaks
+      deployment. scrypt is OWASP-listed and adds zero dependencies. OWASP params:
+      N=2^17, r=8, p=1, 64-byte key, 16-byte random salt per user.
 - [ ] HttpOnly + Secure + SameSite cookies; server-side revocable sessions
 - [ ] Parameterized queries everywhere
 - [ ] Login rate-limit / lockout

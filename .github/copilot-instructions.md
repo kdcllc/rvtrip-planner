@@ -42,6 +42,3 @@ description: Project-wide Copilot instructions for trip-planner (React 19 + Vite
 - Use existing utilities in `src/utils` when appropriate.
 - Keep constants/config in `src/config` or `src/domain` as applicable.
 - Prefer small, reusable functions over large inline blocks.
-## Orchestration
-Feature work runs through the orchestrator/worker/evaluator system — see ORCHESTRATION.md. Start features with the `feature` agent.
-<!-- orchestration-kit:pointer -->

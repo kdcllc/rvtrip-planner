@@ -26,4 +26,10 @@ dist-ssr
 # Azure Developer CLI
 !.azure/
 _kit/
-_goals/breaker-state.json
+_goals/**/**/spawns
+_memory/.index/
+_memory/raw/
+_memory/work/
+_memory/loop/breaker-state.json
+_memory/loop/ledger.jsonl
+_memory/loop/attempts/
