@@ -11,7 +11,7 @@
       "source": "kdcllc/skills",
       "sourceType": "github",
       "skillPath": "skills/agent-kit/SKILL.md",
-      "computedHash": "1148a382d09a4187ba60ce399a50efc595ddff70e1b724bd00c8258ede54eaab"
+      "computedHash": "0ea62844165cbe4cec63731b90b4ad1f9be35d99ebacc6c0e9d872b4bc6e388b"
     },
     "azure-deploy": {
       "source": "microsoft/azure-skills",
