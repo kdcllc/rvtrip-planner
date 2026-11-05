@@ -86,4 +86,28 @@ describe('isDatabaseUnavailable', () => {
     expect(isDatabaseUnavailable(ELOGIN_BAD_USER)).toBe(false)
     expect(isDatabaseUnavailable(null)).toBe(false)
   })
+
+  it('maps connect-phase ETIMEOUT ConnectionError (top-level or originalError) to unavailable', () => {
+    expect(isDatabaseUnavailable({ name: 'ConnectionError', code: 'ETIMEOUT', message: 'Failed to connect' })).toBe(true)
+    expect(
+      isDatabaseUnavailable({ name: 'ConnectionError', message: 'x', originalError: { code: 'ETIMEOUT' } }),
+    ).toBe(true)
+  })
+
+  it('does not map query-phase timeouts or other connection failures', () => {
+    expect(isDatabaseUnavailable({ name: 'RequestError', code: 'ETIMEOUT', message: 'Timeout' })).toBe(false)
+    expect(isDatabaseUnavailable({ name: 'RequestError', code: 'ETIMEOUT', originalError: { code: 'ETIMEOUT' } })).toBe(false)
+    expect(isDatabaseUnavailable({ name: 'ConnectionError', code: 'ESOCKET' })).toBe(false)
+    expect(isDatabaseUnavailable({ name: 'ConnectionError', code: 'ECONNCLOSED' })).toBe(false)
+    expect(isDatabaseUnavailable(ELOGIN_BAD_USER)).toBe(false)
+  })
+})
+
+describe('query connect timeout', () => {
+  it('maps ETIMEOUT ConnectionError to DatabaseUnavailableError without retrying', async () => {
+    h.request.query.mockClear()
+    h.request.query.mockRejectedValueOnce({ name: 'ConnectionError', code: 'ETIMEOUT' })
+    await expect(query('SELECT 1')).rejects.toBeInstanceOf(DatabaseUnavailableError)
+    expect(h.request.query).toHaveBeenCalledTimes(1)
+  })
 })

@@ -38,3 +38,7 @@ _memory/loop/attempts/
 .env
 !.env.example
 api/local.settings.json
+
+# Generated slim API deploy package (api/scripts is the SWA apiLocation; only the build script is tracked)
+api/scripts/*
+!api/scripts/build-deploy.mjs

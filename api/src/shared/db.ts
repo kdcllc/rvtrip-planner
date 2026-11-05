@@ -7,6 +7,14 @@
 //
 // SWA kills any request at 45 seconds, so a paused database (error 40613) must be reported
 // immediately (503 + Retry-After via http.ts) -- never retried in a loop or waited on here.
+//
+// "Database not reachable yet" is recognised as: SQL error 40613 (by number, or ELOGIN with its
+// message text), or a connect-phase timeout (mssql ConnectionError, code ETIMEOUT, on the error
+// or its originalError). A resuming free-tier database can take ~47 s, longer than our 10 s
+// connect timeout, so the timeout is the usual first symptom. Deliberately NOT mapped (stay 500):
+// query-phase RequestError timeouts, other login failures (wrong password), ESOCKET (also DNS /
+// refused / mid-query connection loss -- would hide misconfiguration), ECONNCLOSED (pool or
+// connection already closed locally, unrelated to resume).
 
 import sql from 'mssql'
 import { requireSetting } from './config'
@@ -32,6 +40,7 @@ export class DatabaseUnavailableError extends Error {
 }
 
 type MaybeSqlError = {
+  name?: unknown
   number?: unknown
   code?: unknown
   message?: unknown
@@ -41,12 +50,18 @@ type MaybeSqlError = {
 // Login-phase 40613 reaches us as ConnectionError code ELOGIN with the number dropped.
 const UNAVAILABLE_TEXT = /is not currently available/i
 
-/** True only for SQL error 40613 (by number, or by its ELOGIN message text). */
+/** True for SQL error 40613 (number or ELOGIN text) or a connect-phase ETIMEOUT ConnectionError. */
 export function isDatabaseUnavailable(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
   const e = err as MaybeSqlError
   const numbers = [e.number, e.originalError?.number, e.originalError?.info?.number]
   if (numbers.some((n) => n === SQL_ERROR_DATABASE_UNAVAILABLE)) return true
+  // Connect timeout: tedious' ConnectionError is wrapped by mssql as name 'ConnectionError'
+  // (node_modules/mssql/lib/error/connection-error.js:20). A query-phase timeout is a
+  // 'RequestError' (tedious connection.js:1380) and must not match.
+  if (e.name === 'ConnectionError' && (e.code === 'ETIMEOUT' || e.originalError?.code === 'ETIMEOUT')) {
+    return true
+  }
   const candidates = [e, e.originalError]
   return candidates.some(
     (c) => c?.code === 'ELOGIN' && typeof c.message === 'string' && UNAVAILABLE_TEXT.test(c.message),
@@ -82,7 +97,7 @@ export type SqlParams = Record<string, SqlParam>
 /**
  * Runs one parameterised statement. `text` must be a constant T-SQL string using @name
  * placeholders; values travel only via `params` (never concatenated into the text).
- * Throws DatabaseUnavailableError for 40613; other errors propagate unchanged.
+ * Throws DatabaseUnavailableError for 40613 or a connect timeout; other errors propagate unchanged.
  */
 export async function query<T = Record<string, unknown>>(
   text: string,

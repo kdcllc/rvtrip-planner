@@ -4,9 +4,12 @@
   "private": true,
   "description": "Trip Planner managed Azure Functions API (v4 Node programming model, HTTP triggers only)",
   "main": "dist/src/**/*.js",
-  "engines": { "node": ">=22 <23" },
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "build": "tsc",
+    "build:deploy": "node scripts/build-deploy.mjs",
     "test": "vitest run"
   },
   "dependencies": {
@@ -17,6 +20,7 @@
   "devDependencies": {
     "@types/mssql": "^9.1.5",
     "@types/node": "^22.10.0",
+    "esbuild": "^0.21.5",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

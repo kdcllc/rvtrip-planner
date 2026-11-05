@@ -66,7 +66,7 @@ module sql 'core/database/sql-server.bicep' = {
   name: 'sql'
   scope: rg
   params: {
-    name: 'sql-${uniqueString(rg.id)}'
+    name: 'sql-${uniqueString(rg.id, sqlLocation)}'
     location: sqlLocation
     tags: tags
     administratorLoginPassword: sqlAdminPassword

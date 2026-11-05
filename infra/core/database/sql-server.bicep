@@ -45,7 +45,10 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   }
   properties: {
     minCapacity: json('0.5')
-    autoPauseDelay: 15 // minutes; NOT the 60-minute default and NOT -1 (never pause)
+    // The auto-pause delay is deliberately not set: the free offer with
+    // freeLimitExhaustionBehavior 'AutoPause' accepts only the service-default delay
+    // (ARM error ProvisioningDisabled: "Only default value for auto pause delay is
+    // allowed for Free Limit database with auto pause exhaustion behavior").
     useFreeLimit: true
     // Set EXPLICITLY. The Bicep/CLI default for this property is undocumented (the
     // auto-pause default is documented for the portal flow only), and BillOverUsage is
@@ -57,9 +60,10 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
 
 // Allow Azure services (0.0.0.0 - 0.0.0.0). NOTE: this allowlists ANY Azure tenant,
 // not just ours, so the SQL login and password remain the real protection.
+// The 0.0.0.0 range, not the rule name, grants Azure-service access.
 resource allowAzureServices 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
   parent: sqlServer
-  name: 'AllowAllWindowsAzureIps'
+  name: 'AllowAzureServices'
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '0.0.0.0'
