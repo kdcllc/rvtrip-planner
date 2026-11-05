@@ -23,6 +23,9 @@ param staticWebAppSku string = 'Free'
 @description('Region for the SQL server. The free database offer locks its region permanently per subscription on first creation.')
 param sqlLocation string = location
 
+@description('Public origin of the app (custom domain, e.g. https://trip.example.com). Empty = the Static Web App default hostname. The API accepts state-changing requests only from this origin and uses it for password-reset links.')
+param appBaseUrl string = ''
+
 // Required secrets, no defaults: azd turns an unset variable into an empty string, which the minimum-length rule rejects.
 @secure()
 @minLength(1)
@@ -94,7 +97,7 @@ module appSettings 'core/host/staticwebapp-appsettings.bicep' = {
     sqlServerFqdn: sql.outputs.fqdn
     sqlDatabaseName: sql.outputs.databaseName
     sqlAdminLogin: sql.outputs.administratorLogin
-    appBaseUrl: 'https://${staticWebApp.outputs.defaultHostname}'
+    appBaseUrl: empty(appBaseUrl) ? 'https://${staticWebApp.outputs.defaultHostname}' : appBaseUrl
     acsSenderAddress: communication.outputs.senderAddress
     sqlAdminPassword: sqlAdminPassword
     sessionSecret: sessionSecret

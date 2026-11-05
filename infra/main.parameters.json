@@ -10,6 +10,9 @@
     "sqlLocation": {
       "value": "${AZURE_SQL_LOCATION=centralus}"
     },
+    "appBaseUrl": {
+      "value": "${APP_BASE_URL=}"
+    },
     "sqlAdminPassword": {
       "value": "${AZURE_SQL_ADMIN_PASSWORD}"
     },
