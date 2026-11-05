@@ -160,6 +160,8 @@ You can check the status in Azure Portal under "Custom domains."
 
 It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), and finishes with `azd deploy --no-prompt`. It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
 
+Infrastructure is provisioned manually: run `azd provision` locally, or the **Provision Azure infrastructure (manual)** workflow (`.github/workflows/azure-provision.yml`) from the Actions tab on `master`. It always runs `azd provision --preview`, refuses to apply a preview that deletes or replaces a resource, and applies only when the `apply` box is checked. It needs the repository secrets `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET` and `INVITE_CODE` (the same values as your azd environment; different values rotate them) and, for a custom domain, the repository variable `APP_BASE_URL`.
+
 ### Step 10: Configure repository variables
 
 `azd pipeline config` creates the federated credential and sets these, or add them under Settings > Secrets and variables > Actions > Variables:

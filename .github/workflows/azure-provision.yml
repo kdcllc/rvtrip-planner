@@ -1,0 +1,98 @@
+name: Provision Azure infrastructure (manual)
+
+# Manual only: infrastructure changes are rare and some settings are irreversible
+# (the free Azure SQL offer's region lock and freeLimitExhaustionBehavior), so
+# provisioning never runs on push. Code deploys stay in azure-dev.yml.
+#
+# Run it from the Actions tab on `master`. It always runs `azd provision --preview`
+# first; it applies only when the `apply` input is checked and the preview shows
+# no delete or replace of an existing resource.
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the changes (unchecked = preview only)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+# Shares the deploy group so a provision never overlaps a deploy.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      # Optional: custom domain origin (empty = SWA default hostname).
+      APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+      # Optional: SQL region (infra default is centralus).
+      AZURE_SQL_LOCATION: ${{ vars.AZURE_SQL_LOCATION }}
+      # Secure provision inputs. They must match the values already deployed;
+      # changing them rotates the SQL admin password, session secret or invite code.
+      AZURE_SQL_ADMIN_PASSWORD: ${{ secrets.AZURE_SQL_ADMIN_PASSWORD }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+      INVITE_CODE: ${{ secrets.INVITE_CODE }}
+
+    steps:
+      - name: Only from master
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::Run this workflow from master (the federated credential trusts master only)."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required variables and secrets
+        run: |
+          missing=0
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION \
+                   AZURE_SQL_ADMIN_PASSWORD SESSION_SECRET INVITE_CODE; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v is required and is empty (repository variable or secret)"
+              missing=1
+            fi
+          done
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "::warning::APP_BASE_URL is empty: provisioning will set the API origin to the SWA default hostname, and sign-in from a custom domain will fail with 403."
+          fi
+          exit $missing
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in with azd (federated credential)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider github \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Create azd environment
+        run: azd env new "$AZURE_ENV_NAME" --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" --no-prompt
+
+      - name: Preview
+        run: |
+          set -o pipefail
+          azd provision --preview --no-prompt 2>&1 | tee preview.txt
+
+      - name: Stop on delete or replace
+        run: |
+          if grep -qE '^\s*(Delete|Replace)\b' preview.txt; then
+            echo "::error::The preview deletes or replaces a resource. Review it locally; this workflow will not apply it."
+            exit 1
+          fi
+
+      - name: Apply
+        if: inputs.apply
+        run: azd provision --no-prompt
