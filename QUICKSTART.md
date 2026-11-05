@@ -186,7 +186,7 @@ After manual deployment works, set up GitHub Actions:
 
 1. Run `azd pipeline config`
 2. Follow prompts to connect GitHub repository
-3. Confirm the repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION` are set
+3. Confirm the repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP` are set
 4. (Optional) Add `VITE_OPENROUTE_API_KEY` as a GitHub secret for the routing fallback
 5. Push code to trigger automated deployment
 

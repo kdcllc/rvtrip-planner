@@ -25,6 +25,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
 
     steps:
       - name: Checkout
@@ -33,7 +34,7 @@ jobs:
       - name: Verify required repository variables
         run: |
           missing=0
-          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION; do
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP; do
             if [ -z "${!v}" ]; then
               echo "::error::Repository variable $v is required and is empty (create it with 'azd pipeline config' or in Settings > Variables)"
               missing=1
@@ -77,8 +78,14 @@ jobs:
             --federated-credential-provider github \
             --tenant-id "$AZURE_TENANT_ID"
 
-      - name: Refresh azd environment
-        run: azd env refresh --no-prompt
+      # CI never provisions, so do not run `azd env refresh`: it initialises the Bicep
+      # provider and demands the secure provision inputs (SQL password, session secret,
+      # invite code). `azd deploy` finds the Static Web App by its azd-service-name tag
+      # in the resource group, so a minimal environment is enough.
+      - name: Create azd environment
+        run: |
+          azd env new "$AZURE_ENV_NAME" --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" --no-prompt
+          azd env set AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
 
       - name: Deploy
         run: azd deploy --no-prompt
