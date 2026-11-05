@@ -24,6 +24,21 @@ dist-ssr
 *.sw?
 
 # Azure Developer CLI
-!.azure/
+.azure/
 _kit/
-_goals/breaker-state.json
+_goals/**/**/spawns
+_memory/.index/
+_memory/raw/
+_memory/work/
+_memory/loop/breaker-state.json
+_memory/loop/ledger.jsonl
+_memory/loop/attempts/
+
+# Secrets (local only; .env.example stays tracked)
+.env
+!.env.example
+api/local.settings.json
+
+# Generated slim API deploy package (api/scripts is the SWA apiLocation; only the build script is tracked)
+api/scripts/*
+!api/scripts/build-deploy.mjs

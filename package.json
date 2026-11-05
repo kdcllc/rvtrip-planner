@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview",
-    "generate:icons": "node scripts/generate-icons.mjs"
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "db:up": "docker compose up -d --wait sqlserver",
+    "db:migrate": "bash scripts/db-migrate.sh",
+    "dev:swa": "swa start http://localhost:5173 --run \"npm run dev\" --api-location api"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
@@ -21,16 +24,23 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@azure/static-web-apps-cli": "^2.0.2",
     "@eslint/js": "^9.39.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/google.maps": "^3.58.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "azure-functions-core-tools": "^4.0.7",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^31.0.0",
     "sharp": "^0.34.5",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",

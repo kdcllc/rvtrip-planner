@@ -6,9 +6,9 @@ description: Project-wide Copilot instructions for trip-planner (React 19 + Vite
 
 ## Project Context
 - React 19 + Vite + TypeScript.
-- Client-side only (no backend).
-- Persistence via localStorage.
-- Integrations: Google Maps JS API (maps, places, routes) and NOAA/Open-Meteo weather APIs.
+- SPA plus a backend: Azure Static Web Apps managed Functions in `api/` with Azure SQL.
+- Trips persist per user through `/api/trips` (`src/services/storage/tripStorage.ts`); routing/geocoding response caches use localStorage (`src/services/network/cache.ts`).
+- Integrations: MapLibre GL JS maps, OSRM/OpenRouteService routing, Photon/Nominatim geocoding, and NOAA/Open-Meteo weather APIs (see README Open-Source Stack).
 - Primary feature areas: trip planning, mapping, and weather.
 
 ## Architecture Preferences
@@ -27,7 +27,7 @@ description: Project-wide Copilot instructions for trip-planner (React 19 + Vite
 
 ## Data and Side Effects
 - Encapsulate network calls in services; avoid fetch in components when possible.
-- Use localStorage utilities for persistence; avoid ad-hoc storage access in components.
+- Persist trips only through `src/services/storage/tripStorage.ts` (server-backed via `/api/trips`); avoid ad-hoc storage access in components.
 - Guard external API calls with validation and error handling.
 
 ## UI/UX and Accessibility
@@ -42,6 +42,3 @@ description: Project-wide Copilot instructions for trip-planner (React 19 + Vite
 - Use existing utilities in `src/utils` when appropriate.
 - Keep constants/config in `src/config` or `src/domain` as applicable.
 - Prefer small, reusable functions over large inline blocks.
-## Orchestration
-Feature work runs through the orchestrator/worker/evaluator system — see ORCHESTRATION.md. Start features with the `feature` agent.
-<!-- orchestration-kit:pointer -->

@@ -10,6 +10,7 @@ services:
     language: js
     host: staticwebapp
     dist: dist
+    # API (managed Functions) location and SWA CLI settings come from swa-cli.config.json
 
 hooks:
   preprovision:
@@ -27,7 +28,7 @@ hooks:
         echo "📦 Static Web App: ${STATIC_WEB_APP_NAME}"
         echo "🌐 URL: ${STATIC_WEB_APP_URL}"
         echo ""
-        echo "Next step: Run 'azd deploy' to deploy the application"
+        echo "App settings were applied by Bicep. Next step: run 'azd deploy' to publish the SPA and API"
         echo ""
       interactive: false
       continueOnError: true

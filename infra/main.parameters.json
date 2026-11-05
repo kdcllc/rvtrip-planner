@@ -6,6 +6,18 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
+    },
+    "sqlLocation": {
+      "value": "${AZURE_SQL_LOCATION=centralus}"
+    },
+    "sqlAdminPassword": {
+      "value": "${AZURE_SQL_ADMIN_PASSWORD}"
+    },
+    "sessionSecret": {
+      "value": "${SESSION_SECRET}"
+    },
+    "inviteCode": {
+      "value": "${INVITE_CODE}"
     }
   }
 }

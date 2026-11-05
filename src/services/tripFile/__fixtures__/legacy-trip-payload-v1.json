@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "trip": {
+    "id": "trip-legacy-1",
+    "name": "Legacy Test Trip",
+    "createdAt": "2024-05-01T10:00:00.000Z",
+    "updatedAt": "2024-05-02T12:30:00.000Z",
+    "vehicleSettings": {
+      "mpg": 9.5
+    },
+    "stops": [
+      {
+        "id": "stop-1",
+        "label": "Moab Base",
+        "address": "Moab, UT",
+        "startDate": "2024-06-01",
+        "endDate": "2024-06-04",
+        "checkInTime": "15:00",
+        "checkOutTime": "11:00",
+        "note": "Arrive early",
+        "source": {
+          "name": "Campendium",
+          "url": "https://example.com/moab",
+          "siteType": "Full hookup",
+          "fees": "$45",
+          "amenities": "Wifi"
+        },
+        "location": {
+          "lat": 38.5733,
+          "lng": -109.5498
+        },
+        "status": "ready",
+        "manualEntry": false,
+        "distanceFromPreviousMeters": 0,
+        "estimatedFuelCost": 0,
+        "reservationStatus": "reserved",
+        "confirmationNumber": "ABC123",
+        "siteNumber": "A12",
+        "contactPhone": "555-0100",
+        "nightlyCost": 45,
+        "actualGasCost": 20,
+        "actualFoodCost": 30,
+        "actualMiscCost": 5,
+        "reservationNote": "Pull-through"
+      },
+      {
+        "id": "stop-2",
+        "label": "Bare Stop",
+        "address": "Page, AZ",
+        "startDate": "2024-06-04",
+        "endDate": "2024-06-05"
+      }
+    ]
+  },
+  "checksum": "3afd3c35",
+  "updatedAt": "2024-05-02T12:30:00.000Z"
+}

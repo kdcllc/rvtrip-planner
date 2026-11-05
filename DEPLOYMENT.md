@@ -1,6 +1,6 @@
 # Deployment Guide - Trip Planner to Azure Static Web Apps
 
-This guide walks you through deploying the Trip Planner application to Azure Static Web Apps using the Azure Developer CLI (`azd`).
+This guide walks you through deploying the Trip Planner application to Azure Static Web Apps using the Azure Developer CLI (`azd`). The app has a managed Functions API and an Azure SQL database.
 
 ## What is Azure Static Web Apps?
 
@@ -9,68 +9,45 @@ Azure Static Web Apps is a service that automatically builds and deploys full-st
 - ✅ Global CDN included
 - ✅ Automatic SPA routing support
 - ✅ Free tier (100 GB bandwidth/month)
-- ✅ Built-in CI/CD with GitHub Actions
+- ✅ Built-in managed Functions for the API
 
-## Deployment Approaches
+## Architecture at a glance
 
-This project supports two deployment approaches for GitHub Actions CI/CD:
+- **SPA** built with Vite into `dist/`, served by Static Web Apps.
+- **API**: Azure Functions (Node 22) in `api/`, deployed as the SWA built-in managed Functions. `swa-cli.config.json` sets `env: production`, `apiLocation: api/scripts`, `apiBuildCommand: node build-deploy.mjs` (an esbuild bundle), and `staticwebapp.config.json` sets `platform.apiRuntime: node:22`.
+- **Database**: Azure SQL Database, serverless, free offer, auto-pause. It lives in **centralus** (`AZURE_SQL_LOCATION`, default `centralus`) while the Static Web App is in **eastus2**. The SQL server allows Azure services through the `AllowAzureServices` firewall rule.
+- **Email**: Azure Communication Services with an Azure-managed domain, used for password reset.
+- **Deploys go through `azd` only** (`azd up`, `azd provision`, `azd deploy`), locally or from CI. The old deployment-token workflow (`Azure/static-web-apps-deploy`) and `scripts/deploy.sh` no longer exist.
 
-### 🚀 Token-Based Deployment (Current Active Approach)
+Infrastructure is in `infra/` (`main.bicep` plus modules in `infra/core/{communication,database,host,storage}`).
 
-**Workflow:** `.github/workflows/azure-dev.yml`
+### Secrets and app settings
 
-**How it works:**
-- Uses the `Azure/static-web-apps-deploy@v1` GitHub Action
-- Authenticates with a deployment token from Azure Static Web Apps
-- Directly uploads built files to Azure
-- Simple setup with minimal configuration
+Set these in the azd environment before provisioning (names only; never commit or paste values):
 
-**Advantages:**
-- ✅ Simple and straightforward setup
-- ✅ Fewer moving parts (no service principal needed)
-- ✅ Works perfectly for static web apps
-- ✅ Fast deployment process
+- `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`
+- `AZURE_SQL_LOCATION` (optional, defaults to `centralus`; keep it lowercase)
 
-**Required GitHub Secrets:**
-- `AZURE_STATIC_WEB_APPS_TOKEN` - Deployment token from Azure
+Bicep applies six app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`. Registration requires the invite code.
 
-**Optional GitHub Secrets:**
-- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
-- `VITE_OPENROUTE_API_KEY` - Add third routing fallback
+### Database schema
 
-**Best for:** Most scenarios, especially when you only need to deploy a static web app.
+`azd` does not apply migrations. After the first provision, run `scripts/db-migrate.sh` once against the Azure SQL database with a connection string that has DDL rights (it is idempotent). A freshly resumed serverless database can make the first login attempts time out, so retry. See `db/README.md`.
 
-### 🔧 OIDC-Based Deployment with Azure Developer CLI
+### Local development
 
-**Workflow:** Previously used `azure-deploy.template.yml` (now removed)
+`npm run db:up` (local SQL Server in Docker), `npm run db:migrate`, then `npm run dev:swa` (SWA CLI with the Vite dev server and the API). See `db/README.md` and `.env.example`.
 
-**How it works:**
-- Uses `azd` CLI with federated credentials (OIDC)
-- Authenticates via service principal with OpenID Connect
-- Runs `azd provision` and `azd deploy` commands
-- More infrastructure control
+### Cold start
 
-**Advantages:**
-- ✅ No long-lived secrets (uses federated credentials)
-- ✅ More control over infrastructure provisioning
-- ✅ Azure best practice for enterprise scenarios
-- ✅ Can manage multiple Azure resources beyond static web apps
-
-**Required GitHub Configuration:**
-- Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-- Variables: `AZURE_ENV_NAME`, `AZURE_LOCATION`
-- Plus optional application secrets: `VITE_GOOGLE_DRIVE_CLIENT_ID`, `VITE_OPENROUTE_API_KEY`
-
-**Best for:** Complex infrastructure, multiple Azure services, or enterprise security requirements.
-
-**Note:** This approach is available in git history if needed. The token-based approach was chosen for simplicity.
+The database auto-pauses when idle. The API maps a paused or resuming database to 503 with `Retry-After` (`/api/ping` is the health check); retry after a short wait.
 
 ## Prerequisites
 
 1. **Azure Developer CLI** - [Install azd](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
-2. **Azure Subscription** - You need an active Azure subscription
-3. **Node.js and npm** - Already installed (required for building the app)
-4. **(Optional)** OpenRouteService API key or Google Drive Client ID - See `.env.example` for details
+2. **Azure Subscription** - You need an active Azure subscription (the free SQL offer region locks per subscription at first free database creation)
+3. **Node.js 22 and npm**
+4. **(Optional)** OpenRouteService API key - See `.env.example` for details
 
 ## Phase 1: Initial Setup and Provisioning
 
@@ -80,18 +57,13 @@ This project supports two deployment approaches for GitHub Actions CI/CD:
 azd auth login
 ```
 
-This will open a browser window for you to authenticate with your Azure account.
-
 ### Step 2: Initialize the Azure Environment
 
 ```bash
 azd env new
 ```
 
-You'll be prompted to enter:
-- **Environment name**: Choose a name like `prod` or `dev` (this will be used in resource naming)
-- **Azure subscription**: Select your subscription
-- **Azure region**: Choose a region close to your users (e.g., `eastus`, `westus2`, `westeurope`)
+You'll be prompted for an environment name (used in resource naming), subscription and region. Then set the secrets listed above with `azd env set`.
 
 ### Step 3: Provision Azure Resources
 
@@ -99,41 +71,25 @@ You'll be prompted to enter:
 azd provision
 ```
 
-This command will:
-- Create a resource group named `rg-{environmentName}`
-- Create an Azure Static Web App with a unique name
-- Configure the Static Web App for manual deployment
+This creates the resource group `rg-{environmentName}`, the Static Web App, the SQL server and database, the Communication Services email resources, and applies the app settings.
 
-**Expected output:**
-- Resource group name
-- Static Web App name
-- Static Web App URL (https://your-app.azurestaticapps.net)
+### Step 4: Apply the database schema
 
-### Step 4: Deploy the Application
+Run `scripts/db-migrate.sh` as described above.
+
+### Step 5: Deploy the Application
 
 ```bash
 azd deploy
 ```
 
-This command will:
-1. Run `npm install`
-2. Run `npm run build`
-3. Upload the `dist/` folder contents to Azure Static Web Apps
+This builds the SPA and the bundled API (via `swa-cli.config.json`) and deploys them to the Static Web App.
 
-**Expected output:**
-- Deployment status
-- Static Web App URL where your app is live
+### Step 6: Verify Deployment
 
-### Step 5: Verify Deployment
-
-Open the Static Web App URL in your browser. You should see the Trip Planner application running.
-
-**Test checklist:**
-- ✅ Application loads without errors
-- ✅ Can add trip stops
-- ✅ Google Maps displays correctly
-- ✅ Weather data loads for stops
-- ✅ Can save/load trip data
+- `GET /api/ping` returns 200 `application/json` (`{"ok":true}`)
+- `GET /api/trips` without a session returns 401
+- The site root shows the sign-in screen; register with the invite code
 
 ---
 
@@ -141,7 +97,7 @@ Open the Static Web App URL in your browser. You should see the Trip Planner app
 
 Azure Static Web Apps makes it easy to add a custom domain with automatic HTTPS.
 
-### Step 6: Add Custom Domain
+### Step 7: Add Custom Domain
 
 #### Option A: Using Azure Portal (Easiest)
 
@@ -170,7 +126,7 @@ az staticwebapp hostname set \
   --hostname www.yourdomain.com
 ```
 
-### Step 7: Configure DNS
+### Step 8: Configure DNS
 
 Add the required DNS records at your domain provider:
 
@@ -190,7 +146,7 @@ Azure Static Web Apps provides a verification TXT record and either:
 
 The exact records will be shown in the Azure Portal when you add the domain.
 
-### Step 8: Wait for SSL Certificate
+### Step 9: Wait for SSL Certificate
 
 After DNS propagation (5-15 minutes), Azure automatically provisions a free SSL certificate. This takes an additional 5-10 minutes.
 
@@ -200,124 +156,29 @@ You can check the status in Azure Portal under "Custom domains."
 
 ## Phase 3: GitHub Actions CI/CD Setup
 
-After verifying manual deployment works, set up automated deployment from GitHub using the token-based approach.
+**Workflow:** `.github/workflows/azure-dev.yml` (push to `master` or manual `workflow_dispatch`).
 
-### Step 9: Get Azure Static Web App Deployment Token
+It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, runs `azd env refresh --no-prompt`, and finishes with `azd deploy --no-prompt`. It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
 
-The GitHub Actions workflow needs a deployment token to authenticate with Azure Static Web Apps.
+### Step 10: Configure repository variables
 
-**Option A: Via Azure Portal (Recommended)**
+`azd pipeline config` creates the federated credential and sets these, or add them under Settings > Secrets and variables > Actions > Variables:
 
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Navigate to your Static Web App resource
-3. In the left menu, click **Overview**
-4. Click **Manage deployment token** in the top toolbar
-5. Copy the deployment token that appears
+| Variable | Purpose |
+|---|---|
+| `AZURE_CLIENT_ID` | Client ID of the identity with the federated credential |
+| `AZURE_TENANT_ID` | Azure tenant |
+| `AZURE_SUBSCRIPTION_ID` | Subscription |
+| `AZURE_ENV_NAME` | azd environment name |
+| `AZURE_LOCATION` | azd region |
 
-**Option B: Via Azure CLI**
+The workflow fails fast with an error if any is empty. The identity needs a role assignment on the resource group.
 
-```bash
-# First, list your static web apps to find the name and resource group
-az staticwebapp list --query "[].{name:name, resourceGroup:resourceGroup}" -o table
+Optional secret: `VITE_OPENROUTE_API_KEY` (third routing fallback).
 
-# Then get the deployment token
-az staticwebapp secrets list \
-  --name <your-static-web-app-name> \
-  --resource-group <your-resource-group> \
-  --query "properties.apiKey" -o tsv
-```
+### Step 11: Test Automated Deployment
 
-**Note:** Keep this token secure - it provides deployment access to your Static Web App.
-
-### Step 10: Configure GitHub Secrets
-
-Add the required secrets to your GitHub repository.
-
-**Steps:**
-
-1. Go to your repository on GitHub: `https://github.com/kdcllc/trip-planner`
-2. Navigate to **Settings** → **Secrets and variables** → **Actions**
-3. Click **"New repository secret"**
-4. Add the following secrets:
-
-**Required Secrets:**
-
-| Secret Name | Value | Description |
-|-------------|-------|-------------|
-| `AZURE_STATIC_WEB_APPS_TOKEN` | Token from Step 9 | Deployment token for Azure Static Web Apps |
-
-**Optional Secrets (for enhanced features):**
-
-| Secret Name | Value | Description |
-|-------------|-------|-------------|
-| `VITE_GOOGLE_DRIVE_CLIENT_ID` | OAuth 2.0 Client ID | Enable Google Drive cloud sync for trips |
-| `VITE_OPENROUTE_API_KEY` | OpenRouteService API key | Add third routing fallback (free tier: 2,000 req/day) |
-
-**Note:** The app works with **no API keys required by default**. These are optional enhancements only.
-
-### Step 11: Verify Workflow Configuration
-
-The workflow is already configured in `.github/workflows/azure-dev.yml`. Let's verify it's correct:
-
-```yaml
-# Key parts of the workflow:
-name: Deploy to Azure Static Web Apps
-
-on:
-  push:
-    branches:
-      - master
-  workflow_dispatch:
-
-steps:
-  - uses: actions/checkout@v4
-  - uses: actions/setup-node@v4
-  - run: npm ci
-  - run: npm run build
-  - uses: Azure/static-web-apps-deploy@v1
-    with:
-      azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
-      app_location: '/'
-      output_location: 'dist'
-```
-
-The workflow will automatically run when you push to the `master` branch.
-
-### Step 12: Test Automated Deployment
-
-Now test that the automated deployment works:
-
-**Option A: Push a change (Recommended)**
-
-```bash
-# Make a small change (e.g., update README)
-git add .
-git commit -m "Test automated deployment"
-git push origin master
-```
-
-**Option B: Manual workflow trigger**
-
-1. Go to GitHub → **Actions** tab
-2. Click **"Deploy to Azure Static Web Apps"** workflow
-3. Click **"Run workflow"** button
-4. Select `master` branch
-5. Click **"Run workflow"**
-
-**Verify Deployment:**
-
-1. Go to GitHub → **Actions** tab
-2. You should see the workflow running with your commit message
-3. Watch the workflow steps:
-   - ✅ Checkout
-   - ✅ Install Node.js
-   - ✅ Install dependencies
-   - ✅ Build application
-   - ✅ Deploy to Azure Static Web Apps
-4. Once complete (green checkmark), visit your Static Web App URL
-5. Verify the latest changes are deployed
-
-**Troubleshooting:** If the deployment fails, check the "Troubleshooting" section below.
+Push to `master`, or use GitHub > Actions > "Deploy to Azure Static Web Apps" > "Run workflow". When the run is green, check `GET /api/ping` on the live URL (200 JSON).
 
 ---
 
@@ -365,111 +226,38 @@ azd down
 ## Environment Variables
 
 ### Local Development
-Set in `.env` file (all optional):
-- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
-- `VITE_OPENROUTE_API_KEY` - Add third routing fallback (free tier)
+Optional `.env` for the SPA: `VITE_OPENROUTE_API_KEY` (routing fallback).
+Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`) are listed by name in `.env.example`; use `api/local.settings.json` (git-ignored) or your shell.
 
-**Note:** The app works with no environment variables - these are optional enhancements only.
+### azd environment (provisioning)
+`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`).
 
-### GitHub Actions (Token-Based Approach)
-Set as repository secrets:
-- `AZURE_STATIC_WEB_APPS_TOKEN` - **Required** - Deployment token from Azure
-- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Optional - Enable Google Drive sync
-- `VITE_OPENROUTE_API_KEY` - Optional - Add routing fallback
-
-### GitHub Actions (OIDC Approach - Alternative)
-**Note:** Not currently used. Available in git history if needed.
-
-Would be automatically configured by `azd pipeline config`:
-- `AZURE_CLIENT_ID` (secret)
-- `AZURE_TENANT_ID` (secret)
-- `AZURE_SUBSCRIPTION_ID` (secret)
-- `AZURE_ENV_NAME` (variable)
-- `AZURE_LOCATION` (variable)
-- Plus optional: `VITE_GOOGLE_DRIVE_CLIENT_ID` (secret), `VITE_OPENROUTE_API_KEY` (secret)
+### GitHub Actions
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`; optional secret `VITE_OPENROUTE_API_KEY`.
 
 ---
 
 ## Troubleshooting
 
+### CI fails with "Repository variable ... is required and is empty"
+Set the five repository variables listed in Step 10 (for example with `azd pipeline config`).
+
 ### GitHub Actions: "azd auth login" Browser Authentication Error
+CI must log in with the federated credential (the workflow passes `--federated-credential-provider github`). If you see an `xdg-open` / browser error, the federated credential step is not being used or the credential does not exist for this repo and branch.
 
-**Error Message:**
-```
-/usr/bin/xdg-open: 882: www-browser: not found
-azd was unable to open the next url. Please try it manually: https://login.microsoftonline.com/...
-```
+### `/api/ping` returns HTML instead of JSON
+The API was not deployed, or the deploy targeted the wrong SWA environment. `swa-cli.config.json` must have `env: production` and `apiLocation: api/scripts`; re-run `azd deploy`.
 
-**Cause:** This error occurs when the workflow attempts interactive browser authentication with `azd auth login` in a headless CI/CD environment (GitHub Actions runner).
-
-**Solution:**
-
-The active workflow (`.github/workflows/azure-dev.yml`) uses token-based authentication and should **not** encounter this error. If you're seeing this error:
-
-1. **Verify correct workflow is running:**
-   - Go to GitHub → Actions tab
-   - Check which workflow file is executing
-   - Should be: "Deploy to Azure Static Web Apps" from `azure-dev.yml`
-
-2. **Ensure required secrets are configured:**
-   - Go to GitHub → Settings → Secrets and variables → Actions
-   - Verify `AZURE_STATIC_WEB_APPS_TOKEN` secret exists
-   - Optional: Add `VITE_GOOGLE_DRIVE_CLIENT_ID` or `VITE_OPENROUTE_API_KEY` for enhanced features
-
-3. **If you need the OIDC/azd approach:**
-   - The OIDC-based workflow was removed for simplicity
-   - Available in git history: `azure-deploy.template.yml`
-   - Requires running `azd pipeline config` locally to set up federated credentials
-   - Requires additional secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-
-### Build Completes Successfully
-
-**Note:** The app uses free, open-source mapping services by default - no API keys required!
-
-Optional enhancements only:
-1. Google Drive sync: Add `VITE_GOOGLE_DRIVE_CLIENT_ID` secret
-2. Routing fallback: Add `VITE_OPENROUTE_API_KEY` secret
-
-If builds fail, check the workflow logs for specific errors.
-
-### Deployment Token Invalid or Expired
-
-**Error:** "Authentication failed" or "Invalid token" during deployment.
-
-**Solution:**
-1. Deployment tokens don't expire, but can be regenerated
-2. Get a fresh token from Azure Portal or CLI (see Step 9)
-3. Update the `AZURE_STATIC_WEB_APPS_TOKEN` GitHub secret
-4. Retry the deployment
+### First request after idle returns 500/503 or login times out
+The serverless database auto-pauses and takes up to about a minute to resume. Retry. The API returns 503 with `Retry-After` for this case; migrations run during a resume may time out at login and succeed on retry.
 
 ### Workflow Doesn't Trigger Automatically
-
-**Issue:** Pushing to master doesn't trigger the workflow.
-
-**Solution:**
 1. Check the workflow file exists: `.github/workflows/azure-dev.yml`
-2. Verify the workflow is enabled: GitHub → Actions → Select workflow → Enable if disabled
-3. Check branch name matches: workflow triggers on `master`, verify your default branch name
-4. Look for workflow errors: GitHub → Actions → Check for failed runs
+2. Verify the workflow is enabled: GitHub > Actions > Select workflow > Enable if disabled
+3. Check branch name matches: the workflow triggers on `master`
 
 ### Static Website Returns 404
-
-**Note:** This project uses Azure Static Web Apps (not Azure Blob Storage static websites).
-
-**Solution:**
-1. Verify deployment completed successfully in GitHub Actions
-2. Check Azure Portal → Static Web App → Overview for the correct URL
-3. Ensure `output_location: 'dist'` matches your build output directory
-4. Check SPA routing: Azure Static Web Apps automatically handles client-side routing
-
-### Local "azd auth login" Works but GitHub Actions Fails
-
-**Explanation:** Local `azd auth login` uses interactive browser authentication, which works on your machine but fails in GitHub Actions (headless environment).
-
-**Solution:**
-- For local development: `azd auth login` is correct (opens browser)
-- For GitHub Actions: Use token-based authentication (already configured in `azure-dev.yml`)
-- These are two different authentication methods for different environments
+This project uses Azure Static Web Apps (not Blob Storage static websites). Check Azure Portal > Static Web App > Overview for the URL; SPA routing is handled by `staticwebapp.config.json`.
 
 ---
 
@@ -484,64 +272,36 @@ If builds fail, check the workflow logs for specific errors.
 
 ## Architecture
 
-### Current Token-Based Deployment
-
 ```
-┌─────────────────────────────────────────────────┐
-│  GitHub Repository (kdcllc/trip-planner)       │
-│  ├── src/                                       │
-│  ├── azure.yaml                                 │
-│  ├── infra/                                     │
-│  │   ├── main.bicep                             │
-│  │   └── core/host/staticwebapp.bicep           │
-│  └── .github/workflows/azure-dev.yml            │
-└──────────────────┬──────────────────────────────┘
-                   │
-                   │ Push to master
-                   ▼
-┌─────────────────────────────────────────────────┐
-│  GitHub Actions Workflow                        │
-│  ├── Checkout code                              │
-│  ├── Setup Node.js                              │
-│  ├── Install dependencies (npm ci)              │
-│  ├── Build application (npm run build)          │
-│  └── Deploy to Azure (token auth)               │
-└──────────────────┬──────────────────────────────┘
-                   │
-                   │ Token Authentication
-                   │ (AZURE_STATIC_WEB_APPS_TOKEN)
-                   ▼
-┌─────────────────────────────────────────────────┐
-│  Azure Static Web Apps                          │
-│  ├── CDN + Global Distribution                  │
-│  ├── Automatic HTTPS                            │
-│  ├── Custom Domain Support                      │
-│  ├── SPA Routing (automatic)                    │
-│  └── Deployed Files:                            │
-│      ├── index.html                             │
-│      ├── assets/*.js (React + Vite)             │
-│      ├── assets/*.css                           │
-│      └── assets/* (images, fonts)               │
-└─────────────────────────────────────────────────┘
-        │
-        │ Public Internet
-        ▼
-    https://your-app.azurestaticapps.net
-    (or your custom domain)
+GitHub (push to master)
+   |
+   v
+GitHub Actions: lint, tests, azd deploy (federated credential)
+   |
+   v
+Azure Static Web App (eastus2): SPA from dist/ + managed Functions from api/scripts bundle
+   |  /api/* (same origin)
+   v
+Azure SQL Database, serverless free offer (centralus)       Azure Communication Services (password-reset email)
 ```
 
 ## Files in This Project
 
 ### Configuration Files
 - `azure.yaml` - Azure Developer CLI configuration (defines services and hooks)
-- `.github/workflows/azure-dev.yml` - **Active** GitHub Actions workflow (token-based deployment)
+- `.github/workflows/azure-dev.yml` - GitHub Actions workflow (azd deploy with federated credential)
+- `swa-cli.config.json` - SWA CLI deploy settings used by `azd` (`env`, `apiLocation`, build commands)
+- `staticwebapp.config.json` - SWA routing, headers, `platform.apiRuntime`
 - `DEPLOYMENT.md` - This deployment guide
 
 ### Infrastructure as Code (Bicep)
-- `infra/main.bicep` - Main infrastructure template (provisions Azure Static Web App)
+- `infra/main.bicep` - Main infrastructure template (Static Web App, SQL, Communication Services, app settings)
 - `infra/main.parameters.json` - Infrastructure parameters
 - `infra/core/host/staticwebapp.bicep` - Azure Static Web App module
-- `infra/core/storage/storage-account.bicep` - Storage account module (alternative deployment)
+- `infra/core/host/staticwebapp-appsettings.bicep` - SWA app settings module
+- `infra/core/database/sql-server.bicep` - SQL server, free-offer database, `AllowAzureServices` rule
+- `infra/core/communication/communication-services.bicep` - Communication Services email
+- `infra/core/storage/storage-account.bicep` - Storage account module (not used by the current deployment)
 
 ### Build Configuration
 - `vite.config.ts` - Vite build configuration
@@ -549,11 +309,12 @@ If builds fail, check the workflow logs for specific errors.
 - `tsconfig.json` - TypeScript configuration
 
 ### Removed Files
-- `.github/workflows/azure-deploy.template.yml` - ❌ Removed (OIDC-based template, available in git history if needed)
+- `.github/workflows/azure-deploy.template.yml` - Removed earlier (superseded by the azd-based `azure-dev.yml`)
+- `scripts/deploy.sh` - Removed; deploy with `azd deploy`
 
 ## Resources
 
 - [Azure Developer CLI Documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
-- [Azure Blob Storage Static Websites](https://learn.microsoft.com/azure/storage/blobs/storage-blob-static-website)
+- [Azure Static Web Apps](https://learn.microsoft.com/azure/static-web-apps/)
 - [Bicep Documentation](https://learn.microsoft.com/azure/azure-resource-manager/bicep/)
 - [GitHub Actions with Azure](https://learn.microsoft.com/azure/developer/github/connect-from-azure)

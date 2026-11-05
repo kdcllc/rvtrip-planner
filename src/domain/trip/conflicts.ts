@@ -1,6 +1,6 @@
 import type { TripStop } from './types'
 
-export type TripConflictSource = 'drive' | 'import'
+export type TripConflictSource = 'import'
 
 export type TripConflictCategory =
   | 'remote-newer'
