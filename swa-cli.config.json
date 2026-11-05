@@ -1,0 +1,16 @@
+{
+  "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
+  "configurations": {
+    "trip-planner": {
+      "appLocation": ".",
+      "outputLocation": "dist",
+      "apiLocation": "api",
+      "apiLanguage": "node",
+      "apiVersion": "22",
+      "appBuildCommand": "npm run build",
+      "apiBuildCommand": "npm run build",
+      "run": "npm run dev",
+      "appDevserverUrl": "http://localhost:5173"
+    }
+  }
+}

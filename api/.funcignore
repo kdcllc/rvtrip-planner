@@ -1,0 +1,11 @@
+*.js.map
+*.ts
+!dist/**
+/src
+tsconfig.json
+vitest.config.ts
+**/*.test.*
+.vscode
+.gitignore
+local.settings.json
+/test

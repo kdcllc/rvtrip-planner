@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # preflight-azure.sh — verify the three unproven assumptions the azure-multi-user
-# architecture is built on, before any of the 15 downstream tasks are implemented.
+# architecture is built on, before the downstream tasks are implemented.
 #
 # See docs/AZURE-PREFLIGHT.md for the full explanation, PASS/FAIL criteria, and
 # fallbacks for each check. This header is a summary only.
@@ -83,8 +83,13 @@ OPTIONS:
 EXIT CODES:
   0  All requested checks ran (a check reporting FAIL is still exit 0 — read the
      printed PASS/FAIL lines; this script surfaces facts, it does not gate CI).
-  1  Preconditions not met (az missing, not logged in, bad arguments) or Check C's
+  1  Preconditions not met (az missing, not logged in, bad arguments), Check C's
+     send call failed (an API/authorization failure — NOT a deliverability result;
+     the principal likely lacks a data-plane role that can send email), or Check C's
      cleanup could not confirm the scratch resource group was removed.
+
+PREREQUISITE: Check C with --apply needs the Azure CLI 'communication' extension
+(az extension add --name communication); az may otherwise auto-install it on first use.
 
 This script never runs 'az login' or 'azd auth login'. See docs/AZURE-PREFLIGHT.md
 for the full runbook, citations, and the results table to fill in after running.
@@ -156,7 +161,7 @@ require_az() {
 # Check A — Azure SQL free-offer eligibility
 #
 # Cited: PLAN.md "The free offer, confirmed" and "Budget notes"; and
-# _research/azure-backend-stack-db/report.md §"Q3. The Azure SQL Database free
+# _memory/work/research/azure-backend-stack-db/report.md §"Q3. The Azure SQL Database free
 # offer — ANSWERED" and §6 "Region lock".
 #
 # Free-offer eligibility per subscription/region is NOT fully machine-queryable
@@ -200,11 +205,11 @@ check_a() {
   log "   combination does not get the free offer."
   log ""
   log "   PASS: banner appears."
-  log "   FAIL: banner does not appear -> re-open _research/azure-backend-stack-db/report.md"
+  log "   FAIL: banner does not appear -> re-open _memory/work/research/azure-backend-stack-db/report.md"
   log "         §6 item 3 (Cosmos DB free tier / Table Storage fallback research)."
   log ""
   log "   REMINDER: the region for the free database locks PERMANENTLY per subscription"
-  log "   on first creation (source: _research/azure-backend-stack-db/report.md §6"
+  log "   on first creation (source: _memory/work/research/azure-backend-stack-db/report.md §6"
   log "   'Region lock'). Choose ${REGION} deliberately, not experimentally."
 }
 
@@ -212,7 +217,7 @@ check_a() {
 # Check B — "Allow Azure services" firewall rule / SWA managed Functions reachability
 #
 # Cited: PLAN.md "Firewall rule 'Allow Azure services'..."; and
-# _research/azure-backend-stack-hosting-close/report.md §2 (the blocking spike)
+# _memory/work/research/azure-backend-stack-hosting-close/report.md §2 (the blocking spike)
 # and §6 item 1.
 #
 # The real connectivity test needs a deployed managed Function, which does not
@@ -242,7 +247,7 @@ check_b() {
   fi
 
   log ""
-  log "NOTE (source: _research/.../report.md §"'"Allow Azure services" is a broad allowlist'"):"
+  log "NOTE (source: _memory/work/research/azure-backend-stack-hosting-close/report.md §"'"Allow Azure services" is a broad allowlist'"):"
   log "  this rule allowlists ANY Azure tenant's outbound traffic, not just this project's."
   log "  Acceptable behind password-authenticated endpoints at this scale, but worth knowing."
   log ""
@@ -255,7 +260,7 @@ check_b() {
   log "   PASS: the Function connects successfully with only 'Allow Azure services' enabled."
   log "   FAIL: connection is refused/times out -> fall back to Shape A (one Azure Container"
   log "         Apps container serving both SPA and API, also \$0, regains managed identity)."
-  log "         See _research/azure-backend-stack-hosting-close/report.md §2."
+  log "         See _memory/work/research/azure-backend-stack-hosting-close/report.md §2."
 }
 
 # ---------------------------------------------------------------------------
@@ -316,12 +321,12 @@ check_c() {
     log "Read-only preview (pass --apply to actually run Check C). Commands that would run:"
     log "  az group create --name <scratch-rg> --location ${REGION}"
     log "  az communication create --name <scratch-acs> --resource-group <scratch-rg> \\"
-    log "      --data-location \"United States\""
+    log "      --location global --data-location \"United States\""
     log "  az communication email create --name <scratch-email-svc> \\"
-    log "      --resource-group <scratch-rg> --data-location \"United States\""
+    log "      --resource-group <scratch-rg> --location global --data-location \"United States\""
     log "  az communication email domain create --resource-group <scratch-rg> \\"
     log "      --email-service-name <scratch-email-svc> --domain-name AzureManagedDomain \\"
-    log "      --domain-management AzureManaged"
+    log "      --domain-management AzureManaged --location global"
     log "  <send one message each to the --test-email-gmail / --test-email-outlook"
     log "   addresses via the ACS Email 'send' REST API>"
     log "  az group delete --name <scratch-rg> --yes   # always, including on failure"
@@ -349,6 +354,7 @@ check_c() {
   run_or_print az communication create \
     --name "${acs_name}" \
     --resource-group "${SCRATCH_RG}" \
+    --location global \
     --data-location "United States" \
     --output none
 
@@ -356,6 +362,7 @@ check_c() {
   run_or_print az communication email create \
     --name "${email_svc_name}" \
     --resource-group "${SCRATCH_RG}" \
+    --location global \
     --data-location "United States" \
     --output none
 
@@ -365,6 +372,7 @@ check_c() {
     --email-service-name "${email_svc_name}" \
     --domain-name "AzureManagedDomain" \
     --domain-management "AzureManaged" \
+    --location global \
     --output none
 
   # Subscription id is resolved into a variable FIRST, then interpolated below.
@@ -450,7 +458,7 @@ check_c() {
   log "   FAIL: message is spam-foldered or never arrives at either provider ->"
   log "         switch to Brevo's perpetual 300/day free plan, or register a custom"
   log "         domain (fixes deliverability and the unraisable 5/min·10/hour ACS rate"
-  log "         cap together). See _research/azure-backend-stack-hosting-close/report.md"
+  log "         cap together). See _memory/work/research/azure-backend-stack-hosting-close/report.md"
   log "         'Q5 — Transactional email for password reset'."
   log ""
   log "The scratch resource group will be deleted now (or on any failure above/below —"
@@ -476,8 +484,8 @@ main() {
   log ""
   log "=== Preflight complete ==="
   log "Fill in the results table in docs/AZURE-PREFLIGHT.md with today's date, the"
-  log "PASS/FAIL outcome, and notes for each of Checks A, B, and C. Task 02 does not"
-  log "begin until all three rows are filled in."
+  log "PASS/FAIL outcome, and notes for Checks A and C (Check B is recorded by task 04c). Task 02"
+  log "waits for rows A and C."
 }
 
 main "$@"

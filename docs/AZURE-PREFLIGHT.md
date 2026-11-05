@@ -2,11 +2,11 @@
 
 This runbook accompanies `scripts/preflight-azure.sh`. It converts **three
 load-bearing, currently-unverified assumptions** in the `azure-multi-user` architecture
-into facts, before any of the fifteen downstream implementation tasks are built on top
-of them.
+into facts, before the downstream implementation tasks are built on top of them.
 
-**Task 02 does not begin until every row of the [Results](#results) table below is
-filled in.**
+**Task 02 waits for rows A and C of the [Results](#results) table below. Row B is
+produced later, by task 04c's walking-skeleton deploy** (see
+[Check B relocation](#check-b-relocation)).
 
 The script is **read-only by default**. It never runs `az login` or `azd auth login` —
 if you are not authenticated, it exits non-zero and tells you what to run yourself. Every
@@ -17,6 +17,9 @@ that flag the script prints the command it *would* run instead of running it.
 
 - Azure CLI (`az`) installed and you are logged in (`az login`, run by you, not by this
   script).
+- The Azure CLI `communication` extension: `az extension add --name communication`.
+  Check C with `--apply` needs it; without it `az` may auto-install it on first use, which
+  can surprise you (or fail if dynamic install is disabled).
 - An Azure subscription you're willing to run Check C's throwaway resources against
   (fractions of a cent — see [Check C](#check-c--azurecommnet-email-deliverability)).
 - Two real inboxes you control: one Gmail, one Outlook/Microsoft address, to receive the
@@ -63,7 +66,7 @@ subscription and chosen region actually qualify for the Azure SQL Database free 
 (100,000 vCore-seconds + 32 GB data + 32 GB backup, per database per month, perpetual).
 Microsoft states the offer is "available regardless of your Azure subscription type," but
 free-offer eligibility is **not fully machine-queryable** — there is no API/CLI flag that
-returns "yes, this will be free." Source: `_research/azure-backend-stack-db/report.md`
+returns "yes, this will be free." Source: `_memory/work/research/azure-backend-stack-db/report.md`
 §"Q3. The Azure SQL Database free offer — ANSWERED" and PLAN.md "The free offer,
 confirmed."
 
@@ -85,13 +88,13 @@ az sql db list-editions --location <region> --edition GeneralPurpose -o table
 serverless database in the chosen region.
 
 **FAIL:** the banner does not appear. **Fallback:** re-open
-`_research/azure-backend-stack-db/report.md` §6 item 3 — research Cosmos DB free tier /
+`_memory/work/research/azure-backend-stack-db/report.md` §6 item 3 — research Cosmos DB free tier /
 Table Storage as the replacement persistence layer.
 
 **Region lock — read before running.** The free database's region **locks permanently
 per subscription** on first creation ("Once a region is selected for a free database
 under a subscription, the same region applies to all free databases in that
-subscription, and cannot be changed" — `_research/azure-backend-stack-db/report.md` §6
+subscription, and cannot be changed" — `_memory/work/research/azure-backend-stack-db/report.md` §6
 "Region lock"). Choose the region for colocation with the app, not experimentally — you
 do not get a second first choice.
 
@@ -102,7 +105,7 @@ do not get a second first choice.
 **Why this check exists.** No Microsoft documentation states whether Static Web Apps'
 **managed** Functions traffic is covered by the Azure SQL `Allow Azure services and
 resources to access this server` firewall rule. This is the single blocking spike named
-in `_research/azure-backend-stack-hosting-close/report.md` §2 and §6 item 1, and in
+in `_memory/work/research/azure-backend-stack-hosting-close/report.md` §2 and §6 item 1, and in
 PLAN.md's "Blocking pre-implementation checks."
 
 **What the script does.** The real connectivity test requires a *deployed* managed
@@ -131,12 +134,12 @@ az sql server firewall-rule create \
 
 **FAIL:** connection is refused or times out. **Fallback: Shape A** — one Azure
 Container Apps container serving both SPA and API, also $0, which regains managed
-identity. See `_research/azure-backend-stack-hosting-close/report.md` §2 ("If the spike
+identity. See `_memory/work/research/azure-backend-stack-hosting-close/report.md` §2 ("If the spike
 fails, or the stored credential is unacceptable → Shape A").
 
 **Security note.** "Allow Azure services" is a **broad allowlist covering any Azure
 tenant**, not just this project's resources — acceptable behind password-authenticated
-endpoints at this scale, but worth knowing (`_research/.../report.md`, same section).
+endpoints at this scale, but worth knowing (`_memory/work/research/azure-backend-stack-hosting-close/report.md`, same section).
 
 ---
 
@@ -149,7 +152,7 @@ read-only query. Microsoft does **not document inbox placement** for Azure-manag
 domains, and password reset is the one flow where a spam-foldered message means a
 locked-out user. An external research pass named this the single likeliest way this
 architecture fails in production. Source:
-`_research/azure-backend-stack-hosting-close/report.md` §"Q5 — Transactional email for
+`_memory/work/research/azure-backend-stack-hosting-close/report.md` §"Q5 — Transactional email for
 password reset" and §6 item 5.
 
 **Pulling this into preflight, not discovering it at deploy time (task 16), is
@@ -175,12 +178,12 @@ deliberate** — for the same reason.
 ```bash
 az group create --name <scratch-rg> --location <region>
 az communication create --name <scratch-acs> --resource-group <scratch-rg> \
-    --data-location "United States"
+    --location global --data-location "United States"
 az communication email create --name <scratch-email-svc> \
-    --resource-group <scratch-rg> --data-location "United States"
+    --resource-group <scratch-rg> --location global --data-location "United States"
 az communication email domain create --resource-group <scratch-rg> \
     --email-service-name <scratch-email-svc> --domain-name AzureManagedDomain \
-    --domain-management AzureManaged
+    --domain-management AzureManaged --location global
 az communication update --name <scratch-acs> --resource-group <scratch-rg> \
     --linked-domains "/subscriptions/<sub-id>/resourceGroups/<scratch-rg>/providers/Microsoft.Communication/emailServices/<scratch-email-svc>/domains/AzureManagedDomain"
 
@@ -199,7 +202,7 @@ az group delete --name <scratch-rg> --yes   # always, including on failure
 
 **Cost.** ACS Email is billed **per message with no fixed resource charge** — two test
 messages cost a small fraction of a cent (~$0.00025/message per
-`_research/azure-backend-stack-hosting-close/report.md`). Do not let cost concerns deter
+`_memory/work/research/azure-backend-stack-hosting-close/report.md`). Do not let cost concerns deter
 you from actually running this check.
 
 **Manual step — check BOTH the inbox and the spam folder, at both providers:**
@@ -215,7 +218,7 @@ Record what you saw in the [Results](#results) table below.
 confirm on signup) or **register a custom domain**. Either fix resolves deliverability
 *and* the unraisable **5/min · 10/hour** ACS rate cap together, since a custom domain and
 Brevo both sidestep the shared managed-domain limits. See
-`_research/azure-backend-stack-hosting-close/report.md` §"Q5" and the comparison table
+`_memory/work/research/azure-backend-stack-hosting-close/report.md` §"Q5" and the comparison table
 there.
 
 **SEND CALL FAILED (a fourth outcome — not PASS, not FAIL):** the script prints this
@@ -229,11 +232,34 @@ recording anything in the results table below.
 
 ## Results
 
-Fill in one row per check after running the script. **Task 02 does not begin until all
-three rows are filled in.**
+Fill in one row per check after running the script. **Task 02 waits for rows A and C;
+row B is produced by task 04c.**
 
 | Check | Date run | Outcome (PASS/FAIL) | Notes |
 |---|---|---|---|
-| A — Azure SQL free-offer eligibility | | | |
-| B — SWA managed Functions → Azure SQL firewall reachability | | | |
-| C — azurecomm.net email deliverability (Gmail + Outlook, inbox vs. spam) | | | |
+| A — Azure SQL free-offer eligibility | 2026-11-03 | PASS (operator assertion — paid subscription; not portal-verified) | Hard verification happens in task 04c: `useFreeLimit` provisioning on KDCLLC-MPN / eastus2 fails loudly if the subscription is ineligible. |
+| B — SWA managed Functions → Azure SQL firewall reachability | | DEFERRED → task 04c walking-skeleton deploy | The reachability test needs a deployed managed Function, which the script itself states cannot be automated pre-deployment. |
+| C — azurecomm.net email deliverability (Gmail + Outlook, inbox vs. spam) | 2026-11-04 | PASS (operator decision — delivered; Outlook to Junk) | Sends succeeded. Gmail landed in the main inbox; Outlook landed in the Junk folder. The runbook criterion (inbox at both providers) was not met at Outlook; the operator accepted delivery as success on 2026-11-04 and kept the `azurecomm.net` sender. One test message per provider; task 16 re-checks placement. History: attempt 1 (2026-11-03) aborted before sending (`LocationNotAvailableForResourceType`, ACS is global-only, no `--location` passed); fixed by passing `--location global`. |
+
+### Check B relocation
+
+Check B cannot be tested before a managed Function is deployed, so its gate moved. Tasks
+before 04c need rows A and C only. Tasks 05 onward need row B, which task 04c (the
+walking-skeleton deploy) produces — they do not start until task 04c PASSes.
+
+### Known-unverified items
+
+In the 2026-11-04 Check C run, the send calls succeeded using the `fromSenderDomain`-derived
+sender, `api-version=2023-03-31` and the `--resource` audience, so both items below are
+observed working in that run:
+
+- **`fromSenderDomain` semantics.** The script builds the sender as
+  `donotreply@<fromSenderDomain>`. That the field exists and the query path resolves is
+  confirmed from the extension's local schema, but that this field (rather than
+  `mailFromSenderDomain`) is the usable sender domain is an inference from RFC 5321/5322
+  convention. If wrong, the send fails and is reported as a send-call failure, not a
+  deliverability result.
+- **`api-version=2023-03-31` and `--resource https://communication.azure.com`.** The
+  data-plane API version and Entra audience used by `az rest ... emails:send` are not
+  checkable offline. A mismatch surfaces as a send-call failure, not a deliverability
+  result.

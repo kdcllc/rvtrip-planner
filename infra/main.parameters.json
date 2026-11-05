@@ -6,6 +6,15 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
+    },
+    "sqlAdminPassword": {
+      "value": "${AZURE_SQL_ADMIN_PASSWORD}"
+    },
+    "sessionSecret": {
+      "value": "${SESSION_SECRET}"
+    },
+    "inviteCode": {
+      "value": "${INVITE_CODE}"
     }
   }
 }
