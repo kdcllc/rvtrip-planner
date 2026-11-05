@@ -158,7 +158,7 @@ You can check the status in Azure Portal under "Custom domains."
 
 **Workflow:** `.github/workflows/azure-dev.yml` (push to `master` or manual `workflow_dispatch`).
 
-It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, runs `azd env refresh --no-prompt`, and finishes with `azd deploy --no-prompt`. It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
+It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), and finishes with `azd deploy --no-prompt`. It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
 
 ### Step 10: Configure repository variables
 
@@ -171,6 +171,7 @@ It checks out, verifies the required repository variables, installs Node 22, run
 | `AZURE_SUBSCRIPTION_ID` | Subscription |
 | `AZURE_ENV_NAME` | azd environment name |
 | `AZURE_LOCATION` | azd region |
+| `AZURE_RESOURCE_GROUP` | Resource group holding the Static Web App (`rg-trip-planner`) |
 
 The workflow fails fast with an error if any is empty. The identity needs a role assignment on the resource group.
 
@@ -233,7 +234,7 @@ Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `AC
 `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`).
 
 ### GitHub Actions
-Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`; optional secret `VITE_OPENROUTE_API_KEY`.
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional secret `VITE_OPENROUTE_API_KEY`.
 
 ---
 

@@ -141,7 +141,7 @@ azd deploy
 
 ### GitHub Actions CI/CD
 
-`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then `azd deploy` using a federated credential. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
+`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then `azd deploy` using a federated credential. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
