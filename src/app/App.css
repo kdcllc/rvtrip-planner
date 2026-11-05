@@ -74,35 +74,8 @@
   max-width: 560px;
 }
 
-.hero-tabs {
-  display: inline-flex;
-  gap: 10px;
-  align-items: center;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(255, 232, 204, 0.6);
-  border: 1px solid rgba(186, 120, 51, 0.2);
-  width: fit-content;
-}
 
-.hero-tab {
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  padding: 6px 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background-color 0.2s ease, color 0.2s ease;
-  font-family: "Trebuchet MS", "Gill Sans", sans-serif;
-}
 
-.hero-tab--active {
-  background: #fff7ed;
-  color: #9a4f1d;
-  box-shadow: 0 8px 18px rgba(90, 46, 18, 0.12);
-}
 
 .hero-actions {
   display: flex;
@@ -1316,20 +1289,8 @@
 }
 
 /* Dark mode overrides */
-:root[data-theme="dark"] .hero-tabs {
-  background: rgba(61, 50, 38, 0.6);
-  border: 1px solid rgba(168, 152, 120, 0.2);
-}
 
-:root[data-theme="dark"] .hero-tab--active {
-  background: #3d3226;
-  color: #fcd34d;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.3);
-}
 
-:root[data-theme="dark"] .hero-tab {
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
 
 :root[data-theme="dark"] .source-section {
   background: rgba(61, 50, 38, 0.7);
