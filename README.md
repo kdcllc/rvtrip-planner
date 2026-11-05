@@ -2,7 +2,7 @@
 
 Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
-**Live Demo:** https://st3i2mi47qegi24.z20.web.core.windows.net/
+**Live Demo:** https://red-rock-016ee8c0f.4.azurestaticapps.net (sign-in required; registration needs an invite code)
 
 ## Features
 
@@ -12,8 +12,9 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data)
 - Fuel cost estimation based on vehicle MPG and gas prices
+- Multi-user accounts: register (invite code required), log in, log out, and password reset by email
+- Trips are stored per user on the server (Azure SQL) via `/api/trips`
 - Export/import trip data as JSON
-- Google Drive sync for cloud backup (optional)
 - Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
 
@@ -26,7 +27,7 @@ This application uses **free, open-source services** with no API keys required b
 - **Geocoding:** [Photon](https://photon.komoot.io/) (primary) and [Nominatim](https://nominatim.org/) (fallback)
 - **Autocomplete:** [Photon](https://photon.komoot.io/)
 - **Weather:** NOAA and Open-Meteo (free)
-- **Caching:** All API responses are cached in browser localStorage with intelligent TTLs (5min for autocomplete, 7 days for geocoding, 24hr for routes)
+- **Caching:** Routing, geocoding and autocomplete responses are cached in browser localStorage with intelligent TTLs (5min for autocomplete, 7 days for geocoding, 24hr for routes)
 
 ### Optional Enhancements
 
@@ -36,10 +37,6 @@ For improved reliability, you can add:
   - Sign up at [openrouteservice.org](https://openrouteservice.org/dev/#/signup)
   - Add `VITE_OPENROUTE_API_KEY` to your `.env` file
   - Free tier: 2,000 requests/day
-
-- **Google Drive Client ID** (optional): Enable cloud sync/backup of trips
-  - Create OAuth 2.0 credentials in [Google Cloud Console](https://console.cloud.google.com/)
-  - Add `VITE_GOOGLE_DRIVE_CLIENT_ID` to your `.env` file
 
 ## Routing Architecture
 
@@ -72,8 +69,6 @@ Geocoding (address → coordinates) runs sequentially in the background with bui
    # OpenRouteService (optional - for routing fallback)
    VITE_OPENROUTE_API_KEY=your_free_key_from_openrouteservice.org
    
-   # Google Drive (optional - for cloud sync)
-   VITE_GOOGLE_DRIVE_CLIENT_ID=your_oauth_client_id
    ```
 
 3. Start the development server
@@ -81,11 +76,22 @@ Geocoding (address → coordinates) runs sequentially in the background with bui
    npm run dev
    ```
 
-The app works immediately with no configuration - all mapping and routing services are free and require no API keys!
+Mapping and routing services are free and need no API keys. Sign-in, registration and trip storage need the API and a database, so for the full app run it locally against a Docker SQL Server:
+
+```bash
+npm install                      # root dependencies
+(cd api && npm install)          # API dependencies
+npm run db:up                    # start local SQL Server (docker compose)
+export SQL_CONNECTION_STRING='...'   # see db/README.md
+npm run db:migrate               # apply db/migrations/*.sql
+npm run dev:swa                  # SWA CLI: Vite dev server + /api functions
+```
+
+The server-side settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`) are listed by name in `.env.example`; for local runs put them in `api/local.settings.json` (git-ignored) or your shell. See [db/README.md](db/README.md) for the local database.
 
 ## Deployment to Azure
 
-This application is deployed to Azure Static Web Apps using Azure Developer CLI (`azd`).
+This application (SPA plus the managed Azure Functions API in `api/`) is deployed to Azure Static Web Apps using Azure Developer CLI (`azd`). Deploys go through `azd` only. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
 
 ### Prerequisites
 
@@ -126,43 +132,38 @@ azd deploy
 ### Resources Created
 
 - **Resource Group:** `rg-{environmentName}`
-- **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`)
-- **Location:** East US 2 (or your chosen region)
+- **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`) in `AZURE_LOCATION` (East US 2 for the live deployment)
+- **Azure SQL server and database** (free offer, serverless, auto-pause) in `AZURE_SQL_LOCATION`, default `centralus`
+- **Azure Communication Services** with an Azure-managed email domain (password-reset mail)
+- **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`
 - **Default URL:** `https://{name}.azurestaticapps.net`
 - **Custom Domain:** Supports HTTPS with managed certificates (see DEPLOYMENT.md)
 
 ### GitHub Actions CI/CD
 
-To set up automated deployment from GitHub:
-
-```bash
-# Configure GitHub integration
-azd pipeline config
-```
-
-Optionally, add these GitHub secrets for enhanced features (both are optional):
-- `VITE_GOOGLE_DRIVE_CLIENT_ID` - Enable Google Drive cloud sync
-- `VITE_OPENROUTE_API_KEY` - Add third routing fallback
+`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then `azd deploy` using a federated credential. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
 - **Fuel Costs:** Estimated based on your vehicle's MPG (configurable in settings) and current gas prices.
-- **Data Persistence:** Trip data is stored in browser localStorage. Use Google Drive sync or export to JSON for backup.
+- **Data Persistence:** Trips are saved to your account on the server. Export to JSON for a backup.
 
 ## Architecture
 
 - **Frontend:** React 19 + TypeScript + Vite
-- **Hosting:** Azure Static Web Apps
+- **Hosting:** Azure Static Web Apps (SPA) with built-in managed Azure Functions (`api/`)
+- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration, and Azure Communication Services email for password reset
+- **Database:** Azure SQL Database (serverless, free offer); schema in `db/migrations/`
 - **Mapping:** MapLibre GL JS + OpenStreetMap tiles (free)
 - **Routing:** OSRM + OpenRouteService (free, with optional API key)
 - **Geocoding:** Photon + Nominatim (free)
 - **Weather:** NOAA + Open-Meteo (free)
-- **State:** React Context + localStorage (no backend)
+- **State:** React Context; trips load and save through `/api/trips` (`src/services/storage/tripStorage.ts`); routing/geocoding caches use localStorage
 - **Cost Optimization:** Multi-server fallback, intelligent caching, request batching
 
 ## Notes
 
-- **No API keys required by default** - the app works immediately out of the box
+- **No third-party API keys required by default** for mapping, routing, geocoding and weather
 - Weather is pulled for the exact date range you provide per stop
 - Route requests are batched and cached to respect free public APIs
-- All data persists in browser localStorage - use Google Drive sync or JSON export for backup
+- Trip data persists server-side per account - use JSON export for backup

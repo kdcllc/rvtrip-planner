@@ -11,8 +11,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # Optional: Google Drive sync feature (free OAuth, no API costs)
-      VITE_GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_DRIVE_CLIENT_ID }}
       # Optional: OpenRouteService fallback routing (free tier: 2,000 req/day)
       VITE_OPENROUTE_API_KEY: ${{ secrets.VITE_OPENROUTE_API_KEY }}
 
@@ -23,11 +21,18 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      - name: Install API dependencies
+        run: npm ci --ignore-scripts
+        working-directory: api
 
       - name: Type check
         run: npx tsc -b
@@ -37,6 +42,10 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: API tests
+        run: npm test
+        working-directory: api
 
       - name: Build
         run: npm run build

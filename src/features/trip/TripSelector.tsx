@@ -185,10 +185,6 @@ export function TripSelector({
               </ul>
             )}
 
-            <div className="trip-selector-rename-hint">
-              Renames sync to Google Drive when connected.
-            </div>
-
             {!isCreatingNew && (
               <button
                 className="trip-selector-new-button"

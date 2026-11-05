@@ -9,9 +9,11 @@ vi.mock('mssql', () => ({ default: {} }))
 vi.mock('@azure/functions', () => ({
   app: { http: (name: string, opts: Record<string, unknown>) => h.registered.push({ name, opts }) },
 }))
-vi.mock('../shared/db', async () => {
-  const actual = await vi.importActual<typeof import('../shared/db')>('../shared/db')
-  return { ...actual, query: h.query }
+vi.mock('../shared/db', () => {
+  class DatabaseUnavailableError extends Error {
+    readonly code = 'DATABASE_UNAVAILABLE'
+  }
+  return { DatabaseUnavailableError, query: h.query }
 })
 
 import { DatabaseUnavailableError } from '../shared/db'

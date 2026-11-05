@@ -10,38 +10,75 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      # Optional: Google Drive sync feature (free OAuth, no API costs)
-      VITE_GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_DRIVE_CLIENT_ID }}
       # Optional: OpenRouteService fallback routing (free tier: 2,000 req/day)
       VITE_OPENROUTE_API_KEY: ${{ secrets.VITE_OPENROUTE_API_KEY }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify required repository variables
+        run: |
+          missing=0
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository variable $v is required and is empty (create it with 'azd pipeline config' or in Settings > Variables)"
+              missing=1
+            fi
+          done
+          exit $missing
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
-      - name: Build application
-        run: npm run build
+      - name: Install API dependencies
+        run: npm ci --ignore-scripts
+        working-directory: api
 
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: 'upload'
-          app_location: '/'
-          api_location: 'api'
-          output_location: 'dist'
-        
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: API tests
+        run: npm test
+        working-directory: api
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Log in with azd (federated credential)
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --federated-credential-provider github \
+            --tenant-id "$AZURE_TENANT_ID"
+
+      - name: Refresh azd environment
+        run: azd env refresh --no-prompt
+
+      - name: Deploy
+        run: azd deploy --no-prompt

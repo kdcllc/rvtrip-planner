@@ -4,6 +4,16 @@ Turn the current client-only SPA into a multi-user app with login and a backend,
 staying entirely within the Azure subscription for **$0/month steady-state**
 (revised down from ~$15/month on 2026-09-06 — see "Research findings").
 
+## Implementation status (annotation, added after the first production deploy)
+
+Shipped per `deploy-record.md` / `skeleton-deploy-record.md` of the `azure-multi-user` goal and the code. The locked decisions below are unchanged except where noted here.
+
+- Deployed: SWA Free + managed Functions (`api/`, bundled via `api/scripts/build-deploy.mjs`, `platform.apiRuntime: node:22`), Azure SQL free-offer serverless database, ACS Email, six app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`), invite-code registration, login-required app, Google Drive sync removed. Deploys are `azd`-only, locally and from `.github/workflows/azure-dev.yml`.
+- **Region deviation:** SQL is in **centralus**, the SWA in eastus2 (the subscription got `ProvisioningDisabled` for SQL servers in eastus2). This supersedes "colocate with the Static Web App"; the centralus free-database region is now locked on the subscription.
+- **Auto-pause deviation:** `autoPauseDelay` is not set in Bicep. With `freeLimitExhaustionBehavior: 'AutoPause'` Azure accepts only the service default, and `az sql db show` reported 60 minutes. This supersedes "autoPauseDelay = 15 minutes".
+- Blocking checks: free offer (A) and SWA Functions to Azure SQL reachability (B) passed; email (C) delivered, with Outlook landing in Junk (operator accepted). See `docs/AZURE-PREFLIGHT.md`.
+- The 503 + `Retry-After` handling for a paused database is in `api/src/shared/http.ts`.
+
 ## Decisions (locked)
 
 - **Everything in Azure** — no external providers (no Supabase/Neon).
@@ -50,9 +60,10 @@ staying entirely within the Azure subscription for **$0/month steady-state**
 
 ## Current state (for reference)
 
+- *(Pre-upgrade snapshot, kept for reference; see "Implementation status" above for what shipped.)*
 - React 19 + Vite + TypeScript SPA, deployed to **Azure Static Web Apps (Free tier)** (`infra/main.bicep`).
-- All data lives in the browser's **localStorage** (`src/services/storage/tripStorage.ts`). Nothing is per-user or server-side.
-- Optional Google Drive sync exists (`src/services/drive/*`) — user backs up their own trips to their own Drive. Not a shared backend.
+- All data lived in the browser's **localStorage** (`src/services/storage/tripStorage.ts`); it now goes through `/api/trips`.
+- Optional Google Drive sync existed (`src/services/drive/*`); it has been removed.
 - Maps / routing / weather / geocoding all use free public APIs, no keys.
 
 ---

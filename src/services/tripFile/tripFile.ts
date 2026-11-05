@@ -6,7 +6,7 @@ import type {
 } from '../../domain/trip/types'
 import { hashStringFNV1a } from '../../utils/hash'
 
-export const DRIVE_TRIP_VERSION = 1
+export const TRIP_FILE_VERSION = 1
 
 const TRIP_STOP_SOURCE_NAMES: TripStopSourceName[] = [
   'RV Life',
@@ -19,35 +19,17 @@ const TRIP_STOP_SOURCE_NAMES: TripStopSourceName[] = [
 
 const TRIP_STOP_STATUSES: TripStopStatus[] = ['idle', 'geocoding', 'ready', 'error']
 
-export type DriveTripPayload = {
+export type TripFilePayload = {
   version: number
   trip: Trip
   checksum: string
   updatedAt: string
 }
 
-export type ParsedDriveTripPayload = {
-  payload: DriveTripPayload
+export type ParsedTripFilePayload = {
+  payload: TripFilePayload
   skippedStops: number
   totalStops: number
-}
-
-export type DriveTripAppProperties = {
-  tripId: string
-  tripName: string
-  updatedAt: string
-  checksum: string
-  version: string
-  stopCount: string
-  deviceId?: string
-  lastSyncedAt?: string
-}
-
-export type DriveTripFileInfo = {
-  id: string
-  name: string
-  modifiedTime?: string
-  appProperties?: DriveTripAppProperties
 }
 
 export function createStopsChecksum(stops: TripStop[]): string {
@@ -90,20 +72,20 @@ export function createStopsChecksum(stops: TripStop[]): string {
   return hashStringFNV1a(JSON.stringify(normalizedStops))
 }
 
-export function buildDriveTripPayload(trip: Trip): DriveTripPayload {
+export function buildTripFilePayload(trip: Trip): TripFilePayload {
   const checksum = createStopsChecksum(trip.stops)
   return {
-    version: DRIVE_TRIP_VERSION,
+    version: TRIP_FILE_VERSION,
     trip,
     checksum,
     updatedAt: trip.updatedAt,
   }
 }
 
-export function parseDriveTripPayload(
+export function parseTripFilePayload(
   raw: unknown,
   options?: { allowedSourceNames?: Set<TripStopSourceName> },
-): ParsedDriveTripPayload {
+): ParsedTripFilePayload {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid trip payload')
   }
@@ -164,23 +146,6 @@ export function parseDriveTripPayload(
     },
     skippedStops,
     totalStops: rawStops.length,
-  }
-}
-
-export function buildDriveAppProperties(
-  trip: Trip,
-  checksum: string,
-  options?: { deviceId?: string; lastSyncedAt?: string },
-): DriveTripAppProperties {
-  return {
-    tripId: trip.id,
-    tripName: trip.name,
-    updatedAt: trip.updatedAt,
-    checksum,
-    version: String(DRIVE_TRIP_VERSION),
-    stopCount: String(trip.stops.length),
-    deviceId: options?.deviceId,
-    lastSyncedAt: options?.lastSyncedAt,
   }
 }
 

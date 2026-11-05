@@ -1,86 +1,151 @@
 import type { Trip, TripsState, TripStop } from '../../domain/trip/types'
+import type { ApiResult } from '../../types/auth'
+import { apiGet, apiPut } from '../auth/apiClient'
 import { createId } from '../../utils/id'
 
-const STORAGE_KEY = 'trip-planner-trips'
-const LEGACY_STORAGE_KEY = 'exported-trips'
+const LEGACY_TRIPS_KEY = 'trip-planner-trips'
+const LEGACY_EXPORT_KEY = 'exported-trips'
+
+/** Typed outcome of a trips load. There is no local fallback: failures are surfaced. */
+export type LoadTripsResult =
+  | { kind: 'loaded'; state: TripsState; isNew: boolean }
+  | { kind: 'database-waking'; retryAfterSeconds?: number }
+  | { kind: 'session-expired' }
+  | { kind: 'error'; message: string }
+
+/** Typed outcome of a trips save. A failed save never throws; the caller keeps its state. */
+export type SaveTripsResult =
+  | { kind: 'saved' }
+  | { kind: 'database-waking'; retryAfterSeconds?: number }
+  | { kind: 'session-expired' }
+  | { kind: 'error'; message: string }
+
+type Failure = Exclude<ApiResult<unknown>, { kind: 'success' }>
+
+const toFailure = (
+  result: Failure
+):
+  | { kind: 'database-waking'; retryAfterSeconds?: number }
+  | { kind: 'session-expired' }
+  | { kind: 'error'; message: string } => {
+  if (result.kind === 'database-waking') {
+    return result.retryAfterSeconds === undefined
+      ? { kind: 'database-waking' }
+      : { kind: 'database-waking', retryAfterSeconds: result.retryAfterSeconds }
+  }
+  if (result.kind === 'auth-failure') return { kind: 'session-expired' }
+  return { kind: 'error', message: result.error }
+}
+
+const makeDefaultState = (): TripsState => {
+  const now = new Date().toISOString()
+  const trip: Trip = { id: createId(), name: 'My First Trip', stops: [], createdAt: now, updatedAt: now }
+  return { trips: [trip], currentTripId: trip.id }
+}
+
+/** Load trips from the server (GET /api/trips). */
+export async function loadTripsFromStorage(): Promise<LoadTripsResult> {
+  const result = await apiGet<TripsState>('/api/trips')
+  if (result.kind !== 'success') return toFailure(result)
+  const data = result.data
+  if (!data || !Array.isArray(data.trips)) {
+    return { kind: 'error', message: 'Invalid trips response' }
+  }
+  // Default trip only for a genuinely empty server state.
+  if (data.trips.length === 0) {
+    return { kind: 'loaded', state: makeDefaultState(), isNew: true }
+  }
+  const state: TripsState = { trips: data.trips, currentTripId: data.currentTripId ?? null }
+  if (!state.currentTripId) state.currentTripId = state.trips[0].id
+  return { kind: 'loaded', state, isNew: false }
+}
+
+let inFlight: Promise<SaveTripsResult> | null = null
+let pending: { state: TripsState; waiters: Array<(r: SaveTripsResult) => void> } | null = null
+
+const putState = async (state: TripsState): Promise<SaveTripsResult> => {
+  try {
+    const result = await apiPut<{ ok: true }>('/api/trips', state)
+    return result.kind === 'success' ? { kind: 'saved' } : toFailure(result)
+  } catch (error) {
+    return { kind: 'error', message: error instanceof Error ? error.message : 'Save failed' }
+  }
+}
+
+const drain = async (first: TripsState): Promise<SaveTripsResult> => {
+  let result = await putState(first)
+  while (pending) {
+    const batch = pending
+    pending = null
+    result = await putState(batch.state)
+    batch.waiters.forEach((resolve) => resolve(result))
+  }
+  inFlight = null
+  return result
+}
 
 /**
- * Load trips state from localStorage
- * Handles migration from legacy export format
+ * Save trips to the server (PUT /api/trips). Last-write-wins: while a save is in flight,
+ * later calls coalesce so only the newest state is sent next. Never throws.
  */
-export function loadTripsFromStorage(): TripsState {
+export function saveTripsToStorage(state: TripsState): Promise<SaveTripsResult> {
+  if (!inFlight) {
+    inFlight = drain(state)
+    return inFlight
+  }
+  return new Promise<SaveTripsResult>((resolve) => {
+    if (pending) {
+      pending.state = state
+      pending.waiters.push(resolve)
+    } else {
+      pending = { state, waiters: [resolve] }
+    }
+  })
+}
+
+/**
+ * LEGACY IMPORT ONLY (task 13 first-login import). Reads the old localStorage keys
+ * (`trip-planner-trips`, `exported-trips`) and returns a TripsState, or null when none.
+ * Not a fallback for normal operation.
+ */
+export function readLegacyLocalTrips(): TripsState | null {
   try {
-    // Try to load new format first
-    const stored = window.localStorage.getItem(STORAGE_KEY)
+    const stored = window.localStorage.getItem(LEGACY_TRIPS_KEY)
     if (stored) {
       const state = JSON.parse(stored) as TripsState
-      // Set current trip to first if not set
       if (!state.currentTripId && state.trips.length > 0) {
         state.currentTripId = state.trips[0].id
       }
       return state
     }
-
-    // Try to migrate from legacy format
-    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+    const legacy = window.localStorage.getItem(LEGACY_EXPORT_KEY)
     if (legacy) {
       const parsed = JSON.parse(legacy) as { version: string; trips: TripStop[] }
       if (parsed.trips && Array.isArray(parsed.trips)) {
+        const now = new Date().toISOString()
         const newTrip: Trip = {
           id: createId(),
           name: 'Imported Trip',
           stops: parsed.trips,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
         }
-        const newState: TripsState = {
-          trips: [newTrip],
-          currentTripId: newTrip.id,
-        }
-        saveTripsToStorage(newState)
-        return newState
+        return { trips: [newTrip], currentTripId: newTrip.id }
       }
     }
-
-    // Create a default trip for new users
-    const defaultTrip: Trip = {
-      id: createId(),
-      name: 'My First Trip',
-      stops: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-    const defaultState: TripsState = {
-      trips: [defaultTrip],
-      currentTripId: defaultTrip.id,
-    }
-    // Don't save to storage on first load - let user actions trigger that
-    return defaultState
   } catch (error) {
-    console.error('Error loading trips from storage:', error)
-    // Return default state even on error
-    const defaultTrip: Trip = {
-      id: createId(),
-      name: 'My First Trip',
-      stops: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-    return {
-      trips: [defaultTrip],
-      currentTripId: defaultTrip.id,
-    }
+    console.error('Error reading legacy local trips:', error)
   }
+  return null
 }
 
-/**
- * Save trips state to localStorage
- */
-export function saveTripsToStorage(state: TripsState): void {
+/** LEGACY IMPORT ONLY (task 13): removes the old localStorage trip keys after a successful import. */
+export function clearLegacyLocalTrips(): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    window.localStorage.removeItem(LEGACY_TRIPS_KEY)
+    window.localStorage.removeItem(LEGACY_EXPORT_KEY)
   } catch (error) {
-    console.error('Error saving trips to storage:', error)
+    console.error('Error clearing legacy local trips:', error)
   }
 }
 

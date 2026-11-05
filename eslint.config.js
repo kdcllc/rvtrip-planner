@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'api/scripts/dist/**', 'api/scripts/host.json', 'api/scripts/package.json']),
   {
     files: ['**/*.{ts,tsx}'],
     ignores: ['api/**'],
@@ -27,6 +27,9 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.node,
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
 ])
