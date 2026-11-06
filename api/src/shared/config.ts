@@ -30,3 +30,13 @@ export function getConfig(): AppConfig {
   for (const name of SETTING_NAMES) out[name] = requireSetting(name)
   return out
 }
+
+/** Optional ADMIN_EMAILS (comma/semicolon separated): trimmed, lowercased, empties dropped; [] when unset. */
+export function getAdminEmails(): string[] {
+  const raw = process.env.ADMIN_EMAILS
+  if (!raw) return []
+  return raw
+    .split(/[,;]/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e !== '')
+}

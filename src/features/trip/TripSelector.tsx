@@ -8,6 +8,7 @@ interface TripSelectorProps {
   onCreateTrip: (name: string) => void
   onRequestDelete: (tripId: string) => void
   onRenameTrip: (tripId: string, newName: string) => void
+  onDownloadTrip: (tripId: string) => void
 }
 
 export function TripSelector({
@@ -16,6 +17,7 @@ export function TripSelector({
   onCreateTrip,
   onRequestDelete,
   onRenameTrip,
+  onDownloadTrip,
 }: TripSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
@@ -161,6 +163,17 @@ export function TripSelector({
                           </span>
                         </button>
                       )}
+                      <button
+                        className="trip-selector-rename-button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDownloadTrip(trip.id)
+                        }}
+                        title="Download trip"
+                        aria-label={`Download ${trip.name}`}
+                      >
+                        ⬇
+                      </button>
                       <button
                         className="trip-selector-delete-button"
                         onClick={(e) => handleDeleteClick(trip.id, e)}

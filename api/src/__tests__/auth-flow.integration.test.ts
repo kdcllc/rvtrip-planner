@@ -11,7 +11,10 @@ const h = vi.hoisted(() => ({
   users: new Map<string, unknown>(),
   sessions: new Map<string, unknown>(),
   resets: new Map<string, unknown>(),
-  trips: new Map<string, string>(),
+  trips: new Map<string, { data: string; version: number }>(),
+  current: new Map<string, string | null>(),
+  codes: new Map<string, { request_id: string; expires_at: Date; used_at: Date | null; revoked: boolean; user: string | null }>(),
+  requestStatus: new Map<string, string>(),
   queryFn: vi.fn(),
   sentLinks: [] as string[],
   nextId: 1,
@@ -46,7 +49,8 @@ import { logout } from '../functions/logout'
 import { me } from '../functions/me'
 import { register } from '../functions/register'
 import { resetPassword } from '../functions/resetPassword'
-import { getTrips, putTrips } from '../functions/trips'
+import { hashInviteCode } from '../shared/inviteCodes'
+import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
 
 const users = () => h.users as Map<string, User>
 const sessions = () => h.sessions as Map<string, Session>
@@ -56,6 +60,18 @@ function installFakeDb() {
   h.queryFn.mockImplementation(async (text: string, p: Record<string, { value: unknown }> = {}) => {
     const v = (k: string) => p[k]?.value
     const rs = (rows: unknown[]) => ({ recordset: rows })
+    if (/^SET XACT_ABORT ON;\s*BEGIN TRAN;\s*DECLARE @req TABLE/.test(text)) {
+      // Atomic consume-and-register: nothing changes unless the whole batch succeeds.
+      const c = h.codes.get(v('codeHash') as string)
+      if (!c || c.used_at !== null || c.revoked || c.expires_at.getTime() <= Date.now()) return rs([{ id: null }])
+      if ([...users().values()].some((u) => u.email === v('email'))) throw Object.assign(new Error('dup'), { number: 2627 })
+      const id = `user-${h.nextId++}`
+      users().set(id, { id, email: v('email'), password_hash: v('passwordHash'), failed_attempts: 0, locked_until: null })
+      c.used_at = new Date()
+      c.user = id
+      h.requestStatus.set(c.request_id, 'registered')
+      return rs([{ id }])
+    }
     if (/^INSERT INTO dbo\.users/.test(text)) {
       if ([...users().values()].some((u) => u.email === v('email'))) throw Object.assign(new Error('dup'), { number: 2627 })
       const id = `user-${h.nextId++}`
@@ -129,12 +145,42 @@ function installFakeDb() {
       r.used = true
       return rs([{ user_id: r.user_id }])
     }
-    if (/^SELECT TOP 1 data FROM dbo\.trips/.test(text)) {
-      const d = h.trips.get(v('userId'))
-      return rs(d ? [{ data: d }] : [])
+    const tk = () => `${v('userId')}|${v('tripId')}`
+    if (/^SELECT trip_id, data, version FROM dbo\.user_trips/.test(text)) {
+      const prefix = `${v('userId')}|`
+      return rs([...h.trips].filter(([k]) => k.startsWith(prefix)).map(([k, r]) => ({ trip_id: k.slice(prefix.length), ...r })))
     }
-    if (/^UPDATE dbo\.trips SET data/.test(text)) {
-      h.trips.set(v('userId'), v('data'))
+    if (/^SELECT current_trip_id FROM dbo\.users/.test(text)) {
+      return rs([{ current_trip_id: h.current.get(v('userId')) ?? null }])
+    }
+    if (/^SELECT data, version FROM dbo\.user_trips/.test(text)) {
+      const r = h.trips.get(tk())
+      return rs(r ? [r] : [])
+    }
+    if (/^INSERT INTO dbo\.user_trips \(user_id, trip_id, data\)\s+VALUES/.test(text)) {
+      if (h.trips.has(tk())) throw Object.assign(new Error('duplicate key'), { number: 2627 })
+      h.trips.set(tk(), { data: v('data') as string, version: 1 })
+      return rs([])
+    }
+    if (/^INSERT INTO dbo\.user_trips \(user_id, trip_id, data\)\s+SELECT/.test(text)) {
+      if (h.trips.has(tk())) return { recordset: [], rowsAffected: [0] }
+      h.trips.set(tk(), { data: v('data') as string, version: 1 })
+      return { recordset: [], rowsAffected: [1] }
+    }
+    if (/^UPDATE dbo\.user_trips\s+SET data/.test(text)) {
+      const r = h.trips.get(tk())
+      if (!r || r.version !== v('baseVersion')) return rs([])
+      r.version += 1
+      r.data = v('data') as string
+      return rs([{ version: r.version }])
+    }
+    if (/^DELETE FROM dbo\.user_trips/.test(text)) {
+      h.trips.delete(tk())
+      if (h.current.get(v('userId')) === v('tripId')) h.current.set(v('userId'), null)
+      return rs([])
+    }
+    if (/^UPDATE dbo\.users SET current_trip_id = @currentTripId/.test(text)) {
+      h.current.set(v('userId'), v('currentTripId') as string | null)
       return rs([])
     }
     throw new Error(`fake db: unhandled statement: ${text.slice(0, 60)}`)
@@ -167,9 +213,11 @@ function mkReq(method: string, jar: Cookies, body?: unknown, extra: Record<strin
 }
 
 const tripsBody = {
-  trips: [{ id: 't1', name: 'Coast', stops: [{ id: 's1', label: 'Camp' }], createdAt: '2026-01-01', updatedAt: '2026-01-01' }],
-  currentTripId: 't1',
+  trip: { id: 't1', name: 'Coast', stops: [{ id: 's1', label: 'Camp' }], createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+  baseVersion: null as number | null,
 }
+/** Adds the route params the Functions host would provide. */
+const withTrip = <T,>(req: T, tripId = 't1') => Object.assign(req as object, { params: { tripId } }) as never
 const CREDS = { email: 'alice@example.com', password: 'correct horse battery' }
 
 const savedEnv = { APP_BASE_URL: process.env.APP_BASE_URL, INVITE_CODE: process.env.INVITE_CODE, SQL_CONNECTION_STRING: process.env.SQL_CONNECTION_STRING }
@@ -177,7 +225,7 @@ const savedEnv = { APP_BASE_URL: process.env.APP_BASE_URL, INVITE_CODE: process.
 beforeEach(() => {
   process.env.APP_BASE_URL = ORIGIN
   process.env.INVITE_CODE = 'let-me-in'
-  for (const m of [h.users, h.sessions, h.resets, h.trips]) m.clear()
+  for (const m of [h.users, h.sessions, h.resets, h.trips, h.current, h.codes, h.requestStatus]) m.clear()
   h.sentLinks.length = 0
   h.nextId = 1
   installFakeDb()
@@ -217,6 +265,7 @@ describe('register -> login -> trips -> logout', () => {
     const loginJar: Cookies = { csrf_token: 'seed-csrf' }
     const lg = await login(mkReq('POST', loginJar, CREDS))
     expect(lg.status).toBe(200)
+    expect(lg.jsonBody).toMatchObject({ user: { email: CREDS.email, isAdmin: false } })
     absorb(loginJar, lg)
     const token = loginJar.session
     expect(token).toBeTruthy()
@@ -226,10 +275,20 @@ describe('register -> login -> trips -> logout', () => {
     expect(empty.status).toBe(200)
     expect(empty.jsonBody).toEqual({ trips: [], currentTripId: null })
 
-    const put = await putTrips(mkReq('PUT', loginJar, tripsBody))
+    const put = await putTrip(withTrip(mkReq('PUT', loginJar, tripsBody)))
     expect(put.status).toBe(200)
+    expect(put.jsonBody).toEqual({ version: 1 })
+    const sel = await putTripSelection(mkReq('PUT', loginJar, { currentTripId: 't1' }))
+    expect(sel.status).toBe(200)
     const after = await getTrips(mkReq('GET', loginJar))
-    expect(after.jsonBody).toEqual(tripsBody)
+    expect(after.jsonBody).toEqual({ trips: [{ trip: tripsBody.trip, version: 1 }], currentTripId: 't1' })
+    const upd = await putTrip(withTrip(mkReq('PUT', loginJar, { trip: tripsBody.trip, baseVersion: 1 })))
+    expect(upd.jsonBody).toEqual({ version: 2 })
+    const conflicted = await putTrip(withTrip(mkReq('PUT', loginJar, { trip: tripsBody.trip, baseVersion: 1 })))
+    expect(conflicted.status).toBe(409)
+    expect((await deleteTrip(withTrip(mkReq('DELETE', loginJar)))).status).toBe(200)
+    expect((await getTrips(mkReq('GET', loginJar))).jsonBody).toEqual({ trips: [], currentTripId: null })
+    expect((await importTrips(mkReq('POST', loginJar, { trips: [tripsBody.trip] }))).jsonBody).toMatchObject({ imported: ['t1'] })
 
     const out = await logout(mkReq('POST', loginJar, {}))
     expect(out.status).toBe(200)
@@ -238,7 +297,7 @@ describe('register -> login -> trips -> logout', () => {
     // The very same (now stale) token, replayed by an attacker.
     const stale: Cookies = { session: token, csrf_token: 'seed-csrf' }
     expect((await getTrips(mkReq('GET', stale))).status).toBe(401)
-    expect((await putTrips(mkReq('PUT', stale, tripsBody))).status).toBe(401)
+    expect((await putTrip(withTrip(mkReq('PUT', stale, tripsBody)))).status).toBe(401)
     expect((await me(mkReq('GET', stale))).status).toBe(401)
     // The other (registration) session of the same user is untouched.
     expect((await me(mkReq('GET', jar))).status).toBe(200)
@@ -250,6 +309,42 @@ describe('register -> login -> trips -> logout', () => {
     vi.setSystemTime(new Date('2026-03-09T12:00:00Z')) // > 7 days
     expect((await me(mkReq('GET', jar))).status).toBe(401)
     expect((await getTrips(mkReq('GET', jar))).status).toBe(401)
+  })
+})
+
+describe('single-use invite codes', () => {
+  const mkCode = (over: Partial<{ expires_at: Date; used_at: Date | null; revoked: boolean }> = {}) => {
+    h.codes.set(hashInviteCode('single-use'), {
+      request_id: 'r1', expires_at: new Date('2026-03-10T00:00:00Z'), used_at: null, revoked: false, user: null, ...over,
+    })
+  }
+  const attempt = (email: string) =>
+    register(mkReq('POST', { csrf_token: 'x' }, { email, password: 'a long enough password', inviteCode: 'single-use' }))
+
+  it('works once, marks the request registered, and the reuse is rejected', async () => {
+    mkCode()
+    const first = await attempt('new@example.com')
+    expect(first.status).toBe(201)
+    expect(first.jsonBody).toMatchObject({ user: { email: 'new@example.com', isAdmin: false } })
+    expect(h.requestStatus.get('r1')).toBe('registered')
+    expect((await attempt('other@example.com')).status).toBe(403)
+  })
+
+  it.each([
+    ['revoked', { revoked: true }],
+    ['expired', { expires_at: new Date('2026-02-01T00:00:00Z') }],
+  ])('%s code: 403', async (_n, over) => {
+    mkCode(over)
+    expect((await attempt('new@example.com')).status).toBe(403)
+    expect(users().size).toBe(0)
+  })
+
+  it('duplicate email does not burn the code', async () => {
+    mkCode()
+    await register(mkReq('POST', { csrf_token: 'x' }, { ...CREDS, inviteCode: 'let-me-in' }))
+    expect((await attempt(CREDS.email)).status).toBe(400)
+    expect(h.codes.get(hashInviteCode('single-use'))!.used_at).toBeNull()
+    expect((await attempt('fresh@example.com')).status).toBe(201)
   })
 })
 

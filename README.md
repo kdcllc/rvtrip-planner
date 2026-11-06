@@ -2,7 +2,7 @@
 
 Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
-**Live Demo:** https://red-rock-016ee8c0f.4.azurestaticapps.net (sign-in required; registration needs an invite code)
+**Live Demo:** https://red-rock-016ee8c0f.4.azurestaticapps.net (sign-in required; signed-out visitors see a landing page where you can request an invite; registration needs an invite code)
 
 ## Features
 
@@ -12,9 +12,12 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data)
 - Fuel cost estimation based on vehicle MPG and gas prices
-- Multi-user accounts: register (invite code required), log in, log out, and password reset by email
+- Multi-user accounts: register (shared invite code or a single-use emailed invite code), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
-- Export/import trip data as JSON
+- Each trip is saved separately; saves retry automatically while the serverless database wakes, with a "Retry now" banner and a prompt to keep your version or load the saved one on a conflict
+- Import a single trip or a full backup as JSON (trips whose ids already exist are skipped); "Download all trips" backup and a per-trip Download button
+- Trips from older browser storage are imported into your account on sign-in
+- Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites
 - Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
 
@@ -87,7 +90,7 @@ npm run db:migrate               # apply db/migrations/*.sql
 npm run dev:swa                  # SWA CLI: Vite dev server + /api functions
 ```
 
-The server-side settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`) are listed by name in `.env.example`; for local runs put them in `api/local.settings.json` (git-ignored) or your shell. See [db/README.md](db/README.md) for the local database.
+The server-side settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) are listed by name in `.env.example`; for local runs put them in `api/local.settings.json` (git-ignored) or your shell. See [db/README.md](db/README.md) for the local database.
 
 ## Deployment to Azure
 
@@ -135,7 +138,7 @@ azd deploy
 - **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`) in `AZURE_LOCATION` (East US 2 for the live deployment)
 - **Azure SQL server and database** (free offer, serverless, auto-pause) in `AZURE_SQL_LOCATION`, default `centralus`
 - **Azure Communication Services** with an Azure-managed email domain (password-reset mail)
-- **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`
+- **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`
 - **Default URL:** `https://{name}.azurestaticapps.net`
 - **Custom Domain:** Supports HTTPS with managed certificates (see DEPLOYMENT.md)
 
@@ -146,19 +149,19 @@ azd deploy
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
 - **Fuel Costs:** Estimated based on your vehicle's MPG (configurable in settings) and current gas prices.
-- **Data Persistence:** Trips are saved to your account on the server. Export to JSON for a backup.
+- **Data Persistence:** Each trip is saved to your account on the server as its own row. Saves retry automatically while the serverless database wakes, and the browser warns before you close the tab with unsaved changes. Use "Download all trips" for a backup.
 
 ## Architecture
 
 - **Frontend:** React 19 + TypeScript + Vite
 - **Hosting:** Azure Static Web Apps (SPA) with built-in managed Azure Functions (`api/`)
-- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration, and Azure Communication Services email for password reset
+- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration (the shared `INVITE_CODE` or a single-use emailed invite code), and Azure Communication Services email for password reset
 - **Database:** Azure SQL Database (serverless, free offer); schema in `db/migrations/`
 - **Mapping:** MapLibre GL JS + OpenStreetMap tiles (free)
 - **Routing:** OSRM + OpenRouteService (free, with optional API key)
 - **Geocoding:** Photon + Nominatim (free)
 - **Weather:** NOAA + Open-Meteo (free)
-- **State:** React Context; trips load and save through `/api/trips` (`src/services/storage/tripStorage.ts`); routing/geocoding caches use localStorage
+- **State:** React Context; trips load and save per trip through `/api/trips` (`src/services/storage/tripStorage.ts`); routing/geocoding caches use localStorage
 - **Cost Optimization:** Multi-server fallback, intelligent caching, request batching
 
 ## Notes
@@ -166,4 +169,4 @@ azd deploy
 - **No third-party API keys required by default** for mapping, routing, geocoding and weather
 - Weather is pulled for the exact date range you provide per stop
 - Route requests are batched and cached to respect free public APIs
-- Trip data persists server-side per account - use JSON export for backup
+- Trip data persists server-side per account (one row per trip) - use "Download all trips" or a per-trip download for backup

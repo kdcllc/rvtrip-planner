@@ -108,7 +108,7 @@ describe('503 database-waking path, end to end', () => {
     await advance(20_000)
     expect(callsTo('/api/me')).toHaveLength(8)
     expect(callsTo('/api/ping')).toHaveLength(4)
-    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
 
     // Bounded: no further traffic however long we wait.
     await advance(120_000)
@@ -120,7 +120,7 @@ describe('503 database-waking path, end to end', () => {
     vi.useFakeTimers()
     installBackend({
       '/api/ping': ok({ ok: true }),
-      '/api/me': ok({ user: { id: 'u-wake', email: 'w@example.com' } }),
+      '/api/me': ok({ user: { id: 'u-wake', email: 'w@example.com', isAdmin: false } }),
       '/api/trips': waking,
     })
     renderApp()
@@ -140,49 +140,50 @@ describe('503 database-waking path, end to end', () => {
   })
 })
 
-describe('first-login legacy import, end to end', () => {
-  const signIn = async (userId: string, putStatus: number) => {
+describe('browser-local trip import, end to end', () => {
+  const signIn = async (userId: string, importStatus: number) => {
     window.localStorage.setItem('trip-planner-trips', JSON.stringify(legacyTrips))
+    const user = { id: userId, email: `${userId}@example.com`, isAdmin: false }
     let signedIn = false
     installBackend({
       '/api/ping': ok({ ok: true }),
       '/api/me': () =>
-        signedIn
-          ? { status: 200, body: { user: { id: userId, email: `${userId}@example.com` } } }
-          : { status: 401, body: { error: 'Unauthorized' } },
+        signedIn ? { status: 200, body: { user } } : { status: 401, body: { error: 'Unauthorized' } },
       '/api/login': () => {
         signedIn = true
-        return { status: 200, body: { user: { id: userId, email: `${userId}@example.com` } } }
+        return { status: 200, body: { user } }
       },
-      '/api/trips': (method) =>
-        method === 'PUT'
-          ? putStatus === 200
-            ? { status: 200, body: { ok: true } }
-            : { status: putStatus, body: { error: 'boom' } }
-          : { status: 200, body: { trips: [], currentTripId: null } },
+      '/api/trips': () => ({ status: 200, body: { trips: [], currentTripId: null } }),
+      '/api/trips/import': () =>
+        importStatus === 200
+          ? { status: 200, body: { imported: ['old1'], skipped: [] } }
+          : { status: importStatus, body: { error: 'boom' } },
+      '/api/trip-selection': ok({ ok: true }),
     })
     renderApp()
+    // Signed-out visitors land on the landing page first.
+    await userEvent.click(await screen.findByRole('button', { name: 'Log in' }))
     await userEvent.type(await screen.findByLabelText('Email'), `${userId}@example.com`)
     await userEvent.type(screen.getByLabelText('Password'), 'correct horse battery')
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   }
 
-  it('success: PUT once with the legacy trips, then local storage is cleared', async () => {
+  it('success: POSTs the legacy trips to /api/trips/import, then local storage is cleared', async () => {
     await signIn('u-import-ok', 200)
     expect(await screen.findByTestId('trip-map')).toBeInTheDocument()
 
-    const puts = callsTo('/api/trips', 'PUT')
-    expect(puts).toHaveLength(1)
-    expect(JSON.parse((puts[0][1] as RequestInit).body as string)).toEqual(legacyTrips)
+    const posts = callsTo('/api/trips/import', 'POST')
+    expect(posts).toHaveLength(1)
+    expect(JSON.parse((posts[0][1] as RequestInit).body as string)).toEqual({ trips: legacyTrips.trips })
     expect(window.localStorage.getItem('trip-planner-trips')).toBeNull()
-    expect(screen.getByText(/imported 1 existing local trip/i)).toBeInTheDocument()
+    expect(screen.getByText(/imported 1 trip from this browser/i)).toBeInTheDocument()
   })
 
-  it('failure: PUT rejected, local storage is NOT cleared and the user is told', async () => {
-    await signIn('u-import-fail', 500)
+  it('failure: import rejected, local storage is NOT cleared and the user is told', async () => {
+    await signIn('u-import-fail', 400)
     expect(await screen.findByTestId('trip-map')).toBeInTheDocument()
 
-    await waitFor(() => expect(callsTo('/api/trips', 'PUT')).toHaveLength(1))
+    await waitFor(() => expect(callsTo('/api/trips/import', 'POST')).toHaveLength(1))
     expect(JSON.parse(window.localStorage.getItem('trip-planner-trips') as string)).toEqual(legacyTrips)
     expect(screen.getByText(/could not be imported yet/i)).toBeInTheDocument()
   })

@@ -4,6 +4,8 @@ import { useAuth } from '../../hooks/useAuth'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD = 12
 
+const readInviteParam = () => new URLSearchParams(window.location.search).get('invite') ?? ''
+
 type RegisterFormProps = {
   onLogin: () => void
 }
@@ -13,7 +15,7 @@ export const RegisterForm = ({ onLogin }: RegisterFormProps) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [inviteCode, setInviteCode] = useState('')
+  const [inviteCode, setInviteCode] = useState(readInviteParam)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [pending, setPending] = useState(false)
   const [waking, setWaking] = useState(false)
@@ -23,6 +25,14 @@ export const RegisterForm = ({ onLogin }: RegisterFormProps) => {
 
   useEffect(() => {
     emailRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    // Keep the invite code out of the address bar and history.
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('invite')) return
+    url.searchParams.delete('invite')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
   }, [])
 
   useEffect(() => {
@@ -123,7 +133,9 @@ export const RegisterForm = ({ onLogin }: RegisterFormProps) => {
           aria-invalid={errors.invite ? true : undefined}
           aria-describedby={errors.invite ? 'register-invite-error' : 'register-invite-hint'}
         />
-        <p id="register-invite-hint" className="auth-hint">An invite code is required to register.</p>
+        <p id="register-invite-hint" className="auth-hint">
+          An invite code is required to register. No code? Request an invite from the home page.
+        </p>
         {fieldError('invite', 'register-invite-error')}
       </div>
       <button type="submit" className="auth-submit" disabled={pending} aria-busy={pending}>

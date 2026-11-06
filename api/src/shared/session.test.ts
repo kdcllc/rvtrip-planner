@@ -44,9 +44,20 @@ describe('validateSession', () => {
     q.mockResolvedValueOnce({
       recordset: [{ id: 'u1', email: 'a@b.c', expires_at: new Date(Date.now() + 60000) }],
     })
-    expect(await validateSession(reqWith('x=1; session=tok'))).toEqual({ id: 'u1', email: 'a@b.c' })
+    expect(await validateSession(reqWith('x=1; session=tok'))).toEqual({ id: 'u1', email: 'a@b.c', isAdmin: false })
     expect(q.mock.calls[1][0]).toContain('DELETE FROM dbo.sessions')
     expect(q.mock.calls[1][0]).toContain('expires_at <=')
+  })
+  it('sets isAdmin for an ADMIN_EMAILS match (case-insensitive)', async () => {
+    process.env.ADMIN_EMAILS = 'Boss@B.C'
+    q.mockResolvedValueOnce({
+      recordset: [{ id: 'u1', email: 'boss@b.c', expires_at: new Date(Date.now() + 60000) }],
+    })
+    try {
+      expect(await validateSession(reqWith('session=tok'))).toEqual({ id: 'u1', email: 'boss@b.c', isAdmin: true })
+    } finally {
+      delete process.env.ADMIN_EMAILS
+    }
   })
   it('rejects an expired session', async () => {
     q.mockResolvedValueOnce({

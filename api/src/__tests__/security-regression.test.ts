@@ -11,9 +11,13 @@ const h = vi.hoisted(() => ({
   users: new Map<string, unknown>(),
   sessions: new Map<string, unknown>(),
   resets: new Map<string, unknown>(),
-  trips: new Map<string, string>(),
+  trips: new Map<string, { data: string; version: number }>(),
+  current: new Map<string, string | null>(),
   queryFn: vi.fn(),
   sentLinks: [] as string[],
+  reqs: [] as Array<{ email: string; name: string; ipHash: string }>,
+  invitesSent: [] as string[],
+  notified: [] as string[],
   nextId: 1,
 }))
 vi.mock('mssql', () => ({ default: {} }))
@@ -37,6 +41,14 @@ vi.mock('../shared/email', async () => {
       h.sentLinks.push(link)
       return { ok: true }
     },
+    sendInviteEmail: async (to: string) => {
+      h.invitesSent.push(to)
+      return { ok: true }
+    },
+    sendInviteRequestNotification: async (to: string) => {
+      h.notified.push(to)
+      return { ok: true }
+    },
   }
 })
 
@@ -46,7 +58,9 @@ import { logout } from '../functions/logout'
 import { me } from '../functions/me'
 import { register } from '../functions/register'
 import { resetPassword } from '../functions/resetPassword'
-import { getTrips, putTrips } from '../functions/trips'
+import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
+import { declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
+import { inviteRequests } from '../functions/inviteRequests'
 
 const users = () => h.users as Map<string, User>
 const sessions = () => h.sessions as Map<string, Session>
@@ -58,6 +72,7 @@ function installFakeDb() {
   h.queryFn.mockImplementation(async (text: string, p: Record<string, { value: unknown }> = {}) => {
     const v = (k: string) => p[k]?.value
     const rs = (rows: unknown[]) => ({ recordset: rows })
+    if (/^SET XACT_ABORT ON;\s*BEGIN TRAN;\s*DECLARE @req TABLE/.test(text)) return rs([{ id: null }])
     if (/^INSERT INTO dbo\.users/.test(text)) {
       if ([...users().values()].some((u) => u.email === v('email'))) throw Object.assign(new Error('dup'), { number: 2627 })
       const id = `user-${h.nextId++}`
@@ -134,12 +149,53 @@ function installFakeDb() {
       r.used = true
       return rs([{ user_id: r.user_id }])
     }
-    if (/^SELECT TOP 1 data FROM dbo\.trips/.test(text)) {
-      const d = h.trips.get(v('userId'))
-      return rs(d ? [{ data: d }] : [])
+    if (/^SELECT COUNT\(\*\) AS n FROM dbo\.invite_requests/.test(text)) {
+      return rs([{ n: h.reqs.filter((r) => r.ipHash === v('ipHash')).length }])
     }
-    if (/^UPDATE dbo\.trips SET data/.test(text)) {
-      h.trips.set(v('userId'), v('data'))
+    if (/^SELECT 1 AS x FROM dbo\.invite_requests WHERE email/.test(text)) {
+      return rs(h.reqs.filter((r) => r.email === v('email')).map(() => ({ x: 1 })))
+    }
+    if (/^INSERT INTO dbo\.invite_requests/.test(text)) {
+      h.reqs.push({ email: v('email') as string, name: v('name') as string, ipHash: v('ipHash') as string })
+      return rs([])
+    }
+    if (/^SELECT id, email, name, note, status.* FROM dbo\.invite_requests WHERE id/.test(text)) return rs([])
+    const tk = () => `${v('userId')}|${v('tripId')}`
+    if (/^SELECT trip_id, data, version FROM dbo\.user_trips/.test(text)) {
+      const prefix = `${v('userId')}|`
+      return rs([...h.trips].filter(([k]) => k.startsWith(prefix)).map(([k, r]) => ({ trip_id: k.slice(prefix.length), ...r })))
+    }
+    if (/^SELECT current_trip_id FROM dbo\.users/.test(text)) {
+      return rs([{ current_trip_id: h.current.get(v('userId')) ?? null }])
+    }
+    if (/^SELECT data, version FROM dbo\.user_trips/.test(text)) {
+      const r = h.trips.get(tk())
+      return rs(r ? [r] : [])
+    }
+    if (/^INSERT INTO dbo\.user_trips \(user_id, trip_id, data\)\s+VALUES/.test(text)) {
+      if (h.trips.has(tk())) throw Object.assign(new Error('duplicate key'), { number: 2627 })
+      h.trips.set(tk(), { data: v('data') as string, version: 1 })
+      return rs([])
+    }
+    if (/^INSERT INTO dbo\.user_trips \(user_id, trip_id, data\)\s+SELECT/.test(text)) {
+      if (h.trips.has(tk())) return { recordset: [], rowsAffected: [0] }
+      h.trips.set(tk(), { data: v('data') as string, version: 1 })
+      return { recordset: [], rowsAffected: [1] }
+    }
+    if (/^UPDATE dbo\.user_trips\s+SET data/.test(text)) {
+      const r = h.trips.get(tk())
+      if (!r || r.version !== v('baseVersion')) return rs([])
+      r.version += 1
+      r.data = v('data') as string
+      return rs([{ version: r.version }])
+    }
+    if (/^DELETE FROM dbo\.user_trips/.test(text)) {
+      h.trips.delete(tk())
+      if (h.current.get(v('userId')) === v('tripId')) h.current.set(v('userId'), null)
+      return rs([])
+    }
+    if (/^UPDATE dbo\.users SET current_trip_id = @currentTripId/.test(text)) {
+      h.current.set(v('userId'), v('currentTripId') as string | null)
       return rs([])
     }
     throw new Error(`fake db: unhandled statement: ${text.slice(0, 60)}`)
@@ -172,18 +228,31 @@ function mkReq(method: string, jar: Cookies, body?: unknown, extra: Record<strin
 }
 
 const tripsBody = {
-  trips: [{ id: 't1', name: 'Coast', stops: [{ id: 's1', label: 'Camp' }], createdAt: '2026-01-01', updatedAt: '2026-01-01' }],
-  currentTripId: 't1',
+  trip: { id: 't1', name: 'Coast', stops: [{ id: 's1', label: 'Camp' }], createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+  baseVersion: null as number | null,
 }
+/** Adds the route params the Functions host would provide. */
+const withTrip = <T,>(req: T, tripId = 't1') => Object.assign(req as object, { params: { tripId } }) as never
 const CREDS = { email: 'alice@example.com', password: 'correct horse battery' }
 const INVITE = 'let-me-in'
 
-const savedEnv = { APP_BASE_URL: process.env.APP_BASE_URL, INVITE_CODE: process.env.INVITE_CODE, SQL_CONNECTION_STRING: process.env.SQL_CONNECTION_STRING }
+const savedEnv = {
+  APP_BASE_URL: process.env.APP_BASE_URL,
+  INVITE_CODE: process.env.INVITE_CODE,
+  SQL_CONNECTION_STRING: process.env.SQL_CONNECTION_STRING,
+  ADMIN_EMAILS: process.env.ADMIN_EMAILS,
+  SESSION_SECRET: process.env.SESSION_SECRET,
+}
 
 beforeEach(() => {
   process.env.APP_BASE_URL = ORIGIN
   process.env.INVITE_CODE = INVITE
-  for (const m of [h.users, h.sessions, h.resets, h.trips]) m.clear()
+  delete process.env.ADMIN_EMAILS
+  process.env.SESSION_SECRET = 'test-session-secret'
+  for (const m of [h.users, h.sessions, h.resets, h.trips, h.current]) m.clear()
+  h.reqs.length = 0
+  h.invitesSent.length = 0
+  h.notified.length = 0
   h.sentLinks.length = 0
   h.nextId = 1
   claimAlways.on = false
@@ -348,13 +417,16 @@ describe('reset token lifecycle', () => {
 })
 
 describe('trips require a session and trust only it', () => {
-  it('GET and PUT /api/trips return 401 with no session cookie or a bogus one', async () => {
+  it('every trips endpoint returns 401 with no session cookie or a bogus one', async () => {
     for (const jar of [{ csrf_token: 'seed-csrf' }, { csrf_token: 'seed-csrf', session: 'bogus-token' }] as Cookies[]) {
       expect((await getTrips(mkReq('GET', jar))).status).toBe(401)
-      const put = await putTrips(mkReq('PUT', jar, tripsBody))
-      expect(put.status).toBe(401)
+      expect((await putTrip(withTrip(mkReq('PUT', jar, tripsBody)))).status).toBe(401)
+      expect((await deleteTrip(withTrip(mkReq('DELETE', jar)))).status).toBe(401)
+      expect((await importTrips(mkReq('POST', jar, { trips: [tripsBody.trip] }))).status).toBe(401)
+      expect((await putTripSelection(mkReq('PUT', jar, { currentTripId: 't1' }))).status).toBe(401)
     }
     expect(h.trips.size).toBe(0)
+    expect(h.current.size).toBe(0)
   })
 
   it('a caller-supplied user_id in the body is ignored in favour of the session user', async () => {
@@ -364,16 +436,37 @@ describe('trips require a session and trust only it', () => {
       ...tripsBody,
       user_id: bob.id,
       userId: bob.id,
-      trips: [{ ...tripsBody.trips[0], user_id: bob.id }],
+      trip: { ...tripsBody.trip, user_id: bob.id },
     }
-    const res = await putTrips(mkReq('PUT', alice.jar, poisoned))
+    const res = await putTrip(withTrip(mkReq('PUT', alice.jar, poisoned)))
     expect(res.status).toBe(200)
 
-    expect([...h.trips.keys()]).toEqual([alice.id])
-    expect(h.trips.has(bob.id)).toBe(false)
-    const stored = JSON.parse(h.trips.get(alice.id)!)
-    expect(Object.keys(stored).sort()).toEqual(['currentTripId', 'trips'])
+    expect([...h.trips.keys()]).toEqual([`${alice.id}|t1`])
+    const stored = JSON.parse(h.trips.get(`${alice.id}|t1`)!.data)
+    expect(Object.keys(stored).sort()).toEqual(['createdAt', 'id', 'name', 'stops', 'updatedAt'])
     expect((await getTrips(mkReq('GET', bob.jar))).jsonBody).toEqual({ trips: [], currentTripId: null })
+  })
+
+  it('users cannot read, overwrite, delete or select each other\'s trips', async () => {
+    const alice = await registerUser()
+    const bob = await registerUser('bob@example.com', 'bobs long password')
+    expect((await putTrip(withTrip(mkReq('PUT', alice.jar, tripsBody)))).status).toBe(200)
+    // Same trip id for bob is a fresh create, not a conflict with alice's row.
+    const bobTrip = { trip: { ...tripsBody.trip, name: 'Bob trip' }, baseVersion: null }
+    expect((await putTrip(withTrip(mkReq('PUT', bob.jar, bobTrip)))).status).toBe(200)
+    // Bob cannot update alice's row through a version he guessed: his own row is what moves.
+    expect((await putTrip(withTrip(mkReq('PUT', bob.jar, { ...bobTrip, baseVersion: 1 })))).jsonBody).toEqual({ version: 2 })
+    expect(h.trips.get(`${alice.id}|t1`)!.version).toBe(1)
+    expect(JSON.parse(h.trips.get(`${alice.id}|t1`)!.data).name).toBe('Coast')
+
+    expect((await putTripSelection(mkReq('PUT', bob.jar, { currentTripId: 't1' }))).status).toBe(200)
+    expect(h.current.has(alice.id)).toBe(false)
+    expect((await deleteTrip(withTrip(mkReq('DELETE', bob.jar)))).status).toBe(200)
+    expect(h.trips.has(`${alice.id}|t1`)).toBe(true)
+    expect(h.trips.has(`${bob.id}|t1`)).toBe(false)
+
+    const mine = (await getTrips(mkReq('GET', alice.jar))).jsonBody as { trips: Array<{ trip: { name: string } }> }
+    expect(mine.trips.map((t) => t.trip.name)).toEqual(['Coast'])
   })
 })
 
@@ -386,7 +479,10 @@ describe('CSRF protection on state-changing requests', () => {
     ['logout', (x, jar) => logout(mkReq('POST', jar, {}, x))],
     ['forgot-password', (x, jar) => forgotPassword(mkReq('POST', jar, { email: CREDS.email }, x))],
     ['reset-password', (x, jar) => resetPassword(mkReq('POST', jar, { token: 't', password: 'long enough password' }, x))],
-    ['PUT trips', (x, jar) => putTrips(mkReq('PUT', jar, tripsBody, x))],
+    ['PUT trip', (x, jar) => putTrip(withTrip(mkReq('PUT', jar, tripsBody, x)))],
+    ['DELETE trip', (x, jar) => deleteTrip(withTrip(mkReq('DELETE', jar, undefined, x)))],
+    ['import trips', (x, jar) => importTrips(mkReq('POST', jar, { trips: [tripsBody.trip] }, x))],
+    ['trip selection', (x, jar) => putTripSelection(mkReq('PUT', jar, { currentTripId: 't1' }, x))],
   ]
 
   it.each(cases)('%s: missing X-CSRF-Token header is rejected 403', async (_n, call) => {
@@ -416,13 +512,13 @@ describe('CSRF protection on state-changing requests', () => {
 
   it('a foreign Origin is rejected 403 even with a matching token pair', async () => {
     const jar = await sessionJar()
-    const res = await putTrips(mkReq('PUT', jar, tripsBody, { origin: 'https://evil.example.net' }))
+    const res = await putTrip(withTrip(mkReq('PUT', jar, tripsBody, { origin: 'https://evil.example.net' })))
     expect(res.status).toBe(403)
   })
 
   it('a matching token pair is accepted (control)', async () => {
     const jar = await sessionJar()
-    expect((await putTrips(mkReq('PUT', jar, tripsBody))).status).toBe(200)
+    expect((await putTrip(withTrip(mkReq('PUT', jar, tripsBody)))).status).toBe(200)
   })
 })
 
@@ -445,7 +541,10 @@ describe('error responses never leak internals', () => {
       ['forgotPassword', () => forgotPassword(mkReq('POST', anon(), { email: CREDS.email }))],
       ['resetPassword', () => resetPassword(mkReq('POST', anon(), { token: 'tok', password: 'long enough password' }))],
       ['getTrips', () => getTrips(mkReq('GET', alice.jar))],
-      ['putTrips', () => putTrips(mkReq('PUT', alice.jar, tripsBody))],
+      ['putTrip', () => putTrip(withTrip(mkReq('PUT', alice.jar, tripsBody)))],
+      ['deleteTrip', () => deleteTrip(withTrip(mkReq('DELETE', alice.jar)))],
+      ['importTrips', () => importTrips(mkReq('POST', alice.jar, { trips: [tripsBody.trip] }))],
+      ['putTripSelection', () => putTripSelection(mkReq('PUT', alice.jar, { currentTripId: 't1' }))],
     ]
     for (const [name, call] of calls) {
       const res = await call()
@@ -459,5 +558,146 @@ describe('error responses never leak internals', () => {
       expect(dump, name).not.toContain('Incorrect syntax')
     }
     delete process.env.SQL_CONNECTION_STRING
+  })
+})
+
+describe('admin routes are admin-only', () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000'
+  const routes: Array<[string, (jar: Cookies) => Promise<{ status?: number }>]> = [
+    ['GET /admin/invite-requests', (jar) => listInviteRequests(Object.assign(mkReq('GET', jar), { params: {} }) as never)],
+    ['POST /admin/invite-requests/{id}/invite', (jar) => sendInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
+    ['POST /admin/invite-requests/{id}/decline', (jar) => declineInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
+  ]
+  const touchedInvites = () => h.queryFn.mock.calls.some((c) => /invite_requests|invite_codes/.test(c[0]))
+
+  it.each(routes)('%s: anonymous and bogus-session callers get 401 and nothing is read', async (_n, call) => {
+    for (const jar of [anon(), { ...anon(), session: 'bogus-token' }]) {
+      h.queryFn.mockClear()
+      expect((await call(jar)).status).toBe(401)
+      expect(touchedInvites()).toBe(false)
+    }
+    expect(h.invitesSent).toHaveLength(0)
+  })
+
+  it.each(routes)('%s: a signed-in non-admin gets 403, no invite data is touched and no email is sent', async (_n, call) => {
+    process.env.ADMIN_EMAILS = 'someone-else@example.com'
+    const user = await registerUser()
+    h.queryFn.mockClear()
+    expect((await call(user.jar)).status).toBe(403)
+    expect(touchedInvites()).toBe(false)
+    expect(h.invitesSent).toHaveLength(0)
+  })
+
+  it('an admin is let through (control)', async () => {
+    process.env.ADMIN_EMAILS = CREDS.email.toUpperCase()
+    const admin = await registerUser()
+    h.queryFn.mockClear()
+    // Unknown request id: reaches the data layer and answers 404, not 401/403.
+    const res = await routes[1][1](admin.jar)
+    expect(res.status).toBe(404)
+    expect(touchedInvites()).toBe(true)
+  })
+})
+
+describe('CSRF protection on admin and invite-request routes', () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000'
+  const adminCases: Array<[string, (extra: Record<string, string>, jar: Cookies) => Promise<{ status?: number }>]> = [
+    ['admin send invite', (x, jar) => sendInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
+    ['admin decline', (x, jar) => declineInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
+    ['request invite (anonymous)', (x, jar) => inviteRequests(mkReq('POST', jar, { email: 'a@example.com', name: 'A' }, x))],
+  ]
+  const adminJar = async () => {
+    process.env.ADMIN_EMAILS = CREDS.email
+    return (await registerUser()).jar
+  }
+
+  it.each(adminCases)('%s: missing X-CSRF-Token header is rejected 403 before any work', async (_n, call) => {
+    const jar = await adminJar()
+    h.queryFn.mockClear()
+    expect((await call({ 'x-csrf-token': '' }, jar)).status).toBe(403)
+    expect(h.queryFn).not.toHaveBeenCalled()
+    expect(h.invitesSent).toHaveLength(0)
+  })
+
+  it.each(adminCases)('%s: mismatched X-CSRF-Token header is rejected 403', async (_n, call) => {
+    const jar = await adminJar()
+    h.queryFn.mockClear()
+    expect((await call({ 'x-csrf-token': 'something-else' }, jar)).status).toBe(403)
+    expect(h.queryFn).not.toHaveBeenCalled()
+  })
+
+  it.each(adminCases)('%s: missing csrf cookie is rejected 403', async (_n, call) => {
+    const jar = await adminJar()
+    delete jar.csrf_token
+    h.queryFn.mockClear()
+    expect((await call({ 'x-csrf-token': 'seed-csrf' }, jar)).status).toBe(403)
+    expect(h.queryFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('trips are scoped to the session user in every query', () => {
+  it('every user_trips / selection statement carries the caller\'s own id, and a user without a row cannot touch another\'s trip', async () => {
+    const alice = await registerUser()
+    const bob = await registerUser('bob@example.com', 'bobs long password')
+    expect((await putTrip(withTrip(mkReq('PUT', alice.jar, tripsBody)))).status).toBe(200)
+
+    h.queryFn.mockClear()
+    // Bob has no t1 row: updating with alice's version must conflict, not modify alice's row.
+    const upd = await putTrip(withTrip(mkReq('PUT', bob.jar, { trip: { ...tripsBody.trip, name: 'Hijack' }, baseVersion: 1 })))
+    expect(upd.status).toBe(409)
+    expect((await getTrips(mkReq('GET', bob.jar))).jsonBody).toEqual({ trips: [], currentTripId: null })
+    expect((await deleteTrip(withTrip(mkReq('DELETE', bob.jar)))).status).toBe(200)
+
+    const tripCalls = h.queryFn.mock.calls.filter((c) => /user_trips/.test(c[0]))
+    expect(tripCalls.length).toBeGreaterThan(0)
+    for (const [, params] of tripCalls) expect(params.userId.value).toBe(bob.id)
+
+    expect(h.trips.get(`${alice.id}|t1`)).toMatchObject({ version: 1 })
+    expect(JSON.parse(h.trips.get(`${alice.id}|t1`)!.data).name).toBe('Coast')
+  })
+})
+
+describe('invite requests do not enumerate or accept bot input', () => {
+  const body = { email: 'dana@example.com', name: 'Dana' }
+  const insertsOfRequests = () => h.queryFn.mock.calls.filter((c) => /^INSERT INTO dbo\.invite_requests/.test(c[0]))
+
+  it('new and duplicate (even differently cased) addresses get byte-identical responses; only the first stores a row and notifies', async () => {
+    process.env.ADMIN_EMAILS = 'admin@example.com'
+    const first = await inviteRequests(mkReq('POST', anon(), body))
+    const dupe = await inviteRequests(mkReq('POST', anon(), { ...body, email: ' Dana@Example.COM ' }))
+    expect(first.status).toBe(200)
+    expect(JSON.stringify(dupe)).toBe(JSON.stringify(first))
+    expect(h.reqs).toHaveLength(1)
+    expect(h.notified).toEqual(['admin@example.com'])
+  })
+
+  it('registered users\' addresses answer identically to unknown ones', async () => {
+    await registerUser()
+    const known = await inviteRequests(mkReq('POST', anon(), { email: CREDS.email, name: 'Alice' }))
+    const unknown = await inviteRequests(mkReq('POST', anon(), { email: 'nobody@example.com', name: 'Nobody' }))
+    expect(JSON.stringify(known)).toBe(JSON.stringify(unknown))
+  })
+
+  it('a filled honeypot stores nothing, sends nothing, and looks like success', async () => {
+    process.env.ADMIN_EMAILS = 'admin@example.com'
+    const ok = await inviteRequests(mkReq('POST', anon(), body))
+    h.reqs.length = 0
+    h.notified.length = 0
+    h.queryFn.mockClear()
+    const bot = await inviteRequests(mkReq('POST', anon(), { email: 'bot@example.com', name: 'Bot', website: 'http://spam.example' }))
+    expect(bot.status).toBe(200)
+    expect(JSON.stringify(bot)).toBe(JSON.stringify(ok))
+    expect(h.reqs).toHaveLength(0)
+    expect(insertsOfRequests()).toHaveLength(0)
+    expect(h.queryFn).not.toHaveBeenCalled()
+    expect(h.notified).toHaveLength(0)
+  })
+
+  it('only a salted hash of the client IP is stored, never the address', async () => {
+    await inviteRequests(Object.assign(mkReq('POST', anon(), body), {}) as never)
+    const req = mkReq('POST', anon(), { email: 'ip@example.com', name: 'Ip' }, { 'x-azure-clientip': '203.0.113.9' })
+    await inviteRequests(req)
+    expect(h.reqs.every((r) => /^[0-9a-f]{64}$/.test(r.ipHash))).toBe(true)
+    expect(JSON.stringify(h.queryFn.mock.calls)).not.toContain('203.0.113.9')
   })
 })

@@ -1,5 +1,5 @@
 // Wire types shared between the API and the SPA (task 08 mirrors this file on the client).
-// TripsState is mirrored BY STRUCTURE from src/domain/trip/types.ts; that file is not
+// Trip is mirrored BY STRUCTURE from src/domain/trip/types.ts; that file is not
 // imported across the project boundary and must not be modified.
 
 // ---- Trips payload (structural mirror of src/domain/trip/types.ts) ----
@@ -56,16 +56,22 @@ export type Trip = {
   vehicleSettings?: { mpg: number }
 }
 
-export type TripsState = {
-  trips: Trip[]
-  currentTripId: string | null
-}
-
 // ---- Common ----
 export type ApiUser = {
   id: string
   email: string
+  isAdmin: boolean
 }
+
+/** Machine-readable error codes carried in ApiError.code. */
+export const API_ERROR_CODES = [
+  'VERSION_CONFLICT',
+  'RATE_LIMITED',
+  'EMAIL_FAILED',
+  'PAYLOAD_TOO_LARGE',
+  'DATABASE_UNAVAILABLE',
+] as const
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number]
 
 /** Body of every error response. Never contains stack traces, SQL or connection details. */
 export type ApiError = {
@@ -110,9 +116,52 @@ export type ResetPasswordRequest = {
 }
 export type ResetPasswordResponse = { ok: true }
 
-// ---- GET /api/trips ----
-export type GetTripsResponse = TripsState
+// ---- Per-trip persistence ----
+export type VersionedTrip = { trip: Trip; version: number }
 
-// ---- PUT /api/trips ----
-export type PutTripsRequest = TripsState
-export type PutTripsResponse = { ok: true }
+// GET /api/trips
+export type GetTripsResponse = { trips: VersionedTrip[]; currentTripId: string | null }
+
+// PUT /api/trips/{id} (baseVersion null = create)
+export type PutTripRequest = { trip: Trip; baseVersion: number | null }
+export type PutTripResponse = { version: number }
+export type TripConflictResponse = ApiError & {
+  code: 'VERSION_CONFLICT'
+  current: VersionedTrip | null
+}
+
+// DELETE /api/trips/{id}
+export type DeleteTripResponse = { ok: true }
+
+// POST /api/trips/import
+export type ImportTripsRequest = { trips: Trip[] }
+export type ImportTripsResponse = { imported: string[]; skipped: string[] }
+
+// PUT /api/trips/selection
+export type PutTripSelectionRequest = { currentTripId: string | null }
+export type PutTripSelectionResponse = { ok: true }
+
+// ---- Invite requests ----
+export type InviteRequestStatus = 'pending' | 'invited' | 'declined' | 'registered'
+
+// POST /api/invite-requests (`website` is a honeypot field)
+export type CreateInviteRequest = {
+  email: string
+  name: string
+  note?: string
+  website?: string
+}
+export type CreateInviteResponse = { ok: true }
+
+export type AdminInviteRequest = {
+  id: string
+  email: string
+  name: string
+  note: string | null
+  status: InviteRequestStatus
+  createdAt: string
+  invitedAt: string | null
+  inviteCount: number
+}
+export type ListInviteRequestsResponse = { requests: AdminInviteRequest[] }
+export type InviteActionResponse = { request: AdminInviteRequest }

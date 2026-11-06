@@ -4,8 +4,11 @@ import legacyFixture from './__fixtures__/legacy-trip-payload-v1.json'
 import {
   TRIP_FILE_VERSION,
   buildTripFilePayload,
+  buildTripsBackupPayload,
+  createBackupFileName,
   createStopsChecksum,
   createTripFileName,
+  parseImportFile,
   parseTripFilePayload,
 } from './tripFile'
 
@@ -64,5 +67,44 @@ describe('tripFile', () => {
     const raw = JSON.parse(JSON.stringify(buildTripFilePayload(trip)))
     raw.trip.stops.push({ id: 5 })
     expect(parseTripFilePayload(raw).skippedStops).toBe(1)
+  })
+})
+
+describe('trips backup', () => {
+  const trip2: Trip = { ...trip, id: 'trip-2', name: 'Second' }
+
+  it('round-trips a backup of two trips', () => {
+    const backup = buildTripsBackupPayload([trip, trip2], new Date('2024-03-04T05:06:07.000Z'))
+    expect(backup.kind).toBe('rv-trip-planner-backup')
+    expect(backup.version).toBe(1)
+    expect(backup.exportedAt).toBe('2024-03-04T05:06:07.000Z')
+    const result = parseImportFile(JSON.parse(JSON.stringify(backup)))
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.trips.map((t) => t.id)).toEqual(['trip-1', 'trip-2'])
+  })
+
+  it('still parses a single-trip file', () => {
+    const result = parseImportFile(JSON.parse(JSON.stringify(buildTripFilePayload(trip))))
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.trips.map((t) => t.id)).toEqual(['trip-1'])
+  })
+
+  it('rejects the whole backup naming the invalid entry index', () => {
+    const backup = JSON.parse(JSON.stringify(buildTripsBackupPayload([trip, trip2])))
+    backup.trips[1].trip = null
+    const result = parseImportFile(backup)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('index 1')
+  })
+
+  it('rejects an empty backup', () => {
+    const result = parseImportFile(buildTripsBackupPayload([]))
+    expect(result.ok).toBe(false)
+  })
+
+  it('formats the backup file name', () => {
+    expect(createBackupFileName(new Date('2024-03-04T12:00:00.000Z'))).toBe(
+      'rv-trips-backup-2024-03-04.json',
+    )
   })
 })

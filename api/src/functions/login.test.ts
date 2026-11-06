@@ -113,7 +113,7 @@ describe('POST /api/login', () => {
     h.verify.mockResolvedValue(true)
     const res = await login(mkReq(creds))
     expect(res.status).toBe(200)
-    expect(res.jsonBody).toEqual({ user: { id: 'u1', email: 'me@example.com' } })
+    expect(res.jsonBody).toEqual({ user: { id: 'u1', email: 'me@example.com', isAdmin: false } })
     expect(h.query.mock.calls[1][0]).toContain('failed_attempts = 0')
     expect((res.cookies as Array<{ name: string }>).map((c) => c.name)).toEqual(['session', 'csrf_token'])
   })

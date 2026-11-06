@@ -39,6 +39,9 @@ param sessionSecret string
 @minLength(1)
 param inviteCode string
 
+@description('Comma-separated admin email addresses (also the access-request notification recipients)')
+param adminEmails string = 'travel@kingdavidconsulting.com'
+
 // Tags that should be applied to all resources
 var tags = {
   'azd-env-name': environmentName
@@ -102,6 +105,7 @@ module appSettings 'core/host/staticwebapp-appsettings.bicep' = {
     sqlAdminPassword: sqlAdminPassword
     sessionSecret: sessionSecret
     inviteCode: inviteCode
+    adminEmails: adminEmails
   }
 }
 

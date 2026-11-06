@@ -79,7 +79,12 @@ const classify = <T>(response: Response, payload: unknown): ApiResult<T> => {
   const body = toErrorBody(payload, status)
   if (status === 401 || status === 403) return { kind: 'auth-failure', status, ...body }
   if (status === 400 || status === 409 || status === 422) {
-    return { kind: 'validation-failure', status, ...body }
+    const failure = { kind: 'validation-failure' as const, status, ...body }
+    // 409 bodies may carry the server's current record (e.g. trip VERSION_CONFLICT); keep it.
+    if (status === 409 && payload && typeof payload === 'object' && 'current' in payload) {
+      return { ...failure, current: (payload as { current: unknown }).current } as ApiResult<T>
+    }
+    return failure
   }
   return { kind: 'error', status, ...body }
 }
@@ -159,3 +164,5 @@ export const apiPost = <T>(path: string, body?: unknown, options?: ApiRequestOpt
   apiRequest<T>('POST', path, body, options)
 export const apiPut = <T>(path: string, body?: unknown, options?: ApiRequestOptions) =>
   apiRequest<T>('PUT', path, body, options)
+export const apiDelete = <T>(path: string, options?: ApiRequestOptions) =>
+  apiRequest<T>('DELETE', path, undefined, options)

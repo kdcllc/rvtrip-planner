@@ -76,4 +76,16 @@ describe('authClient', () => {
     const result = await login({ email: 'a@b.c', password: 'bad' })
     expect(result).toMatchObject({ kind: 'auth-failure', status: 401 })
   })
+
+  it('defaults isAdmin to false when absent and preserves true', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { user: { id: 'u', email: 'a@b.c' } }))
+    const a = await login({ email: 'a@b.c', password: 'pw' })
+    expect(a.kind === 'success' && a.data.user.isAdmin).toBe(false)
+    fetchMock.mockResolvedValueOnce(json(200, { user: { id: 'u', email: 'a@b.c', isAdmin: true } }))
+    const b = await getCurrentUser()
+    expect(b.kind === 'success' && b.data.user.isAdmin).toBe(true)
+    fetchMock.mockResolvedValueOnce(json(200, { user: { id: 'u', email: 'a@b.c' } }))
+    const c = await register({ email: 'a@b.c', password: 'pw', inviteCode: 'x' })
+    expect(c.kind === 'success' && c.data.user.isAdmin).toBe(false)
+  })
 })

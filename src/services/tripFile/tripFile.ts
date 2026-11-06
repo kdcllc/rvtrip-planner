@@ -149,6 +149,66 @@ export function parseTripFilePayload(
   }
 }
 
+export const TRIPS_BACKUP_KIND = 'rv-trip-planner-backup'
+export const TRIPS_BACKUP_VERSION = 1
+
+export type TripsBackupPayload = {
+  kind: typeof TRIPS_BACKUP_KIND
+  version: number
+  exportedAt: string
+  trips: TripFilePayload[]
+}
+
+export type ParseImportResult =
+  | { ok: true; trips: Trip[] }
+  | { ok: false; error: string }
+
+export function buildTripsBackupPayload(
+  trips: Trip[],
+  exportedAt: Date = new Date(),
+): TripsBackupPayload {
+  return {
+    kind: TRIPS_BACKUP_KIND,
+    version: TRIPS_BACKUP_VERSION,
+    exportedAt: exportedAt.toISOString(),
+    trips: trips.map((trip) => buildTripFilePayload(trip)),
+  }
+}
+
+export function createBackupFileName(date: Date = new Date()): string {
+  return `rv-trips-backup-${date.toISOString().slice(0, 10)}.json`
+}
+
+export function parseImportFile(raw: unknown): ParseImportResult {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, error: 'Invalid trip file' }
+  }
+
+  const data = raw as Record<string, unknown>
+  if (data.kind !== TRIPS_BACKUP_KIND) {
+    try {
+      return { ok: true, trips: [parseTripFilePayload(raw).payload.trip] }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Invalid trip file' }
+    }
+  }
+
+  if (!Array.isArray(data.trips) || data.trips.length === 0) {
+    return { ok: false, error: 'Backup file contains no trips' }
+  }
+
+  const trips: Trip[] = []
+  for (let index = 0; index < data.trips.length; index += 1) {
+    try {
+      trips.push(parseTripFilePayload(data.trips[index]).payload.trip)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Invalid trip'
+      return { ok: false, error: `Invalid trip at index ${index}: ${reason}` }
+    }
+  }
+  return { ok: true, trips }
+}
+
 export function createTripFileName(trip: Trip): string {
   const name = sanitizeFileName(trip.name)
   return `trip-${name || 'untitled'}-${trip.id}.json`

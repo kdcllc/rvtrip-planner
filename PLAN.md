@@ -8,11 +8,12 @@ staying entirely within the Azure subscription for **$0/month steady-state**
 
 Shipped per `deploy-record.md` / `skeleton-deploy-record.md` of the `azure-multi-user` goal and the code. The locked decisions below are unchanged except where noted here.
 
-- Deployed: SWA Free + managed Functions (`api/`, bundled via `api/scripts/build-deploy.mjs`, `platform.apiRuntime: node:22`), Azure SQL free-offer serverless database, ACS Email, six app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`), invite-code registration, login-required app, Google Drive sync removed. Deploys are `azd`-only, locally and from `.github/workflows/azure-dev.yml`.
+- Deployed: SWA Free + managed Functions (`api/`, bundled via `api/scripts/build-deploy.mjs`, `platform.apiRuntime: node:22`), Azure SQL free-offer serverless database, ACS Email, six app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`; Superseded 2026-11-05 by goal trips-db-landing-invites: now seven, adding `ADMIN_EMAILS`), invite-code registration, login-required app, Google Drive sync removed. Deploys are `azd`-only, locally and from `.github/workflows/azure-dev.yml`.
 - **Region deviation:** SQL is in **centralus**, the SWA in eastus2 (the subscription got `ProvisioningDisabled` for SQL servers in eastus2). This supersedes "colocate with the Static Web App"; the centralus free-database region is now locked on the subscription.
 - **Auto-pause deviation:** `autoPauseDelay` is not set in Bicep. With `freeLimitExhaustionBehavior: 'AutoPause'` Azure accepts only the service default, and `az sql db show` reported 60 minutes. This supersedes "autoPauseDelay = 15 minutes".
 - Blocking checks: free offer (A) and SWA Functions to Azure SQL reachability (B) passed; email (C) delivered, with Outlook landing in Junk (operator accepted). See `docs/AZURE-PREFLIGHT.md`.
 - The 503 + `Retry-After` handling for a paused database is in `api/src/shared/http.ts`.
+- Superseded 2026-11-05 by goal trips-db-landing-invites: signed-out visitors see a landing page (Sign up, Log in, Request an invite) instead of the bare login screen; the planner stays behind auth. Registration also accepts single-use emailed invite codes (14-day expiry, stored hashed) alongside the shared `INVITE_CODE`, and app settings are now seven (adding `ADMIN_EMAILS`).
 
 ## Decisions (locked)
 
@@ -28,7 +29,7 @@ Shipped per `deploy-record.md` / `skeleton-deploy-record.md` of the `azure-multi
   supersedes the earlier "keep localStorage as the anonymous/offline fallback" plan and
   changes the live demo — visitors see a login screen, not the planner.
 - **Registration is gated by a shared invite code (decided 2026-09-07)** held in app
-  settings. Not merely a policy choice: a public URL plus open registration is a *cost and
+  settings. *(Superseded 2026-11-05 by goal trips-db-landing-invites: registration also accepts single-use invite codes, emailed by an admin after an access request; the shared code still works.)* Not merely a policy choice: a public URL plus open registration is a *cost and
   availability* vector, since anyone keeping the database awake exhausts the monthly
   vCore-second grant and takes the app offline until the 1st of the next month.
 - **Google Drive sync is removed (decided 2026-09-07)** — superseded by server storage.
@@ -487,6 +488,8 @@ Runtime: **`node:22`**, set via `apiRuntime` in `staticwebapp.config.json`.
 - `GET /api/trips` → session-validated, returns caller's `TripsState`.
 - `PUT /api/trips` → upserts caller's trips.
 
+*Superseded 2026-11-05 by goal trips-db-landing-invites: trips are stored one row per trip in `dbo.user_trips` with a `version`. The API is `GET /api/trips`, `PUT /api/trips/{tripId}`, `DELETE /api/trips/{tripId}`, `POST /api/trips/import` and `PUT /api/trip-selection`; a stale save returns 409 `VERSION_CONFLICT`. Migration `002-per-trip-and-invites.sql` adds this schema.*
+
 A shared session-validation helper guards both (reads cookie → looks up `sessions` → checks expiry).
 
 ## Phase 5 — Frontend integration
@@ -494,9 +497,12 @@ A shared session-validation helper guards both (reads cookie → looks up `sessi
 **Amended 2026-09-07** — the anonymous/offline fallback is removed; see the decision note below.
 
 - **Auth screens:** login, register (invite code required), forgot-password, reset-password (reset page reads token from URL).
+  - *Superseded 2026-11-05 by goal trips-db-landing-invites: registration accepts either the shared `INVITE_CODE` or a single-use emailed invite code; the register form is pre-filled from a `/?invite=CODE` link.*
 - **The whole app is behind auth.** Unauthenticated visitors get the login screen, not the planner.
-- **The one code seam:** `src/services/storage/tripStorage.ts` — `loadTripsFromStorage` / `saveTripsToStorage` call `/api/trips`. **No localStorage fallback path**; localStorage is read exactly once, for the first-login import below. Add auth/user state to `App.tsx`.
+  - *Superseded 2026-11-05 by goal trips-db-landing-invites: signed-out visitors now see a landing page with Sign up / Log in / Request an invite; the planner itself stays behind auth.*
+- **The one code seam:** `src/services/storage/tripStorage.ts` — `loadTripsFromStorage` / `saveTripsToStorage` call `/api/trips`. **No localStorage fallback path**; localStorage is read exactly once, for the first-login import below. *(Superseded 2026-11-05 by goal trips-db-landing-invites: trips in the browser's old localStorage keys are read on every sign-in until an import fully succeeds; see the Migration note below.)* Add auth/user state to `App.tsx`.
 - **Migration:** on first successful login, if localStorage holds trips, `PUT` them to the backend once (reuse existing export-JSON logic), then clear localStorage and treat the server as source of truth.
+  - *Superseded 2026-11-05 by goal trips-db-landing-invites: the browser's old localStorage trips are imported into the account (`POST /api/trips/import`) on every sign-in until an import fully succeeds, then cleared; the server skips trip ids that already exist.*
 - **Google Drive sync is removed** — `src/services/drive/*`, its UI affordance, the Google entries in the CSP (`script-src`/`connect-src`), and `VITE_GOOGLE_DRIVE_CLIENT_ID`. Server storage supersedes it.
 
 ## Phase 6 — Config & deploy

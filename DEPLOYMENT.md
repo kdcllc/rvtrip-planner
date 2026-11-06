@@ -27,12 +27,13 @@ Set these in the azd environment before provisioning (names only; never commit o
 
 - `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`
 - `AZURE_SQL_LOCATION` (optional, defaults to `centralus`; keep it lowercase)
+- `ADMIN_EMAILS` (optional, comma-separated admin addresses that receive invite requests and see "Access requests"; defaults to `travel@kingdavidconsulting.com`; the provision workflow reads it from the optional repository variable `ADMIN_EMAILS`)
 
-Bicep applies six app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`. Registration requires the invite code.
+Bicep applies seven app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`. Registration requires the shared `INVITE_CODE` or a single-use emailed invite code.
 
 ### Database schema
 
-`azd` does not apply migrations. After the first provision, run `scripts/db-migrate.sh` once against the Azure SQL database with a connection string that has DDL rights (it is idempotent). A freshly resumed serverless database can make the first login attempts time out, so retry. See `db/README.md`.
+`azd` does not apply migrations. After the first provision, run `scripts/db-migrate.sh` once against the Azure SQL database with a connection string that has DDL rights (it is idempotent). Migration 002 (per-trip rows, invite requests and codes) must be applied before deploying the API that uses it. A freshly resumed serverless database can make the first login attempts time out, so retry. See `db/README.md`.
 
 ### Local development
 
@@ -75,7 +76,7 @@ This creates the resource group `rg-{environmentName}`, the Static Web App, the 
 
 ### Step 4: Apply the database schema
 
-Run `scripts/db-migrate.sh` as described above.
+Run `scripts/db-migrate.sh` as described above. When upgrading an existing deployment to the per-trip and invite-request release, apply migration 002 **before** deploying the new API; it backfills existing trips into `dbo.user_trips` and keeps the legacy `dbo.trips` table.
 
 ### Step 5: Deploy the Application
 
@@ -89,7 +90,8 @@ This builds the SPA and the bundled API (via `swa-cli.config.json`) and deploys 
 
 - `GET /api/ping` returns 200 `application/json` (`{"ok":true}`)
 - `GET /api/trips` without a session returns 401
-- The site root shows the sign-in screen; register with the invite code
+- The site root shows the landing page for signed-out visitors (Sign up, Log in, Request an invite); register with the shared invite code or an emailed single-use invite code
+- A signed-in admin (an address in `ADMIN_EMAILS`) sees "Access requests"; trips are saved per trip through `PUT /api/trips/{tripId}`
 
 ---
 
@@ -230,13 +232,13 @@ azd down
 
 ### Local Development
 Optional `.env` for the SPA: `VITE_OPENROUTE_API_KEY` (routing fallback).
-Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`) are listed by name in `.env.example`; use `api/local.settings.json` (git-ignored) or your shell.
+Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) are listed by name in `.env.example`; use `api/local.settings.json` (git-ignored) or your shell.
 
 ### azd environment (provisioning)
-`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`).
+`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`, `ADMIN_EMAILS` (optional, see `infra/main.parameters.json`).
 
 ### GitHub Actions
-Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional secret `VITE_OPENROUTE_API_KEY`.
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional variable `ADMIN_EMAILS` (used by the provision workflow); optional secret `VITE_OPENROUTE_API_KEY`.
 
 ---
 
