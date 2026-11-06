@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { OPENROUTE_API_KEY } from '../config/env'
 import { TripMap } from '../features/map/TripMap'
 import { TripForm, type TripFormRef } from '../features/trip/TripForm'
-import type { TripStop, TripStopSourceName, TripsState } from '../domain/trip/types'
+import type { Trip, TripStop, TripsState } from '../domain/trip/types'
+import type { VersionedTrip } from '../types/api'
 import { TripSelector } from '../features/trip/TripSelector'
 import { VehicleSettingsModal } from '../features/trip/VehicleSettingsModal'
 import {
@@ -12,8 +13,11 @@ import {
 } from '../services/weather/weatherService'
 import type { StopForecast } from '../domain/weather/types'
 import {
-  loadTripsFromStorage,
-  saveTripsToStorage,
+  loadTrips,
+  saveTrip,
+  deleteTrip,
+  saveTripSelection,
+  importTrips,
   readLegacyLocalTrips,
   clearLegacyLocalTrips,
   createNewTrip,
@@ -40,16 +44,16 @@ import { useVehicleSettingsContext } from '../hooks/useVehicleSettings'
 import type { GasPriceLookupResult } from '../domain/gas/types'
 import {
   buildTripFilePayload,
+  buildTripsBackupPayload,
+  createBackupFileName,
   createTripFileName,
-  type TripFilePayload,
-  parseTripFilePayload,
 } from '../services/tripFile/tripFile'
 import { geocodeAddress } from '../services/geocoding/geocodingService'
 import { ImportTripModal } from '../components/common/ImportTripModal'
 import { FloatingActionButtons } from '../components/common/FloatingActionButtons'
 import { DeleteTripModal } from '../components/common/DeleteTripModal'
 import { ThemeToggle } from '../components/common/ThemeToggle'
-import { createId } from '../utils/id'
+import { AccessRequestsPanel } from '../features/admin/AccessRequestsPanel'
 import { downloadTripPdf } from '../services/print/printTripPdf'
 import type { TripPrintData } from '../domain/trip/print'
 import { useRoutesEnabled } from '../hooks/useRoutesEnabled'
@@ -64,29 +68,59 @@ const getTodayKey = () => {
 
 type PlannerProps = {
   initialState: TripsState
+  /** Server version per trip id (every trip in initialState is already persisted). */
+  initialVersions: Record<string, number>
+  /** The current-trip id the server already knows about. */
+  savedSelection: string | null
   notice: string
+  isAdmin: boolean
   onSessionExpired: () => void | Promise<void>
   onSignOut: () => void | Promise<void>
   userEmail: string | null
 }
 
-const SAVE_DEBOUNCE_MS = 800
+type SaveBanner =
+  | { kind: 'none' }
+  | { kind: 'waking' }
+  | { kind: 'retrying' }
+  | { kind: 'error'; message: string }
 
-function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail }: PlannerProps) {
-  const allowedSourceNames = useMemo(
-    () =>
-      new Set<TripStopSourceName>([
-        'RV Life',
-        'Hipcamp',
-        'Campendium',
-        'Harvest Hosts',
-        'RV Parky',
-        'Other',
-      ]),
-    []
-  )
+type FlushOutcome = 'session-expired' | undefined
+
+const SAVE_DEBOUNCE_MS = 800
+const RETRY_BASE_MS = 5000
+const RETRY_MAX_MS = 60000
+
+const downloadJsonFile = (payload: unknown, fileName: string) => {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function Planner({
+  initialState,
+  initialVersions,
+  savedSelection,
+  notice,
+  isAdmin,
+  onSessionExpired,
+  onSignOut,
+  userEmail,
+}: PlannerProps) {
   const [tripsState, setTripsState] = useState<TripsState>(initialState)
-  const [saveError, setSaveError] = useState('')
+  const [saveBanner, setSaveBanner] = useState<SaveBanner>({ kind: 'none' })
+  const [conflicts, setConflicts] = useState<Record<string, VersionedTrip | null>>({})
+  const [hasUnsaved, setHasUnsaved] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [showAccessRequests, setShowAccessRequests] = useState(false)
   const [weatherByStopId, setWeatherByStopId] = useState<
     Record<string, StopForecast>
   >({})
@@ -99,11 +133,6 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
   const [printError, setPrintError] = useState('')
   const [printStatus, setPrintStatus] = useState('')
   const [isExportingPdf, setIsExportingPdf] = useState(false)
-  const [pendingImport, setPendingImport] = useState<{
-    payload: TripFilePayload
-    skippedStops: number
-    totalStops: number
-  } | null>(null)
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
   const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
   const [currentStopId, setCurrentStopId] = useState<string | null>(null)
@@ -120,7 +149,6 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
   const lastAutoFocusSignatureRef = useRef('')
   const previousLocationsRef = useRef<string>('')
   const previousMpgRef = useRef<number | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { debouncedMpg } = useVehicleSettingsContext()
   const [routesEnabled] = useRoutesEnabled()
 
@@ -228,66 +256,245 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
     return '$0.00'
   }
 
-  // Debounced auto-save to the server. Failures are surfaced, never silent.
-  const lastSavedRef = useRef<TripsState>(initialState)
+  // Per-trip auto-save. A trip is "dirty" while its object differs from the last object the
+  // server confirmed; dirty trips, pending deletes and selection changes are flushed after a
+  // debounce and RETRIED until they succeed (database waking, network blips). Never silent.
+  const versionsRef = useRef<Record<string, number>>({ ...initialVersions })
+  const savedTripsRef = useRef<Map<string, Trip>>(
+    new Map(initialState.trips.map((trip) => [trip.id, trip])),
+  )
+  const pendingDeletesRef = useRef<Set<string>>(new Set())
+  const savedSelectionRef = useRef<string | null>(savedSelection)
+  const conflictsRef = useRef<Record<string, VersionedTrip | null>>({})
   const latestStateRef = useRef<TripsState>(initialState)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryAttemptRef = useRef(0)
+  const inFlightRef = useRef<Promise<FlushOutcome> | null>(null)
+  const flushRef = useRef<() => Promise<FlushOutcome>>(async () => undefined)
   const unmountedRef = useRef(false)
   const onSessionExpiredRef = useRef(onSessionExpired)
   useEffect(() => {
     onSessionExpiredRef.current = onSessionExpired
   }, [onSessionExpired])
 
-  const flushSave = useCallback(async (): Promise<'session-expired' | undefined> => {
-    saveTimerRef.current = null
-    const snapshot = latestStateRef.current
-    if (snapshot === lastSavedRef.current) return undefined
-    const result = await saveTripsToStorage(snapshot)
-    if (result.kind === 'saved') {
-      lastSavedRef.current = snapshot
+  const hasDirtyTrips = useCallback(
+    () =>
+      pendingDeletesRef.current.size > 0 ||
+      latestStateRef.current.trips.some((trip) => savedTripsRef.current.get(trip.id) !== trip),
+    [],
+  )
+  const needsSave = useCallback(
+    () => hasDirtyTrips() || latestStateRef.current.currentTripId !== savedSelectionRef.current,
+    [hasDirtyTrips],
+  )
+
+  const runFlush = useCallback(async (): Promise<FlushOutcome> => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
     }
-    if (result.kind === 'session-expired') {
+    let retry = false
+    let waking = false
+    let retryAfterMs: number | undefined
+    let hardError = ''
+    const failRetry = (result: { kind: string; retryAfterSeconds?: number }) => {
+      retry = true
+      if (result.kind === 'database-waking') {
+        waking = true
+        if (result.retryAfterSeconds !== undefined) retryAfterMs = result.retryAfterSeconds * 1000
+      }
+    }
+    const expired = (): FlushOutcome => {
       if (!unmountedRef.current) void onSessionExpiredRef.current()
       return 'session-expired'
     }
+
+    for (const id of [...pendingDeletesRef.current]) {
+      const result = await deleteTrip(id)
+      if (result.kind === 'saved') {
+        pendingDeletesRef.current.delete(id)
+        delete versionsRef.current[id]
+        savedTripsRef.current.delete(id)
+      } else if (result.kind === 'session-expired') {
+        return expired()
+      } else {
+        failRetry(result)
+        break
+      }
+    }
+
+    if (!retry) {
+      const dirtyTrips = latestStateRef.current.trips.filter(
+        (trip) => savedTripsRef.current.get(trip.id) !== trip && !(trip.id in conflictsRef.current),
+      )
+      for (const trip of dirtyTrips) {
+        const result = await saveTrip(trip, versionsRef.current[trip.id] ?? null)
+        if (result.kind === 'saved') {
+          versionsRef.current[trip.id] = result.version
+          savedTripsRef.current.set(trip.id, trip)
+        } else if (result.kind === 'conflict') {
+          conflictsRef.current = { ...conflictsRef.current, [trip.id]: result.current }
+          if (!unmountedRef.current) setConflicts(conflictsRef.current)
+        } else if (result.kind === 'session-expired') {
+          return expired()
+        } else if (result.kind === 'database-waking' || result.retryable) {
+          failRetry(result)
+          break
+        } else {
+          hardError = result.message
+        }
+      }
+    }
+
+    if (!retry) {
+      const selection = latestStateRef.current.currentTripId
+      if (selection !== savedSelectionRef.current) {
+        const result = await saveTripSelection(selection)
+        if (result.kind === 'session-expired') return expired()
+        if (result.kind === 'database-waking') {
+          failRetry(result)
+        } else {
+          // Best-effort: a non-retryable selection failure is not worth looping on.
+          savedSelectionRef.current = selection
+        }
+      }
+    }
+
     if (unmountedRef.current) return undefined
-    if (result.kind === 'saved') {
-      setSaveError('')
-    } else if (result.kind === 'database-waking') {
-      setSaveError('The database is waking up. Your latest changes are not saved yet; keep this tab open.')
+    setHasUnsaved(hasDirtyTrips())
+    if (retry) {
+      const attempt = retryAttemptRef.current
+      retryAttemptRef.current += 1
+      const delay = Math.min(retryAfterMs ?? RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null
+        void flushRef.current()
+      }, delay)
+      setSaveBanner({ kind: waking ? 'waking' : 'retrying' })
     } else {
-      setSaveError(`Could not save your trips: ${result.message}`)
+      retryAttemptRef.current = 0
+      setSaveBanner(hardError ? { kind: 'error', message: hardError } : { kind: 'none' })
     }
     return undefined
-  }, [])
+  }, [hasDirtyTrips])
 
-  // Sign out: flush any pending debounced save BEFORE logging out (the cookie dies with logout).
+  // Serialises flushes: a caller arriving mid-flush waits, then runs its own pass.
+  const flush = useCallback(async (): Promise<FlushOutcome> => {
+    while (inFlightRef.current) await inFlightRef.current
+    const run = runFlush().catch((): FlushOutcome => {
+      if (!unmountedRef.current) {
+        setSaveBanner({ kind: 'error', message: 'Could not save your trips.' })
+      }
+      return undefined
+    })
+    inFlightRef.current = run
+    try {
+      return await run
+    } finally {
+      if (inFlightRef.current === run) inFlightRef.current = null
+    }
+  }, [runFlush])
+
+  useEffect(() => {
+    flushRef.current = flush
+  }, [flush])
+
+  // Sign out: flush any unsaved work BEFORE logging out (the cookie dies with logout).
   const handleSignOutClick = useCallback(async () => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
-      const outcome = await flushSave()
+      saveTimerRef.current = null
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+    if (needsSave()) {
+      const outcome = await flush()
       if (outcome === 'session-expired') return
     }
     await onSignOut()
-  }, [flushSave, onSignOut])
+  }, [flush, needsSave, onSignOut])
 
   useEffect(() => {
     latestStateRef.current = tripsState
-    if (tripsState === lastSavedRef.current) return
+    setHasUnsaved(hasDirtyTrips())
+    if (!needsSave()) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => void flushSave(), SAVE_DEBOUNCE_MS)
-  }, [tripsState, flushSave])
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
+      void flush()
+    }, SAVE_DEBOUNCE_MS)
+  }, [tripsState, flush, hasDirtyTrips, needsSave])
 
   useEffect(() => {
     unmountedRef.current = false
     return () => {
       unmountedRef.current = true
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
-        void flushSave()
+        saveTimerRef.current = null
+        void flushRef.current()
       }
     }
-  }, [flushSave])
+  }, [])
+
+  // Warn before leaving the page while edits or deletes are not yet confirmed saved.
+  useEffect(() => {
+    if (!hasUnsaved) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsaved])
+
+  const clearConflict = useCallback((tripId: string) => {
+    const { [tripId]: _removed, ...rest } = conflictsRef.current
+    void _removed
+    conflictsRef.current = rest
+    setConflicts(rest)
+  }, [])
+
+  const handleKeepMine = useCallback(
+    (tripId: string) => {
+      const current = conflictsRef.current[tripId] ?? null
+      if (current) versionsRef.current[tripId] = current.version
+      else delete versionsRef.current[tripId]
+      clearConflict(tripId)
+      void flush()
+    },
+    [clearConflict, flush],
+  )
+
+  const handleLoadSaved = useCallback(
+    (tripId: string) => {
+      const current = conflictsRef.current[tripId] ?? null
+      clearConflict(tripId)
+      if (current) {
+        versionsRef.current[tripId] = current.version
+        savedTripsRef.current.set(tripId, current.trip)
+        setTripsState((prev) =>
+          prev.trips.some((trip) => trip.id === tripId)
+            ? { ...prev, trips: prev.trips.map((trip) => (trip.id === tripId ? current.trip : trip)) }
+            : { ...prev, trips: [...prev.trips, current.trip] },
+        )
+      } else {
+        delete versionsRef.current[tripId]
+        savedTripsRef.current.delete(tripId)
+        setTripsState((prev) => {
+          const trips = prev.trips.filter((trip) => trip.id !== tripId)
+          const currentTripId =
+            prev.currentTripId === tripId ? (trips[0]?.id ?? null) : prev.currentTripId
+          return { trips, currentTripId }
+        })
+      }
+    },
+    [clearConflict],
+  )
 
   const addStop = useCallback(
     (stop: TripStop) => {
@@ -443,12 +650,6 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
     [currentTrip]
   )
 
-  const orderStops = useCallback((items: TripStop[]) => {
-    const startingPoints = items.filter((stop) => stop.label === 'Starting point')
-    const otherStops = items.filter((stop) => stop.label !== 'Starting point')
-    return [...startingPoints, ...otherStops]
-  }, [])
-
   const exportTrips = useCallback(() => {
     setImportError('')
     setImportStatus('')
@@ -458,20 +659,24 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
       return
     }
 
-    const payload = buildTripFilePayload(currentTrip)
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = createTripFileName(currentTrip)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadJsonFile(buildTripFilePayload(currentTrip), createTripFileName(currentTrip))
   }, [currentTrip])
+
+  const exportAllTrips = useCallback(() => {
+    setImportError('')
+    setImportStatus('')
+    if (tripsState.trips.length === 0) return
+    downloadJsonFile(buildTripsBackupPayload(tripsState.trips), createBackupFileName())
+  }, [tripsState.trips])
+
+  const handleDownloadTrip = useCallback(
+    (tripId: string) => {
+      const trip = tripsState.trips.find((t) => t.id === tripId)
+      if (!trip) return
+      downloadJsonFile(buildTripFilePayload(trip), createTripFileName(trip))
+    },
+    [tripsState.trips],
+  )
 
   const exportCalendar = useCallback(() => {
     setImportError('')
@@ -586,160 +791,46 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
     tripFuelDelta,
   ])
 
-  const mergeStops = useCallback(
-    (existing: TripStop[], imported: TripStop[]) => {
-      const existingIds = new Set(existing.map((stop) => stop.id))
-      const next: TripStop[] = [...existing]
-
-      for (const stop of imported) {
-        if (existingIds.has(stop.id)) {
-          continue
-        }
-
-        existingIds.add(stop.id)
-        next.push(stop)
+  // Import file trips into the account (database), then merge them into local state.
+  const handleImportTrips = useCallback(
+    async (trips: Trip[]): Promise<{ ok: true } | { ok: false; error: string }> => {
+      const result = await importTrips(trips)
+      if (result.kind === 'session-expired') {
+        void onSessionExpiredRef.current()
+        return { ok: false, error: 'Your session expired. Please sign in again.' }
       }
-
-      return orderStops(next)
-    },
-    [orderStops],
-  )
-
-  const completeImport = useCallback(
-    (
-      payload: TripFilePayload,
-      skippedStops: number,
-      _totalStops: number,
-      mode: 'merge' | 'new',
-    ) => {
-      const sanitizedStops = payload.trip.stops
-
-      setTripsState((prev) => {
-        const tripIndex = prev.trips.findIndex((t) => t.id === prev.currentTripId)
-
-        if (tripIndex === -1 || mode === 'new') {
-          // Check if the imported trip's ID already exists
-          const existingIds = new Set(prev.trips.map((t) => t.id))
-          const importedTrip = existingIds.has(payload.trip.id)
-            ? { ...payload.trip, id: createId() }
-            : payload.trip
-
-          return {
-            trips: [...prev.trips, importedTrip],
-            currentTripId: importedTrip.id,
-          }
-        }
-
-        const updatedTrips = [...prev.trips]
-        updatedTrips[tripIndex] = {
-          ...updatedTrips[tripIndex],
-          stops: mergeStops(updatedTrips[tripIndex].stops, sanitizedStops),
-          updatedAt: new Date().toISOString(),
-        }
-
-        return {
-          ...prev,
-          trips: updatedTrips,
-        }
-      })
-
-      setWeatherByStopId({})
-      setWeatherErrors({})
-      const skippedMessage =
-        skippedStops > 0
-          ? ` Skipped ${skippedStops} invalid stop${skippedStops === 1 ? '' : 's'}.`
-          : ''
-      setImportStatus(
-        `Imported ${sanitizedStops.length} stop${
-          sanitizedStops.length === 1 ? '' : 's'
-        }.${skippedMessage}`
-      )
-      setPendingImport(null)
-    },
-    [mergeStops],
-  )
-
-  const handleImportFile = useCallback(
-    (file: File) => {
+      if (result.kind === 'database-waking') {
+        return { ok: false, error: 'The database is waking up. Please try again in a few seconds.' }
+      }
+      if (result.kind === 'error') {
+        return { ok: false, error: result.message }
+      }
+      const importedIds = new Set(result.imported)
+      const added = trips.filter((trip) => importedIds.has(trip.id))
+      for (const trip of added) {
+        versionsRef.current[trip.id] = 1
+        savedTripsRef.current.set(trip.id, trip)
+      }
+      if (added.length > 0) {
+        setTripsState((prev) => {
+          const known = new Set(prev.trips.map((trip) => trip.id))
+          const fresh = added.filter((trip) => !known.has(trip.id))
+          return { trips: [...prev.trips, ...fresh], currentTripId: added[0].id }
+        })
+        setWeatherByStopId({})
+        setWeatherErrors({})
+        setSelectedStopIds(new Set())
+        setCurrentStopId(null)
+      }
+      const skippedCount = result.skipped.length
       setImportError('')
-      setImportStatus('Importing...')
-
-      const reader = new FileReader()
-      reader.onerror = () => {
-        setImportStatus('')
-        setImportError('Unable to read that file.')
-      }
-      reader.onload = () => {
-        try {
-          const raw = JSON.parse(String(reader.result ?? ''))
-          const { payload, skippedStops, totalStops } = parseTripFilePayload(raw, {
-            allowedSourceNames,
-          })
-          const sanitizedStops: TripStop[] = payload.trip.stops
-
-          if (totalStops > 0 && sanitizedStops.length === 0) {
-            throw new Error('No valid stops found')
-          }
-
-          if (!currentTrip) {
-            completeImport(payload, skippedStops, totalStops, 'new')
-            return
-          }
-
-          setPendingImport({ payload, skippedStops, totalStops })
-          setImportStatus('')
-        } catch (error) {
-          setImportStatus('')
-          setImportError(
-            error instanceof Error
-              ? 'That file does not contain valid trip data.'
-              : 'Unable to import that file.',
-          )
-        }
-      }
-
-      reader.readAsText(file)
+      setImportStatus(
+        `Imported ${added.length} trip${added.length === 1 ? '' : 's'}.` +
+          (skippedCount > 0 ? ` ${skippedCount} already in your account ${skippedCount === 1 ? 'was' : 'were'} skipped.` : ''),
+      )
+      return { ok: true }
     },
-    [allowedSourceNames, completeImport, currentTrip],
-  )
-
-  const handleConfirmMergeImport = useCallback(() => {
-    if (!pendingImport) return
-    completeImport(
-      pendingImport.payload,
-      pendingImport.skippedStops,
-      pendingImport.totalStops,
-      'merge',
-    )
-  }, [completeImport, pendingImport])
-
-  const handleConfirmNewImport = useCallback(() => {
-    if (!pendingImport) return
-    completeImport(
-      pendingImport.payload,
-      pendingImport.skippedStops,
-      pendingImport.totalStops,
-      'new',
-    )
-  }, [completeImport, pendingImport])
-
-  const handleCancelImport = useCallback(() => {
-    setPendingImport(null)
-    setImportStatus('')
-    setImportError('Import canceled.')
-  }, [])
-
-  const onImportChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      if (!file) {
-        return
-      }
-
-      handleImportFile(file)
-      event.target.value = ''
-    },
-    [handleImportFile],
+    [],
   )
 
   const handleSelectTrip = useCallback((tripId: string) => {
@@ -850,6 +941,12 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
   const handleConfirmDeleteTrip = useCallback(() => {
     if (!pendingDeleteTripId) return
 
+    // Only trips the server knows about need a DELETE; the flush retries it until it succeeds.
+    if (pendingDeleteTripId in versionsRef.current) {
+      pendingDeletesRef.current.add(pendingDeleteTripId)
+    }
+    if (pendingDeleteTripId in conflictsRef.current) clearConflict(pendingDeleteTripId)
+
     setTripsState((prev) => {
       const remainingTrips = prev.trips.filter((t) => t.id !== pendingDeleteTripId)
       if (remainingTrips.length === 0) {
@@ -876,7 +973,7 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
     setCurrentStopId(null)
     // Close the modal
     setPendingDeleteTripId(null)
-  }, [pendingDeleteTripId])
+  }, [pendingDeleteTripId, clearConflict])
 
   const handleCancelDeleteTrip = useCallback(() => {
     setPendingDeleteTripId(null)
@@ -1272,23 +1369,25 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
               onCreateTrip={handleCreateTrip}
               onRequestDelete={handleRequestDeleteTrip}
               onRenameTrip={handleRenameTrip}
+              onDownloadTrip={handleDownloadTrip}
             />
           </div>
             <div className="hero-actions">
               <button className="ghost" type="button" onClick={exportTrips}>
                 💾 Save trip
               </button>
-              <input
-                ref={fileInputRef}
-                className="file-input"
-                type="file"
-                accept="application/json"
-                onChange={onImportChange}
-              />
               <button
                 className="ghost"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={exportAllTrips}
+                disabled={tripsState.trips.length === 0}
+              >
+                ⬇️ Download all trips
+              </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => setShowImportModal(true)}
               >
                 📂 Load trip
               </button>
@@ -1323,6 +1422,15 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
               >
                 ⛽ Vehicle Settings
               </button>
+              {isAdmin ? (
+                <button
+                  className="ghost"
+                  type="button"
+                  onClick={() => setShowAccessRequests(true)}
+                >
+                  Access requests
+                </button>
+              ) : null}
               <button
                 className="ghost"
                 type="button"
@@ -1332,7 +1440,36 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
                 Sign out
               </button>
               {notice ? <span className="import-status" role="status">{notice}</span> : null}
-              {saveError ? <span className="import-error" role="alert">{saveError}</span> : null}
+              {saveBanner.kind === 'waking' ? (
+                <span className="import-status" role="status">
+                  Saving… the database is waking up, retrying automatically.
+                </span>
+              ) : null}
+              {saveBanner.kind === 'retrying' ? (
+                <span className="import-status" role="status">Could not save yet, retrying…</span>
+              ) : null}
+              {saveBanner.kind === 'error' ? (
+                <span className="import-error" role="alert">
+                  {saveBanner.message}{' '}
+                  <button className="ghost" type="button" onClick={() => void flush()}>
+                    Retry now
+                  </button>
+                </span>
+              ) : null}
+              {Object.keys(conflicts).map((tripId) => (
+                <span className="import-error" role="alert" key={tripId}>
+                  <span>This trip was changed in another tab or device</span>{' '}
+                  <strong>
+                    {tripsState.trips.find((t) => t.id === tripId)?.name ?? conflicts[tripId]?.trip.name ?? ''}
+                  </strong>{' '}
+                  <button className="ghost" type="button" onClick={() => handleKeepMine(tripId)}>
+                    Keep my version
+                  </button>
+                  <button className="ghost" type="button" onClick={() => handleLoadSaved(tripId)}>
+                    Load saved version
+                  </button>
+                </span>
+              ))}
               {importStatus ? (
                 <span className="import-status">{importStatus}</span>
               ) : null}
@@ -1432,14 +1569,16 @@ function Planner({ initialState, notice, onSessionExpired, onSignOut, userEmail 
         onClose={() => setShowVehicleSettings(false)}
       />
       <ImportTripModal
-        isOpen={Boolean(pendingImport)}
-        tripName={pendingImport?.payload.trip.name ?? 'Imported trip'}
-        stopCount={pendingImport?.payload.trip.stops.length ?? 0}
-        skippedStops={pendingImport?.skippedStops ?? 0}
-        onMerge={handleConfirmMergeImport}
-        onCreateNew={handleConfirmNewImport}
-        onCancel={handleCancelImport}
+        isOpen={showImportModal}
+        onImport={handleImportTrips}
+        onClose={() => setShowImportModal(false)}
       />
+      {isAdmin && showAccessRequests ? (
+        <AccessRequestsPanel
+          onClose={() => setShowAccessRequests(false)}
+          onSessionExpired={() => void onSessionExpiredRef.current()}
+        />
+      ) : null}
       <DeleteTripModal
         isOpen={Boolean(pendingDeleteTripId)}
         tripName={
@@ -1468,15 +1607,20 @@ const MAX_WAKE_RETRIES = 5
 const DEFAULT_WAKE_DELAY_MS = 2000
 const MAX_WAKE_DELAY_MS = 5000
 
-// Accounts whose legacy localStorage trips were already imported in this page session.
-// Persistence across sessions comes from clearLegacyLocalTrips() after a confirmed write.
-const importedUserIds = new Set<string>()
+// Prevents two overlapping loads from importing the same browser-local trips twice.
+let legacyImportRunning = false
 
 type LoadPhase =
   | { kind: 'loading' }
   | { kind: 'waking' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; state: TripsState; notice: string }
+  | {
+      kind: 'ready'
+      state: TripsState
+      versions: Record<string, number>
+      savedSelection: string | null
+      notice: string
+    }
 
 function AuthenticatedApp() {
   const { user, logout } = useAuth()
@@ -1503,7 +1647,7 @@ function AuthenticatedApp() {
     let timer: ReturnType<typeof setTimeout> | undefined
 
     const run = async (wakeAttempt: number): Promise<void> => {
-      const result = await loadTripsFromStorage()
+      const result = await loadTrips()
       if (cancelled) return
 
       if (result.kind === 'session-expired') {
@@ -1528,41 +1672,59 @@ function AuthenticatedApp() {
         return
       }
 
-      // First-login import of pre-existing localStorage trips (at most once per account).
-      let state = result.state
+      const versions: Record<string, number> = {}
+      for (const entry of result.trips) versions[entry.trip.id] = entry.version
+      const serverTrips = result.trips.map((entry) => entry.trip)
+      const serverCurrent =
+        result.currentTripId && serverTrips.some((trip) => trip.id === result.currentTripId)
+          ? result.currentTripId
+          : (serverTrips[0]?.id ?? null)
+      let state: TripsState = { trips: serverTrips, currentTripId: serverCurrent }
+      const savedSelection = serverCurrent
       let notice = ''
-      const legacy = userId && !importedUserIds.has(userId) ? readLegacyLocalTrips() : null
-      if (userId && legacy && legacy.trips.length > 0) {
-        importedUserIds.add(userId)
-        const base = result.isNew ? [] : result.state.trips
-        const known = new Set(base.map((trip) => trip.id))
-        const merged: TripsState = {
-          trips: [...base, ...legacy.trips.filter((trip) => !known.has(trip.id))],
-          currentTripId: result.isNew
-            ? legacy.currentTripId ?? legacy.trips[0].id
-            : result.state.currentTripId,
+
+      // Import browser-local trips on every successful load until one import fully succeeds.
+      // Any failure keeps the local keys (retry is safe: the server skips duplicate ids).
+      const legacy = legacyImportRunning ? null : readLegacyLocalTrips()
+      if (legacy && legacy.trips.length > 0) {
+        legacyImportRunning = true
+        let imported
+        try {
+          imported = await importTrips(legacy.trips)
+        } finally {
+          legacyImportRunning = false
         }
-        const saved = await saveTripsToStorage(merged)
-        if (cancelled) {
-          if (saved.kind !== 'saved') importedUserIds.delete(userId)
-          else clearLegacyLocalTrips()
-          return
-        }
-        if (saved.kind === 'saved') {
+        if (imported.kind === 'imported') {
           clearLegacyLocalTrips()
-          state = merged
-          const count = legacy.trips.length
-          notice = `Imported ${count} existing local trip${count === 1 ? '' : 's'} into your account.`
+          if (cancelled) return
+          const importedIds = new Set(imported.imported)
+          const added = legacy.trips.filter((trip) => importedIds.has(trip.id))
+          for (const trip of added) versions[trip.id] = 1
+          const known = new Set(serverTrips.map((trip) => trip.id))
+          const fresh = added.filter((trip) => !known.has(trip.id))
+          const preferred =
+            legacy.currentTripId && fresh.some((trip) => trip.id === legacy.currentTripId)
+              ? legacy.currentTripId
+              : (fresh[0]?.id ?? null)
+          state = {
+            trips: [...serverTrips, ...fresh],
+            currentTripId: serverCurrent ?? preferred,
+          }
+          const count = added.length
+          notice = `Imported ${count} trip${count === 1 ? '' : 's'} from this browser into your account.`
+          if (imported.skipped.length > 0) {
+            notice += ` ${imported.skipped.length} ${imported.skipped.length === 1 ? 'was' : 'were'} already in your account.`
+          }
         } else {
-          importedUserIds.delete(userId)
-          if (saved.kind === 'session-expired') {
+          if (cancelled) return
+          if (imported.kind === 'session-expired') {
             void handleSignOut()
             return
           }
-          notice = 'Your existing local trips could not be imported yet; they were kept on this device.'
+          notice = 'Your local trips could not be imported yet; they are still on this device.'
         }
       }
-      setPhase({ kind: 'ready', state, notice })
+      setPhase({ kind: 'ready', state, versions, savedSelection, notice })
     }
 
     void run(0).catch((error: unknown) => {
@@ -1615,7 +1777,10 @@ function AuthenticatedApp() {
   return (
     <Planner
       initialState={phase.state}
+      initialVersions={phase.versions}
+      savedSelection={phase.savedSelection}
       notice={phase.notice}
+      isAdmin={user?.isAdmin === true}
       onSessionExpired={handleSignOut}
       onSignOut={handleSignOut}
       userEmail={user?.email ?? null}

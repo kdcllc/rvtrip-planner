@@ -1,6 +1,7 @@
 import { apiGet, apiPost, ping as pingApi } from './apiClient'
 import type {
   ApiResult,
+  AuthUser,
   ForgotPasswordRequest,
   ForgotPasswordResponse,
   LoginRequest,
@@ -16,17 +17,24 @@ import type {
 
 export const ping = (): Promise<ApiResult<PingResponse>> => pingApi()
 
-export const register = (req: RegisterRequest): Promise<ApiResult<RegisterResponse>> =>
-  apiPost<RegisterResponse>('/api/register', req)
+/** Ensure `user.isAdmin` is always a boolean (default false when absent from the response). */
+const withIsAdmin = <T extends { user: AuthUser }>(result: ApiResult<T>): ApiResult<T> => {
+  if (result.kind !== 'success' || !result.data?.user) return result
+  const user: AuthUser = { ...result.data.user, isAdmin: result.data.user.isAdmin === true }
+  return { ...result, data: { ...result.data, user } }
+}
 
-export const login = (req: LoginRequest): Promise<ApiResult<LoginResponse>> =>
-  apiPost<LoginResponse>('/api/login', req)
+export const register = async (req: RegisterRequest): Promise<ApiResult<RegisterResponse>> =>
+  withIsAdmin(await apiPost<RegisterResponse>('/api/register', req))
+
+export const login = async (req: LoginRequest): Promise<ApiResult<LoginResponse>> =>
+  withIsAdmin(await apiPost<LoginResponse>('/api/login', req))
 
 export const logout = (): Promise<ApiResult<LogoutResponse>> =>
   apiPost<LogoutResponse>('/api/logout', {})
 
-export const getCurrentUser = (): Promise<ApiResult<MeResponse>> =>
-  apiGet<MeResponse>('/api/me')
+export const getCurrentUser = async (): Promise<ApiResult<MeResponse>> =>
+  withIsAdmin(await apiGet<MeResponse>('/api/me'))
 
 export const requestPasswordReset = (
   req: ForgotPasswordRequest

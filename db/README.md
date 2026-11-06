@@ -1,7 +1,18 @@
 # Database (SQL Server / Azure SQL)
 
 Schema lives in `db/migrations/*.sql` (T-SQL, idempotent). Tables: `users`, `sessions`,
-`password_reset_tokens`, `trips`. `trips.data` stores the `Trip`/`TripsState` shape as JSON text.
+`password_reset_tokens`, `trips` (legacy), `user_trips`, `invite_requests`, `invite_codes`.
+`trips.data` stores the `Trip`/`TripsState` shape as JSON text; `user_trips.data` holds one `Trip` per row.
+
+## Migration 002
+
+Adds `user_trips` (one row per trip, `version` for optimistic concurrency), `users.current_trip_id`,
+`invite_requests` and `invite_codes`. It backfills `user_trips` from every legacy `dbo.trips` blob
+(newest `updated_at` first; for a duplicate trip id the newest blob wins; elements without an id or
+with an id over 128 chars are skipped) and sets `users.current_trip_id` from the newest blob's
+`currentTripId` only where it is NULL. `dbo.trips` is kept unchanged (legacy, read-only after 002)
+for rollback safety. Re-running is a no-op. **Run it against Azure SQL before deploying the new API**
+(Azure SQL serverless may need time to resume; retry if the first connection times out).
 
 ## Start the local database
 

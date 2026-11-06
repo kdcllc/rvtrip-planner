@@ -31,11 +31,22 @@ describe('GET /api/me', () => {
     expect(JSON.stringify(res.jsonBody)).not.toMatch(/user|email|id"/)
   })
 
-  it('valid session: id and email only', async () => {
+  it('valid session: id, email and isAdmin only', async () => {
     h.validate.mockResolvedValue({ id: 'u1', email: 'a@b.c', password_hash: 'leak' })
     const res = await me(req)
     expect(res.status).toBe(200)
-    expect(res.jsonBody).toEqual({ user: { id: 'u1', email: 'a@b.c' } })
+    expect(res.jsonBody).toEqual({ user: { id: 'u1', email: 'a@b.c', isAdmin: false } })
+  })
+
+  it('isAdmin true when the email is in ADMIN_EMAILS (case-insensitive)', async () => {
+    process.env.ADMIN_EMAILS = 'Boss@B.c; other@x.y'
+    try {
+      h.validate.mockResolvedValue({ id: 'u2', email: 'boss@b.c' })
+      const res = await me(req)
+      expect(res.jsonBody).toEqual({ user: { id: 'u2', email: 'boss@b.c', isAdmin: true } })
+    } finally {
+      delete process.env.ADMIN_EMAILS
+    }
   })
 
   it('40613: 503', async () => {

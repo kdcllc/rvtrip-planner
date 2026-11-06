@@ -1,6 +1,7 @@
 // POST /api/login: password login with per-account lockout and non-enumerating errors.
 import { app } from '@azure/functions'
 import type { HttpRequest, HttpResponseInit } from '@azure/functions'
+import { isAdminEmail } from '../shared/admin'
 import { query, sql } from '../shared/db'
 import { csrfCookie, csrfGuard, error, fromException, json, sessionCookie, withCookies } from '../shared/http'
 import { verify, verifyAgainstDummy } from '../shared/password'
@@ -77,7 +78,7 @@ export async function login(req: HttpRequest): Promise<HttpResponseInit> {
       id: { type: sql.UniqueIdentifier, value: user.id },
     })
     const session = await createSession(user.id)
-    const res = json<LoginResponse>({ user: { id: user.id, email: user.email } })
+    const res = json<LoginResponse>({ user: { id: user.id, email: user.email, isAdmin: isAdminEmail(user.email) } })
     return withCookies(res, sessionCookie(session.token, session.maxAgeSeconds), csrfCookie())
   } catch (err) {
     return fromException(err)

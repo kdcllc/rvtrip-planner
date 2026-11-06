@@ -6,6 +6,8 @@ import { requireSetting } from '../shared/config'
 import { query, sql } from '../shared/db'
 import { csrfCookie, csrfGuard, error, fromException, json, sessionCookie, withCookies } from '../shared/http'
 import { hash } from '../shared/password'
+import { isAdminEmail } from '../shared/admin'
+import { buildRegisterWithInviteCodeBatch } from '../shared/inviteCodes'
 import { createSession } from '../shared/session'
 import type { RegisterResponse } from '../shared/types'
 
@@ -40,7 +42,9 @@ export async function register(req: HttpRequest): Promise<HttpResponseInit> {
     }
     if (typeof body !== 'object' || body === null) return error(400, 'Invalid request')
 
-    if (!inviteMatches(body.inviteCode)) return error(403, 'Invalid invite code')
+    const provided = typeof body.inviteCode === 'string' ? body.inviteCode : ''
+    if (provided === '') return error(403, 'Invalid invite code')
+    const shared = inviteMatches(provided)
 
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     const password = typeof body.password === 'string' ? body.password : ''
@@ -52,14 +56,23 @@ export async function register(req: HttpRequest): Promise<HttpResponseInit> {
     const passwordHash = await hash(password)
     let userId: string
     try {
-      const result = await query<{ id: string }>(
-        'INSERT INTO dbo.users (email, password_hash) OUTPUT INSERTED.id VALUES (@email, @passwordHash)',
-        {
-          email: { type: sql.NVarChar(320), value: email },
-          passwordHash: { type: sql.NVarChar(255), value: passwordHash },
-        },
-      )
-      userId = result.recordset[0].id
+      if (shared) {
+        const result = await query<{ id: string }>(
+          'INSERT INTO dbo.users (email, password_hash) OUTPUT INSERTED.id VALUES (@email, @passwordHash)',
+          {
+            email: { type: sql.NVarChar(320), value: email },
+            passwordHash: { type: sql.NVarChar(255), value: passwordHash },
+          },
+        )
+        userId = result.recordset[0].id
+      } else {
+        // Single-use code: consume + create user + mark request registered, atomically.
+        const batch = buildRegisterWithInviteCodeBatch(provided, email, passwordHash)
+        const result = await query<{ id: string | null }>(batch.text, batch.params)
+        const id = result.recordset[0]?.id
+        if (!id) return error(403, 'Invalid invite code')
+        userId = id
+      }
     } catch (err) {
       // Generic, does not confirm whether the address already exists.
       if (isDuplicateKey(err)) return error(400, 'Unable to complete registration')
@@ -67,7 +80,7 @@ export async function register(req: HttpRequest): Promise<HttpResponseInit> {
     }
 
     const session = await createSession(userId)
-    const res = json<RegisterResponse>({ user: { id: userId, email } }, 201)
+    const res = json<RegisterResponse>({ user: { id: userId, email, isAdmin: isAdminEmail(email) } }, 201)
     return withCookies(res, sessionCookie(session.token, session.maxAgeSeconds), csrfCookie())
   } catch (err) {
     return fromException(err)

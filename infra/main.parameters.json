@@ -21,6 +21,9 @@
     },
     "inviteCode": {
       "value": "${INVITE_CODE}"
+    },
+    "adminEmails": {
+      "value": "${ADMIN_EMAILS=travel@kingdavidconsulting.com}"
     }
   }
 }

@@ -42,6 +42,8 @@ jobs:
       AZURE_SQL_ADMIN_PASSWORD: ${{ secrets.AZURE_SQL_ADMIN_PASSWORD }}
       SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
       INVITE_CODE: ${{ secrets.INVITE_CODE }}
+      # Optional: comma-separated admin emails (infra default applies when empty).
+      ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS }}
 
     steps:
       - name: Only from master
@@ -80,6 +82,12 @@ jobs:
 
       - name: Create azd environment
         run: azd env new "$AZURE_ENV_NAME" --subscription "$AZURE_SUBSCRIPTION_ID" --location "$AZURE_LOCATION" --no-prompt
+
+      - name: Set optional ADMIN_EMAILS
+        run: |
+          if [ -n "$ADMIN_EMAILS" ]; then
+            azd env set ADMIN_EMAILS "$ADMIN_EMAILS"
+          fi
 
       - name: Preview
         run: |

@@ -1,110 +1,135 @@
 import type { Trip, TripsState, TripStop } from '../../domain/trip/types'
 import type { ApiResult } from '../../types/auth'
-import { apiGet, apiPut } from '../auth/apiClient'
+import type {
+  DeleteTripResponse,
+  GetTripsResponse,
+  ImportTripsRequest,
+  ImportTripsResponse,
+  PutTripRequest,
+  PutTripResponse,
+  PutTripSelectionRequest,
+  PutTripSelectionResponse,
+  VersionedTrip,
+} from '../../types/api'
+import { apiDelete, apiGet, apiPost, apiPut } from '../auth/apiClient'
 import { createId } from '../../utils/id'
 
 const LEGACY_TRIPS_KEY = 'trip-planner-trips'
 const LEGACY_EXPORT_KEY = 'exported-trips'
+const IMPORT_CHUNK_SIZE = 200
 
-/** Typed outcome of a trips load. There is no local fallback: failures are surfaced. */
-export type LoadTripsResult =
-  | { kind: 'loaded'; state: TripsState; isNew: boolean }
+type CommonFailure =
   | { kind: 'database-waking'; retryAfterSeconds?: number }
   | { kind: 'session-expired' }
+
+export type LoadTripsResult =
+  | { kind: 'loaded'; trips: VersionedTrip[]; currentTripId: string | null }
+  | CommonFailure
   | { kind: 'error'; message: string }
 
-/** Typed outcome of a trips save. A failed save never throws; the caller keeps its state. */
-export type SaveTripsResult =
+export type SaveTripResult =
+  | { kind: 'saved'; version: number }
+  | { kind: 'conflict'; current: VersionedTrip | null }
+  | CommonFailure
+  | { kind: 'error'; message: string; retryable: boolean }
+
+export type SimpleSaveResult =
   | { kind: 'saved' }
-  | { kind: 'database-waking'; retryAfterSeconds?: number }
-  | { kind: 'session-expired' }
+  | CommonFailure
+  | { kind: 'error'; message: string }
+
+export type ImportTripsResult =
+  | { kind: 'imported'; imported: string[]; skipped: string[] }
+  | CommonFailure
   | { kind: 'error'; message: string }
 
 type Failure = Exclude<ApiResult<unknown>, { kind: 'success' }>
 
-const toFailure = (
-  result: Failure
-):
-  | { kind: 'database-waking'; retryAfterSeconds?: number }
-  | { kind: 'session-expired' }
-  | { kind: 'error'; message: string } => {
+const toCommonFailure = (result: Failure): CommonFailure | null => {
   if (result.kind === 'database-waking') {
     return result.retryAfterSeconds === undefined
       ? { kind: 'database-waking' }
       : { kind: 'database-waking', retryAfterSeconds: result.retryAfterSeconds }
   }
   if (result.kind === 'auth-failure') return { kind: 'session-expired' }
-  return { kind: 'error', message: result.error }
+  return null
 }
 
-const makeDefaultState = (): TripsState => {
-  const now = new Date().toISOString()
-  const trip: Trip = { id: createId(), name: 'My First Trip', stops: [], createdAt: now, updatedAt: now }
-  return { trips: [trip], currentTripId: trip.id }
-}
+const toMessage = (result: Failure): string =>
+  result.kind === 'database-waking' ? 'Database is waking up' : result.error
 
-/** Load trips from the server (GET /api/trips). */
-export async function loadTripsFromStorage(): Promise<LoadTripsResult> {
-  const result = await apiGet<TripsState>('/api/trips')
-  if (result.kind !== 'success') return toFailure(result)
+/** Load all trips for the signed-in user (GET /api/trips). */
+export async function loadTrips(): Promise<LoadTripsResult> {
+  const result = await apiGet<GetTripsResponse>('/api/trips')
+  if (result.kind !== 'success') {
+    return toCommonFailure(result) ?? { kind: 'error', message: toMessage(result) }
+  }
   const data = result.data
   if (!data || !Array.isArray(data.trips)) {
     return { kind: 'error', message: 'Invalid trips response' }
   }
-  // Default trip only for a genuinely empty server state.
-  if (data.trips.length === 0) {
-    return { kind: 'loaded', state: makeDefaultState(), isNew: true }
-  }
-  const state: TripsState = { trips: data.trips, currentTripId: data.currentTripId ?? null }
-  if (!state.currentTripId) state.currentTripId = state.trips[0].id
-  return { kind: 'loaded', state, isNew: false }
+  return { kind: 'loaded', trips: data.trips, currentTripId: data.currentTripId ?? null }
 }
 
-let inFlight: Promise<SaveTripsResult> | null = null
-let pending: { state: TripsState; waiters: Array<(r: SaveTripsResult) => void> } | null = null
+const isConflictCurrent = (value: unknown): VersionedTrip | null =>
+  value && typeof value === 'object' && 'trip' in value && 'version' in value
+    ? (value as VersionedTrip)
+    : null
 
-const putState = async (state: TripsState): Promise<SaveTripsResult> => {
+/** Save one trip (PUT /api/trips/{id}); baseVersion null creates. Never throws. */
+export async function saveTrip(trip: Trip, baseVersion: number | null): Promise<SaveTripResult> {
   try {
-    const result = await apiPut<{ ok: true }>('/api/trips', state)
-    return result.kind === 'success' ? { kind: 'saved' } : toFailure(result)
-  } catch (error) {
-    return { kind: 'error', message: error instanceof Error ? error.message : 'Save failed' }
-  }
-}
-
-const drain = async (first: TripsState): Promise<SaveTripsResult> => {
-  let result = await putState(first)
-  while (pending) {
-    const batch = pending
-    pending = null
-    result = await putState(batch.state)
-    batch.waiters.forEach((resolve) => resolve(result))
-  }
-  inFlight = null
-  return result
-}
-
-/**
- * Save trips to the server (PUT /api/trips). Last-write-wins: while a save is in flight,
- * later calls coalesce so only the newest state is sent next. Never throws.
- */
-export function saveTripsToStorage(state: TripsState): Promise<SaveTripsResult> {
-  if (!inFlight) {
-    inFlight = drain(state)
-    return inFlight
-  }
-  return new Promise<SaveTripsResult>((resolve) => {
-    if (pending) {
-      pending.state = state
-      pending.waiters.push(resolve)
-    } else {
-      pending = { state, waiters: [resolve] }
+    const body: PutTripRequest = { trip, baseVersion }
+    const result = await apiPut<PutTripResponse>(`/api/trips/${encodeURIComponent(trip.id)}`, body)
+    if (result.kind === 'success') return { kind: 'saved', version: result.data.version }
+    if (result.kind === 'validation-failure' && result.status === 409) {
+      const current = (result as { current?: unknown }).current
+      return { kind: 'conflict', current: isConflictCurrent(current) }
     }
-  })
+    const common = toCommonFailure(result)
+    if (common) return common
+    // Network failure (status 0) and 5xx are retryable; other 4xx are not.
+    const retryable = result.kind === 'error' && (result.status === 0 || result.status >= 500)
+    return { kind: 'error', message: toMessage(result), retryable }
+  } catch (error) {
+    return { kind: 'error', message: error instanceof Error ? error.message : 'Save failed', retryable: true }
+  }
+}
+
+const simple = (result: ApiResult<unknown>): SimpleSaveResult => {
+  if (result.kind === 'success') return { kind: 'saved' }
+  return toCommonFailure(result) ?? { kind: 'error', message: toMessage(result) }
+}
+
+/** Delete one trip (DELETE /api/trips/{id}). */
+export async function deleteTrip(tripId: string): Promise<SimpleSaveResult> {
+  return simple(await apiDelete<DeleteTripResponse>(`/api/trips/${encodeURIComponent(tripId)}`))
+}
+
+/** Persist the current-trip selection (PUT /api/trip-selection). */
+export async function saveTripSelection(currentTripId: string | null): Promise<SimpleSaveResult> {
+  const body: PutTripSelectionRequest = { currentTripId }
+  return simple(await apiPut<PutTripSelectionResponse>('/api/trip-selection', body))
+}
+
+/** Import trips (POST /api/trips/import) in chunks of at most 200; results are merged. */
+export async function importTrips(trips: Trip[]): Promise<ImportTripsResult> {
+  const imported: string[] = []
+  const skipped: string[] = []
+  for (let i = 0; i < trips.length; i += IMPORT_CHUNK_SIZE) {
+    const body: ImportTripsRequest = { trips: trips.slice(i, i + IMPORT_CHUNK_SIZE) }
+    const result = await apiPost<ImportTripsResponse>('/api/trips/import', body)
+    if (result.kind !== 'success') {
+      return toCommonFailure(result) ?? { kind: 'error', message: toMessage(result) }
+    }
+    imported.push(...result.data.imported)
+    skipped.push(...result.data.skipped)
+  }
+  return { kind: 'imported', imported, skipped }
 }
 
 /**
- * LEGACY IMPORT ONLY (task 13 first-login import). Reads the old localStorage keys
+ * LEGACY IMPORT ONLY (first-login legacy import). Reads the old localStorage keys
  * (`trip-planner-trips`, `exported-trips`) and returns a TripsState, or null when none.
  * Not a fallback for normal operation.
  */
@@ -139,7 +164,7 @@ export function readLegacyLocalTrips(): TripsState | null {
   return null
 }
 
-/** LEGACY IMPORT ONLY (task 13): removes the old localStorage trip keys after a successful import. */
+/** LEGACY IMPORT ONLY (first-login legacy import): removes the old localStorage trip keys after a successful import. */
 export function clearLegacyLocalTrips(): void {
   try {
     window.localStorage.removeItem(LEGACY_TRIPS_KEY)

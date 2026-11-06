@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiGet, apiPost } from './apiClient'
+import { apiDelete, apiGet, apiPost } from './apiClient'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -106,5 +106,34 @@ describe('apiClient', () => {
     fetchMock.mockRejectedValue(new TypeError('offline'))
     const result = await apiGet('/api/me')
     expect(result).toEqual({ kind: 'error', status: 0, error: 'Network error' })
+  })
+
+  it('apiDelete sends DELETE with CSRF header, credentials and no body', async () => {
+    setCookie('csrf_token=tokD')
+    fetchMock.mockResolvedValue(json(200, { ok: true }))
+    const result = await apiDelete('/api/trips/a')
+    expect(result.kind).toBe('success')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/trips/a')
+    expect(init.method).toBe('DELETE')
+    expect(init.credentials).toBe('same-origin')
+    expect(init.body).toBeUndefined()
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBe('tokD')
+  })
+
+  it('apiDelete maps 401 to auth-failure and 503 to database-waking', async () => {
+    setCookie('csrf_token=t')
+    fetchMock.mockResolvedValueOnce(json(401, { error: 'no' }))
+    expect((await apiDelete('/api/trips/a')).kind).toBe('auth-failure')
+    fetchMock.mockResolvedValue(json(503, {}, { 'Retry-After': '0' }))
+    expect((await apiDelete('/api/trips/a', { maxWakeRetries: 0 })).kind).toBe('database-waking')
+  })
+
+  it('keeps the current record on a 409 body', async () => {
+    setCookie('csrf_token=t')
+    const current = { trip: { id: 'a' }, version: 4 }
+    fetchMock.mockResolvedValue(json(409, { error: 'conflict', code: 'VERSION_CONFLICT', current }))
+    const result = await apiPost('/api/trips/a', {})
+    expect(result).toMatchObject({ kind: 'validation-failure', status: 409, code: 'VERSION_CONFLICT', current })
   })
 })

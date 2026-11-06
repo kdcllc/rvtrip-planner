@@ -1,5 +1,6 @@
 // Session create/validate/revoke against dbo.sessions (see db/migrations/001-initial.sql).
 import { randomBytes } from 'node:crypto'
+import { isAdminEmail } from './admin'
 import { query, sql } from './db'
 import { readCookie, SESSION_COOKIE, type RequestLike } from './http'
 import type { ApiUser } from './types'
@@ -44,7 +45,7 @@ export async function validateSession(request: RequestLike): Promise<ApiUser | n
   if (!row) return null
   await purgeExpiredForUser(row.id)
   if (new Date(row.expires_at).getTime() <= Date.now()) return null
-  return { id: row.id, email: row.email }
+  return { id: row.id, email: row.email, isAdmin: isAdminEmail(row.email) }
 }
 
 async function purgeExpiredForUser(userId: string): Promise<void> {

@@ -40,7 +40,7 @@ describe('AuthProvider', () => {
     mocked.getCurrentUser.mockResolvedValue({
       kind: 'success',
       status: 200,
-      data: { user: { id: 'u1', email: 'a@b.co' } },
+      data: { user: { id: 'u1', email: 'a@b.co', isAdmin: false } },
     })
     renderProvider()
     expect(screen.getByTestId('status')).toHaveTextContent('checking')

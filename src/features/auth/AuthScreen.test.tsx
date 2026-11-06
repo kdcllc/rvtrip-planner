@@ -78,6 +78,32 @@ describe('AuthScreen routing', () => {
   })
 })
 
+describe('AuthScreen entry points', () => {
+  it('opens in register mode and shows Back only when onBack is given', async () => {
+    const user = userEvent.setup()
+    const onBack = vi.fn()
+    const { unmount } = render(<AuthScreen initialMode="register" onBack={onBack} />)
+    expect(screen.getByRole('heading', { name: 'Create account' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '← Back' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+    unmount()
+    render(<AuthScreen />)
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '← Back' })).not.toBeInTheDocument()
+  })
+  it('reset token wins over initialMode', () => {
+    setUrl('/reset-password?token=abc123')
+    render(<AuthScreen initialMode="register" />)
+    expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
+  })
+  it('prefills the invite code from ?invite= and removes it from the URL', () => {
+    setUrl('/?invite=abc&x=1')
+    render(<RegisterForm onLogin={noop} />)
+    expect(screen.getByLabelText('Invite code')).toHaveValue('abc')
+    expect(window.location.search).toBe('?x=1')
+  })
+})
+
 describe('validation', () => {
   it('register rejects short password, mismatch and missing invite', async () => {
     const user = userEvent.setup()

@@ -8,7 +8,7 @@ Before starting, ensure you have:
 - [ ] Azure Developer CLI installed (`azd version`)
 - [ ] Node.js and npm installed (`node --version`)
 - [ ] Azure subscription access
-- [ ] Environment secrets set in the azd environment: `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`; never commit values)
+- [ ] Environment secrets set in the azd environment: `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`; never commit values). Optionally set `ADMIN_EMAILS` (comma-separated admin addresses; defaults to `travel@kingdavidconsulting.com`)
 
 ## Quick Start Commands
 
@@ -29,11 +29,11 @@ This single command will:
 - Prompt for environment name (e.g., "prod")
 - Prompt for Azure region (e.g., "eastus2")
 - Create the Azure Static Web App, Azure SQL server and database (`AZURE_SQL_LOCATION`, default `centralus`), and Azure Communication Services email
-- Apply the app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`) to the Static Web App
+- Apply the app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) to the Static Web App
 - Build the SPA and the bundled API (`swa-cli.config.json`: `env: production`, `apiLocation: api/scripts`)
 - Deploy to Azure
 
-After the first provision, apply the database schema once with `scripts/db-migrate.sh` (see `db/README.md`) using a connection string with DDL rights. `azd` does not run it.
+After the first provision, apply the database schema once with `scripts/db-migrate.sh` (see `db/README.md`) using a connection string with DDL rights. `azd` does not run it. When upgrading an existing deployment to this release, apply migration `002-per-trip-and-invites.sql` the same way before deploying the new API (it backfills existing trips into per-trip rows).
 
 **Expected time:** a few minutes (a deploy alone took about 1 minute in the recorded run)
 

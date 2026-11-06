@@ -8,14 +8,19 @@ import './auth.css'
 
 type AuthView = 'login' | 'register' | 'forgot' | 'reset'
 
-const initialView = (): AuthView => {
-  const { pathname, search } = window.location
-  if (pathname.includes('reset-password') || new URLSearchParams(search).has('token')) return 'reset'
-  return 'login'
+type AuthScreenProps = {
+  initialMode?: 'login' | 'register'
+  onBack?: () => void
 }
 
-export const AuthScreen = () => {
-  const [view, setView] = useState<AuthView>(initialView)
+const initialViewFor = (mode: 'login' | 'register'): AuthView => {
+  const { pathname, search } = window.location
+  if (pathname.includes('reset-password') || new URLSearchParams(search).has('token')) return 'reset'
+  return mode
+}
+
+export const AuthScreen = ({ initialMode = 'login', onBack }: AuthScreenProps = {}) => {
+  const [view, setView] = useState<AuthView>(() => initialViewFor(initialMode))
 
   const goLogin = () => {
     // Leave the reset URL so a reload does not reopen the reset view.
@@ -29,6 +34,9 @@ export const AuthScreen = () => {
         <ThemeToggle />
       </div>
       <div className="auth-card">
+        {onBack && (
+          <button type="button" className="auth-link" onClick={onBack}>← Back</button>
+        )}
         <h1 className="auth-brand">RV Trip Planner</h1>
         {view === 'login' && (
           <LoginForm onForgotPassword={() => setView('forgot')} onRegister={() => setView('register')} />

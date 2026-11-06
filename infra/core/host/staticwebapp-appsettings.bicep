@@ -20,6 +20,8 @@ param sessionSecret string
 @secure()
 param inviteCode string
 
+param adminEmails string
+
 resource site 'Microsoft.Web/staticSites@2023-01-01' existing = {
   name: staticSiteName
 }
@@ -39,5 +41,6 @@ resource appSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
     APP_BASE_URL: appBaseUrl
     INVITE_CODE: inviteCode
     ACS_SENDER_ADDRESS: acsSenderAddress
+    ADMIN_EMAILS: adminEmails
   }
 }
