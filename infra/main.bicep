@@ -42,6 +42,32 @@ param inviteCode string
 @description('Comma-separated admin email addresses (also the access-request notification recipients)')
 param adminEmails string = 'travel@kingdavidconsulting.com'
 
+@description('Custom email sending domain (e.g. example.com). Empty = no custom domain; the Azure-managed domain is used.')
+param customEmailDomain string = ''
+
+@description('Local part of the sender address on the custom domain')
+param customSenderUsername string = 'rvtrip'
+
+@description('Display name of the sender on the custom domain')
+param customSenderDisplayName string = 'RV Trip Planner'
+
+@description('Set to the string true to send from the custom domain (use it once the domain is verified). Turning it on only changes linkedDomains on the communication service, a Modify, so no resource is Replaced or Deleted.')
+param useCustomEmailDomain string = 'false'
+
+@description('Existing Azure DNS zone that receives the email verification and DKIM records. Empty = DNS records are not managed here.')
+param emailDnsZoneName string = ''
+
+@description('Resource group (same subscription) of the DNS zone')
+param emailDnsZoneResourceGroup string = ''
+
+@description('Apex TXT values already on the zone that must be preserved (the apex TXT set is fully owned by the emailDns module)')
+param existingApexTxtValues array = [
+  'MS=ms76531344'
+  'v=spf1 include:spf.protection.outlook.com -all'
+  'jptlfq9wh6c6zgb3wykxxzlfg00phpm5'
+  'google-site-verification=meqoDQQNAfzllMDTjwZDXo9scXEVdIfO3kPsgMbrwP0'
+]
+
 // Tags that should be applied to all resources
 var tags = {
   'azd-env-name': environmentName
@@ -86,7 +112,28 @@ module communication 'core/communication/communication-services.bicep' = {
   params: {
     name: 'acs-${uniqueString(rg.id)}'
     emailServiceName: 'email-${uniqueString(rg.id)}'
+    customEmailDomain: customEmailDomain
+    customSenderUsername: customSenderUsername
+    customSenderDisplayName: customSenderDisplayName
+    useCustomEmailDomain: useCustomEmailDomain
     tags: tags
+  }
+}
+
+// DNS records for the custom email domain, written into the existing zone (cross-RG, same subscription).
+// The deploying identity (local login AND the CI federated identity) needs the DNS Zone Contributor
+// role on emailDnsZoneResourceGroup.
+module emailDns 'core/communication/email-dns-records.bicep' = if (!empty(customEmailDomain) && !empty(emailDnsZoneName) && !empty(emailDnsZoneResourceGroup)) {
+  name: 'email-dns'
+  scope: resourceGroup(emailDnsZoneResourceGroup)
+  params: {
+    dnsZoneName: emailDnsZoneName
+    existingApexTxtValues: existingApexTxtValues
+    domainVerificationTxt: communication.outputs.domainVerificationTxt
+    dkimRecordName: communication.outputs.dkimRecordName
+    dkimRecordValue: communication.outputs.dkimRecordValue
+    dkim2RecordName: communication.outputs.dkim2RecordName
+    dkim2RecordValue: communication.outputs.dkim2RecordValue
   }
 }
 
@@ -120,3 +167,6 @@ output STATIC_WEB_APP_DEFAULT_HOSTNAME string = staticWebApp.outputs.defaultHost
 output STATIC_WEB_APP_URL string = 'https://${staticWebApp.outputs.defaultHostname}'
 output AZURE_SQL_SERVER_FQDN string = sql.outputs.fqdn
 output AZURE_SQL_DATABASE_NAME string = sql.outputs.databaseName
+output AZURE_EMAIL_SERVICE_NAME string = communication.outputs.emailServiceName
+output AZURE_CUSTOM_EMAIL_DOMAIN string = communication.outputs.customEmailDomainName
+output ACS_SENDER_ADDRESS string = communication.outputs.senderAddress

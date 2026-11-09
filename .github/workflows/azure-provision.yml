@@ -44,6 +44,8 @@ jobs:
       INVITE_CODE: ${{ secrets.INVITE_CODE }}
       # Optional: comma-separated admin emails (infra default applies when empty).
       ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS }}
+      # Optional USE_CUSTOM_EMAIL_DOMAIN: send from the custom email domain (true once it is verified; infra default is false).
+      USE_CUSTOM_EMAIL_DOMAIN: ${{ vars.USE_CUSTOM_EMAIL_DOMAIN }}
 
     steps:
       - name: Only from master
@@ -87,6 +89,12 @@ jobs:
         run: |
           if [ -n "$ADMIN_EMAILS" ]; then
             azd env set ADMIN_EMAILS "$ADMIN_EMAILS"
+          fi
+
+      - name: Set optional USE_CUSTOM_EMAIL_DOMAIN
+        run: |
+          if [ -n "$USE_CUSTOM_EMAIL_DOMAIN" ]; then
+            azd env set USE_CUSTOM_EMAIL_DOMAIN "$USE_CUSTOM_EMAIL_DOMAIN"
           fi
 
       - name: Preview

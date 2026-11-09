@@ -30,6 +30,7 @@ This single command will:
 - Prompt for Azure region (e.g., "eastus2")
 - Create the Azure Static Web App, Azure SQL server and database (`AZURE_SQL_LOCATION`, default `centralus`), and Azure Communication Services email
 - Apply the app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) to the Static Web App
+  - Mail is sent from the Azure-managed `DoNotReply@...azurecomm.net` address until the optional custom email domain is verified and enabled (see the 'Custom email domain' section of `DEPLOYMENT.md`)
 - Build the SPA and the bundled API (`swa-cli.config.json`: `env: production`, `apiLocation: api/scripts`)
 - Deploy to Azure
 

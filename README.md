@@ -138,7 +138,7 @@ azd deploy
 - **Resource Group:** `rg-{environmentName}`
 - **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`) in `AZURE_LOCATION` (East US 2 for the live deployment)
 - **Azure SQL server and database** (free offer, serverless, auto-pause) in `AZURE_SQL_LOCATION`, default `centralus`
-- **Azure Communication Services** with an Azure-managed email domain (password-reset mail)
+- **Azure Communication Services** with an Azure-managed email domain (password-reset, invite and access-request mail), plus an optional custom sender domain (`rvtrip@moedim.dev`) enabled by `USE_CUSTOM_EMAIL_DOMAIN` after DNS verification; see [DEPLOYMENT.md](DEPLOYMENT.md#custom-email-domain)
 - **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`
 - **Default URL:** `https://{name}.azurestaticapps.net`
 - **Custom Domain:** Supports HTTPS with managed certificates (see DEPLOYMENT.md)
@@ -156,7 +156,7 @@ azd deploy
 
 - **Frontend:** React 19 + TypeScript + Vite
 - **Hosting:** Azure Static Web Apps (SPA) with built-in managed Azure Functions (`api/`)
-- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration (the shared `INVITE_CODE` or a single-use invite code, emailed or sent as a link by an admin), and Azure Communication Services email for password reset
+- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration (the shared `INVITE_CODE` or a single-use invite code, emailed or sent as a link by an admin), and Azure Communication Services email (password reset, invites, access-request notifications)
 - **Database:** Azure SQL Database (serverless, free offer); schema in `db/migrations/`
 - **Mapping:** MapLibre GL JS + OpenStreetMap tiles (free)
 - **Routing:** OSRM + OpenRouteService (free, with optional API key)
