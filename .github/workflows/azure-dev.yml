@@ -99,122 +99,16 @@ jobs:
       # Needs, on the resource group: Microsoft.Sql/servers/firewallRules/write+delete (Contributor
       # or SQL Server Contributor) and Static Web App app settings list/write (Contributor).
       - name: Run database migrations
-        run: |
-          set -euo pipefail
-
-          swa_names="$(az resource list --resource-group "$AZURE_RESOURCE_GROUP" \
-            --resource-type Microsoft.Web/staticSites --query "[].name" -o tsv)"
-          if [ -z "$swa_names" ] || [ "$(printf '%s\n' "$swa_names" | wc -l)" -ne 1 ]; then
-            echo "::error::Expected exactly one Static Web App in resource group $AZURE_RESOURCE_GROUP, found: ${swa_names:-none}"
-            exit 1
-          fi
-          SWA_NAME="$swa_names"
-          echo "SWA_NAME=$SWA_NAME" >> "$GITHUB_ENV"
-
-          SQL_CONNECTION_STRING="$(az staticwebapp appsettings list --name "$SWA_NAME" \
-            --resource-group "$AZURE_RESOURCE_GROUP" --query "properties.SQL_CONNECTION_STRING" -o tsv)"
-          if [ -n "$SQL_CONNECTION_STRING" ]; then
-            echo "::add-mask::$SQL_CONNECTION_STRING"
-          fi
-          if [ -z "$SQL_CONNECTION_STRING" ] || [ "$SQL_CONNECTION_STRING" = "null" ]; then
-            echo "::error::SQL_CONNECTION_STRING app setting is empty on Static Web App $SWA_NAME"
-            exit 1
-          fi
-          export SQL_CONNECTION_STRING
-
-          getkey() { # case-insensitive key lookup in the ADO connection string
-            printf '%s' "$SQL_CONNECTION_STRING" | tr ';' '\n' \
-              | awk -F= -v k="$1" 'tolower($1) ~ "^[ ]*" tolower(k) "[ ]*$" { sub(/^[^=]*=/, ""); print; exit }'
-          }
-          PASS="$(getkey Password)"; [ -z "$PASS" ] && PASS="$(getkey PWD)"
-          if [ -n "$PASS" ]; then
-            echo "::add-mask::$PASS"
-          fi
-
-          host="$(getkey Server)"
-          host="${host#tcp:}"; host="${host%%,*}"; host="${host%%.database.windows.net*}"
-          if [ -z "$host" ]; then
-            echo "::error::Could not derive the SQL server name from SQL_CONNECTION_STRING"
-            exit 1
-          fi
-
-          ip=""
-          for url in https://api.ipify.org https://ifconfig.me; do
-            ip="$(curl -fsS --max-time 10 "$url" 2>/dev/null || true)"
-            if printf '%s' "$ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then break; fi
-            ip=""
-          done
-          if [ -z "$ip" ]; then
-            echo "::error::Could not determine the runner public IPv4 address"
-            exit 1
-          fi
-
-          rule="gha-migrate-${{ github.run_id }}-${{ github.run_attempt }}"
-          {
-            echo "MIGRATE_FW_RULE=$rule"
-            echo "MIGRATE_SQL_SERVER=$host"
-          } >> "$GITHUB_ENV"
-
-          if ! az sql server firewall-rule create --resource-group "$AZURE_RESOURCE_GROUP" \
-              --server "$host" --name "$rule" --start-ip-address "$ip" --end-ip-address "$ip" -o none; then
-            echo "::error::Could not create the SQL firewall rule. The deploy identity needs Microsoft.Sql/servers/firewallRules/write (for example Contributor or SQL Server Contributor on resource group $AZURE_RESOURCE_GROUP)."
-            exit 1
-          fi
-          sleep 20
-
-          if [ -z "${SQLCMD:-}" ]; then SQLCMD="$(command -v sqlcmd || true)"; fi
-          if [ -z "$SQLCMD" ] && [ -x /opt/mssql-tools18/bin/sqlcmd ]; then SQLCMD=/opt/mssql-tools18/bin/sqlcmd; fi
-          if [ -z "$SQLCMD" ]; then
-            . /etc/os-release
-            curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/${VERSION_ID}/prod ${VERSION_CODENAME} main" \
-              | sudo tee /etc/apt/sources.list.d/mssql-release.list > /dev/null
-            sudo apt-get update -y
-            sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
-            SQLCMD=/opt/mssql-tools18/bin/sqlcmd
-          fi
-          export SQLCMD
-
-          ok=0
-          for attempt in 1 2 3; do
-            echo "Migration attempt $attempt of 3"
-            if ./scripts/db-migrate.sh; then ok=1; break; fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Attempt $attempt failed (serverless database may be resuming); retrying in 30s"
-              sleep 30
-            fi
-          done
-          if [ "$ok" -ne 1 ]; then
-            echo "::error::Database migrations failed after 3 attempts"
-            exit 1
-          fi
+        run: ./scripts/ci-db.sh migrate
 
       - name: Set ADMIN_EMAILS app setting
         env:
           ADMIN_EMAILS_WANTED: ${{ vars.ADMIN_EMAILS || 'travel@kingdavidconsulting.com' }}
-        run: |
-          set -euo pipefail
-          current="$(az staticwebapp appsettings list --name "$SWA_NAME" \
-            --resource-group "$AZURE_RESOURCE_GROUP" --query "properties.ADMIN_EMAILS" -o tsv)"
-          if [ "$current" = "$ADMIN_EMAILS_WANTED" ]; then
-            echo "ADMIN_EMAILS already up to date"
-          else
-            az staticwebapp appsettings set --name "$SWA_NAME" --resource-group "$AZURE_RESOURCE_GROUP" \
-              --setting-names "ADMIN_EMAILS=$ADMIN_EMAILS_WANTED" -o none
-            echo "ADMIN_EMAILS updated"
-          fi
+        run: ./scripts/ci-db.sh set-admin-emails
 
       - name: Deploy
         run: azd deploy --no-prompt
 
       - name: Remove migration firewall rule
         if: always()
-        run: |
-          set -euo pipefail
-          if [ -z "${MIGRATE_FW_RULE:-}" ] || [ -z "${MIGRATE_SQL_SERVER:-}" ]; then
-            echo "No migration firewall rule was recorded; nothing to remove"
-            exit 0
-          fi
-          az sql server firewall-rule delete --resource-group "$AZURE_RESOURCE_GROUP" \
-            --server "$MIGRATE_SQL_SERVER" --name "$MIGRATE_FW_RULE" -o none \
-            || echo "::warning::Could not delete firewall rule $MIGRATE_FW_RULE (already removed or missing permission)"
+        run: ./scripts/ci-db.sh cleanup

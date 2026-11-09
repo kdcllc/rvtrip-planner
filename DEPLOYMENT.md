@@ -295,6 +295,7 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 ### Configuration Files
 - `azure.yaml` - Azure Developer CLI configuration (defines services and hooks)
 - `.github/workflows/azure-dev.yml` - GitHub Actions workflow (DB migrations, then azd deploy with federated credential)
+- `scripts/ci-db.sh` - CI database steps called by the deploy workflow: `migrate` (temporary firewall rule + `scripts/db-migrate.sh`), `set-admin-emails`, `cleanup`
 - `swa-cli.config.json` - SWA CLI deploy settings used by `azd` (`env`, `apiLocation`, build commands)
 - `staticwebapp.config.json` - SWA routing, headers, `platform.apiRuntime`
 - `DEPLOYMENT.md` - This deployment guide
