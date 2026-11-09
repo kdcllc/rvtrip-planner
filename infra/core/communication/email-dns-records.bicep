@@ -5,6 +5,7 @@
 // value NOT listed in existingApexTxtValues is removed on every provision, so
 // pass every TXT value that must survive (SPF, MS=, site verifications, ...).
 // MX, SPF and all other record types are left untouched.
+// The _dmarc TXT record set is owned by this module when dmarcPolicy is set.
 //
 // TXT length: values longer than 255 chars are split into 255-char chunks
 // inside a single record's value array (DNS character-string limit).
@@ -20,6 +21,13 @@ param dkimRecordValue string
 param dkim2RecordName string
 param dkim2RecordValue string
 param ttl int = 3600
+
+@allowed(['', 'none', 'quarantine', 'reject'])
+@description('DMARC policy for _dmarc. Empty = no _dmarc record is managed.')
+param dmarcPolicy string = ''
+
+@description('Mailbox for DMARC aggregate reports (rua). Empty = no rua tag.')
+param dmarcReportAddress string = ''
 
 // Relative names inside the zone (strip a trailing ".<zone>" if present).
 var zoneSuffix = '.${dnsZoneName}'
@@ -61,6 +69,21 @@ resource dkim2Cname 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
     CNAMERecord: {
       cname: dkim2RecordValue
     }
+  }
+}
+
+resource dmarcTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = if (!empty(dmarcPolicy)) {
+  parent: zone
+  name: '_dmarc'
+  properties: {
+    TTL: ttl
+    TXTRecords: [
+      {
+        value: [
+          empty(dmarcReportAddress) ? 'v=DMARC1; p=${dmarcPolicy}' : 'v=DMARC1; p=${dmarcPolicy}; rua=mailto:${dmarcReportAddress}'
+        ]
+      }
+    ]
   }
 }
 
