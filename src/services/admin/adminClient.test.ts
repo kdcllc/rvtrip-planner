@@ -34,7 +34,7 @@ describe('adminClient', () => {
     fetchMock.mockResolvedValue(json(200, { requests: [req] }))
     expect(await listInviteRequests()).toEqual({ kind: 'ok', requests: [req] })
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/admin/invite-requests')
+    expect(url).toBe('/api/manage/invite-requests')
     expect(init.method).toBe('GET')
   })
 
@@ -55,7 +55,7 @@ describe('adminClient', () => {
     fetchMock.mockResolvedValue(json(200, { request: req }))
     expect(await sendInvite('r 1')).toEqual({ kind: 'ok', request: req })
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/admin/invite-requests/r%201/invite')
+    expect(url).toBe('/api/manage/invite-requests/r%201/invite')
     expect(init.method).toBe('POST')
   })
 
@@ -63,7 +63,7 @@ describe('adminClient', () => {
     fetchMock.mockResolvedValue(json(200, { request: { ...req, status: 'declined' } }))
     const r = await declineInvite('r1')
     expect(r.kind === 'ok' && r.request.status).toBe('declined')
-    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/admin/invite-requests/r1/decline')
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/manage/invite-requests/r1/decline')
   })
 
   it('maps email-failed, conflict, forbidden, session-expired, waking and error for actions', async () => {

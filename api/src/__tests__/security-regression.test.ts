@@ -564,9 +564,9 @@ describe('error responses never leak internals', () => {
 describe('admin routes are admin-only', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000'
   const routes: Array<[string, (jar: Cookies) => Promise<{ status?: number }>]> = [
-    ['GET /admin/invite-requests', (jar) => listInviteRequests(Object.assign(mkReq('GET', jar), { params: {} }) as never)],
-    ['POST /admin/invite-requests/{id}/invite', (jar) => sendInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
-    ['POST /admin/invite-requests/{id}/decline', (jar) => declineInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
+    ['GET /manage/invite-requests', (jar) => listInviteRequests(Object.assign(mkReq('GET', jar), { params: {} }) as never)],
+    ['POST /manage/invite-requests/{id}/invite', (jar) => sendInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
+    ['POST /manage/invite-requests/{id}/decline', (jar) => declineInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
   ]
   const touchedInvites = () => h.queryFn.mock.calls.some((c) => /invite_requests|invite_codes/.test(c[0]))
 
