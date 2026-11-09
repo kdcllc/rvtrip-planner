@@ -24,6 +24,18 @@
     },
     "adminEmails": {
       "value": "${ADMIN_EMAILS=travel@kingdavidconsulting.com}"
+    },
+    "customEmailDomain": {
+      "value": "${CUSTOM_EMAIL_DOMAIN=moedim.dev}"
+    },
+    "useCustomEmailDomain": {
+      "value": "${USE_CUSTOM_EMAIL_DOMAIN=false}"
+    },
+    "emailDnsZoneName": {
+      "value": "${EMAIL_DNS_ZONE_NAME=moedim.dev}"
+    },
+    "emailDnsZoneResourceGroup": {
+      "value": "${EMAIL_DNS_ZONE_RESOURCE_GROUP=moedim-rg}"
     }
   }
 }

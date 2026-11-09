@@ -30,5 +30,6 @@ hooks:
         echo ""
         echo "App settings were applied by Bicep. Next step: run 'azd deploy' to publish the SPA and API"
         echo ""
+        sh scripts/acs-verify-domain.sh || true
       interactive: false
       continueOnError: true

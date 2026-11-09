@@ -16,7 +16,7 @@ Azure Static Web Apps is a service that automatically builds and deploys full-st
 - **SPA** built with Vite into `dist/`, served by Static Web Apps.
 - **API**: Azure Functions (Node 22) in `api/`, deployed as the SWA built-in managed Functions. `swa-cli.config.json` sets `env: production`, `apiLocation: api/scripts`, `apiBuildCommand: node build-deploy.mjs` (an esbuild bundle), and `staticwebapp.config.json` sets `platform.apiRuntime: node:22`.
 - **Database**: Azure SQL Database, serverless, free offer, auto-pause. It lives in **centralus** (`AZURE_SQL_LOCATION`, default `centralus`) while the Static Web App is in **eastus2**. The SQL server allows Azure services through the `AllowAzureServices` firewall rule.
-- **Email**: Azure Communication Services with an Azure-managed domain, used for password reset.
+- **Email**: Azure Communication Services with an Azure-managed domain (always kept; sender `DoNotReply@<guid>.azurecomm.net`), used for password reset, invite emails and admin invite-request notifications. An optional custom email domain can be linked as the sender (see [Custom email domain](#custom-email-domain)).
 - **Deploys go through `azd` only** (`azd up`, `azd provision`, `azd deploy`), locally or from CI. The old deployment-token workflow (`Azure/static-web-apps-deploy`) and `scripts/deploy.sh` no longer exist.
 
 Infrastructure is in `infra/` (`main.bicep` plus modules in `infra/core/{communication,database,host,storage}`).
@@ -72,7 +72,7 @@ You'll be prompted for an environment name (used in resource naming), subscripti
 azd provision
 ```
 
-This creates the resource group `rg-{environmentName}`, the Static Web App, the SQL server and database, the Communication Services email resources, and applies the app settings.
+This creates the resource group `rg-{environmentName}`, the Static Web App, the SQL server and database, the Communication Services email resources (including the custom email domain and its DNS records, which the defaults enable; see [Custom email domain](#custom-email-domain)), and applies the app settings.
 
 ### Step 4: Apply the database schema
 
@@ -164,6 +164,31 @@ It checks out, verifies the required repository variables, installs Node 22, run
 
 Infrastructure is provisioned manually: run `azd provision` locally, or the **Provision Azure infrastructure (manual)** workflow (`.github/workflows/azure-provision.yml`) from the Actions tab on `master`. It always runs `azd provision --preview`, refuses to apply a preview that deletes or replaces a resource, and applies only when the `apply` box is checked. It needs the repository secrets `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET` and `INVITE_CODE` (the same values as your azd environment; different values rotate them) and, for a custom domain, the repository variable `APP_BASE_URL`.
 
+### Custom email domain
+
+Linked as the sender only when `USE_CUSTOM_EMAIL_DOMAIN` is `true`. By default mail is sent from the Azure-managed domain (`DoNotReply@<guid>.azurecomm.net`), which is always kept. With a custom domain, `infra/core/communication/communication-services.bicep` adds a CustomerManaged ACS email domain (`CUSTOM_EMAIL_DOMAIN`, default `moedim.dev`) and a sender username (`rvtrip`, display name `RV Trip Planner`). When `USE_CUSTOM_EMAIL_DOMAIN` is `true` the domain is linked and the sender becomes `rvtrip@<domain>` (output `ACS_SENDER_ADDRESS`); otherwise the sender stays the managed one.
+
+Note that `infra/main.parameters.json` defaults `CUSTOM_EMAIL_DOMAIN`, `EMAIL_DNS_ZONE_NAME` and `EMAIL_DNS_ZONE_RESOURCE_GROUP` to `moedim.dev` / `moedim-rg`, so every `azd provision` creates the custom domain and writes the DNS records, which requires DNS Zone Contributor on `moedim-rg`. A deployment without this zone must change those defaults in `infra/main.parameters.json`; an empty value skips the custom domain and the DNS module (see the `if` in `infra/main.bicep`).
+
+- **DNS records**: when the domain, `EMAIL_DNS_ZONE_NAME` (default `moedim.dev`) and `EMAIL_DNS_ZONE_RESOURCE_GROUP` (default `moedim-rg`) are all non-empty, `infra/core/communication/email-dns-records.bicep` writes into that existing Azure DNS zone (cross resource group) the apex `@` TXT record set (including the ACS `ms-domain-verification` value) and two DKIM CNAMEs.
+- **Warning, apex TXT ownership**: the deployment fully owns the apex TXT set, so any apex TXT value not listed is removed on each provision. The values to keep are the `existingApexTxtValues` default in `infra/main.bicep` (the zone's current SPF, `MS=` and site-verification values). To add a new apex TXT value, add it to that array and provision again.
+- **Permission (manual step)**: the deploying identity, both your local login and the CI federated identity (`AZURE_CLIENT_ID`), needs **DNS Zone Contributor** on the zone's resource group:
+
+  ```bash
+  az role assignment create --assignee <AZURE_CLIENT_ID> --role "DNS Zone Contributor" \
+    --scope $(az group show -n moedim-rg --query id -o tsv)
+  ```
+
+- **Verification**: the postprovision hook runs `scripts/acs-verify-domain.sh`, which starts ACS verification (Domain, SPF, DKIM, DKIM2) for any type not yet Verified and prints the status. It never fails the deploy and skips when `az` is missing or not logged in. CI logs in with azd only, so CI skips it: start verification with a local `az login` and `azd provision`.
+
+Rollout:
+
+1. Provision with `USE_CUSTOM_EMAIL_DOMAIN` off: the records are written and verification starts, while mail keeps the managed sender.
+2. Wait until all four types (Domain, SPF, DKIM, DKIM2) are Verified; the script prints the status on each provision.
+3. Set `USE_CUSTOM_EMAIL_DOMAIN=true` (`azd env set USE_CUSTOM_EMAIL_DOMAIN true` locally, or the repository variable for CI) and provision again.
+
+Turning the toggle on before verification completes makes the ACS update fail.
+
 ### Step 10: Configure repository variables
 
 `azd pipeline config` creates the federated credential and sets these, or add them under Settings > Secrets and variables > Actions > Variables:
@@ -176,8 +201,9 @@ Infrastructure is provisioned manually: run `azd provision` locally, or the **Pr
 | `AZURE_ENV_NAME` | azd environment name |
 | `AZURE_LOCATION` | azd region |
 | `AZURE_RESOURCE_GROUP` | Resource group holding the Static Web App (`rg-trip-planner`) |
+| `USE_CUSTOM_EMAIL_DOMAIN` (optional) | Provision workflow only: forwarded with `azd env set` when non-empty; `true` sends mail from the custom domain (see [Custom email domain](#custom-email-domain)) |
 
-The workflow fails fast with an error if any is empty. The identity needs a role assignment on the resource group.
+The workflow fails fast with an error if any required variable is empty (`USE_CUSTOM_EMAIL_DOMAIN` is optional). The identity needs a role assignment on the resource group. To write the custom email domain's DNS records it also needs the **DNS Zone Contributor** role on the DNS zone's resource group (`moedim-rg`); see [Custom email domain](#custom-email-domain).
 
 Optional secret: `VITE_OPENROUTE_API_KEY` (third routing fallback).
 
@@ -235,10 +261,10 @@ Optional `.env` for the SPA: `VITE_OPENROUTE_API_KEY` (routing fallback).
 Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) are listed by name in `.env.example`; use `api/local.settings.json` (git-ignored) or your shell.
 
 ### azd environment (provisioning)
-`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`, `ADMIN_EMAILS` (optional, see `infra/main.parameters.json`).
+`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`, `ADMIN_EMAILS` (optional, see `infra/main.parameters.json`), and the custom email domain variables `CUSTOM_EMAIL_DOMAIN` (default `moedim.dev`), `USE_CUSTOM_EMAIL_DOMAIN` (default `false`), `EMAIL_DNS_ZONE_NAME` (default `moedim.dev`), `EMAIL_DNS_ZONE_RESOURCE_GROUP` (default `moedim-rg`).
 
 ### GitHub Actions
-Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional variable `ADMIN_EMAILS` (used by the provision and deploy workflows; the deploy workflow reapplies it on every run, default `travel@kingdavidconsulting.com`); optional secret `VITE_OPENROUTE_API_KEY`.
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional variable `ADMIN_EMAILS` (used by the provision and deploy workflows; the deploy workflow reapplies it on every run, default `travel@kingdavidconsulting.com`); optional variable `USE_CUSTOM_EMAIL_DOMAIN` (provision workflow); optional secret `VITE_OPENROUTE_API_KEY`.
 
 ---
 
@@ -287,7 +313,7 @@ GitHub Actions: lint, tests, DB migrations, azd deploy (federated credential)
 Azure Static Web App (eastus2): SPA from dist/ + managed Functions from api/scripts bundle
    |  /api/* (same origin)
    v
-Azure SQL Database, serverless free offer (centralus)       Azure Communication Services (password-reset email)
+Azure SQL Database, serverless free offer (centralus)       Azure Communication Services (email)
 ```
 
 ## Files in This Project
@@ -295,6 +321,7 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 ### Configuration Files
 - `azure.yaml` - Azure Developer CLI configuration (defines services and hooks)
 - `.github/workflows/azure-dev.yml` - GitHub Actions workflow (DB migrations, then azd deploy with federated credential)
+- `scripts/acs-verify-domain.sh` - azd postprovision step that starts ACS email domain verification and prints its status (never fails the deploy)
 - `scripts/ci-db.sh` - CI database steps called by the deploy workflow: `migrate` (temporary firewall rule + `scripts/db-migrate.sh`), `set-admin-emails`, `cleanup`
 - `swa-cli.config.json` - SWA CLI deploy settings used by `azd` (`env`, `apiLocation`, build commands)
 - `staticwebapp.config.json` - SWA routing, headers, `platform.apiRuntime`
@@ -306,7 +333,8 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 - `infra/core/host/staticwebapp.bicep` - Azure Static Web App module
 - `infra/core/host/staticwebapp-appsettings.bicep` - SWA app settings module
 - `infra/core/database/sql-server.bicep` - SQL server, free-offer database, `AllowAzureServices` rule
-- `infra/core/communication/communication-services.bicep` - Communication Services email
+- `infra/core/communication/communication-services.bicep` - Communication Services email (Azure-managed domain, optional custom domain and sender)
+- `infra/core/communication/email-dns-records.bicep` - Apex TXT and DKIM CNAME records in an existing Azure DNS zone for the custom email domain
 - `infra/core/storage/storage-account.bicep` - Storage account module (not used by the current deployment)
 
 ### Build Configuration
