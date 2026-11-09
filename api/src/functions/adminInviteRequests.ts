@@ -121,20 +121,22 @@ export async function declineInvite(req: HttpRequest): Promise<HttpResponseInit>
   }
 }
 
+// Routes live under /api/manage, not /api/admin: the deployed Functions host behind Static Web Apps
+// answers every /api/admin* request with 404 before it reaches the function (observed live 2026-11-09).
 app.http('adminListInviteRequests', {
-  route: 'admin/invite-requests',
+  route: 'manage/invite-requests',
   methods: ['GET'],
   authLevel: 'anonymous',
   handler: listInviteRequests,
 })
 app.http('adminSendInvite', {
-  route: 'admin/invite-requests/{id}/invite',
+  route: 'manage/invite-requests/{id}/invite',
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: sendInvite,
 })
 app.http('adminDeclineInvite', {
-  route: 'admin/invite-requests/{id}/decline',
+  route: 'manage/invite-requests/{id}/decline',
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: declineInvite,

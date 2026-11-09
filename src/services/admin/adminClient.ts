@@ -37,9 +37,9 @@ const toFailure = (result: Exclude<ApiResult<unknown>, { kind: 'success' }>): Ad
   }
 }
 
-/** List invite requests (GET /api/admin/invite-requests). */
+/** List invite requests (GET /api/manage/invite-requests). */
 export async function listInviteRequests(): Promise<ListInviteRequestsResult> {
-  const result = await apiGet<ListInviteRequestsResponse>('/api/admin/invite-requests')
+  const result = await apiGet<ListInviteRequestsResponse>('/api/manage/invite-requests')
   if (result.kind !== 'success') return toFailure(result)
   if (!result.data || !Array.isArray(result.data.requests)) {
     return { kind: 'error', message: 'Invalid response' }
@@ -49,7 +49,7 @@ export async function listInviteRequests(): Promise<ListInviteRequestsResult> {
 
 const act = async (id: string, action: 'invite' | 'decline'): Promise<InviteActionResult> => {
   const result = await apiPost<InviteActionResponse>(
-    `/api/admin/invite-requests/${encodeURIComponent(id)}/${action}`,
+    `/api/manage/invite-requests/${encodeURIComponent(id)}/${action}`,
     {}
   )
   return result.kind === 'success' ? { kind: 'ok', request: result.data.request } : toFailure(result)

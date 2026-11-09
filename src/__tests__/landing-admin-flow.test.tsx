@@ -154,8 +154,8 @@ describe('admin flow', () => {
       '/api/ping': ok({ ok: true }),
       '/api/me': ok({ user: { id: 'u1', email: isAdmin ? 'admin@example.com' : 'u@example.com', isAdmin } }),
       '/api/trips': ok({ trips: [], currentTripId: null }),
-      '/api/admin/invite-requests': ok({ requests: [pending] }),
-      [`/api/admin/invite-requests/${pending.id}/invite`]: ok({
+      '/api/manage/invite-requests': ok({ requests: [pending] }),
+      [`/api/manage/invite-requests/${pending.id}/invite`]: ok({
         request: { ...pending, status: 'invited', invitedAt: '2026-03-02T09:00:00.000Z', inviteCount: 1 },
       }),
     })
@@ -167,13 +167,13 @@ describe('admin flow', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Access requests' }))
     const dialog = await screen.findByRole('dialog', { name: 'Access requests' })
     expect(await within(dialog).findByText('dana@example.com')).toBeInTheDocument()
-    expect(callsTo('/api/admin/invite-requests', 'GET')).toHaveLength(1)
+    expect(callsTo('/api/manage/invite-requests', 'GET')).toHaveLength(1)
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Send invite' }))
 
     // The default filter is Pending, so the invited row leaves it...
     expect(await within(dialog).findByText('No pending requests')).toBeInTheDocument()
-    const posts = callsTo(`/api/admin/invite-requests/${pending.id}/invite`, 'POST')
+    const posts = callsTo(`/api/manage/invite-requests/${pending.id}/invite`, 'POST')
     expect(posts).toHaveLength(1)
     expect(screen.getByText('Invite sent to dana@example.com')).toBeInTheDocument()
     // ...and shows under Invited with a Resend action and the updated count.
@@ -188,6 +188,6 @@ describe('admin flow', () => {
     renderApp()
     expect(await screen.findByTestId('trip-map')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Access requests' })).not.toBeInTheDocument()
-    expect(callsTo('/api/admin/invite-requests')).toHaveLength(0)
+    expect(callsTo('/api/manage/invite-requests')).toHaveLength(0)
   })
 })

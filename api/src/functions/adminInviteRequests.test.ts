@@ -70,9 +70,9 @@ describe('registration', () => {
   it('registers GET list and POST invite/decline routes', () => {
     const routes = h.registered.map((r) => `${(r.opts.methods as string[])[0]} ${r.opts.route}`)
     expect(routes).toEqual([
-      'GET admin/invite-requests',
-      'POST admin/invite-requests/{id}/invite',
-      'POST admin/invite-requests/{id}/decline',
+      'GET manage/invite-requests',
+      'POST manage/invite-requests/{id}/invite',
+      'POST manage/invite-requests/{id}/decline',
     ])
   })
 })
