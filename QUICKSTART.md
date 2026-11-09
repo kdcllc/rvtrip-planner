@@ -8,7 +8,7 @@ Before starting, ensure you have:
 - [ ] Azure Developer CLI installed (`azd version`)
 - [ ] Node.js and npm installed (`node --version`)
 - [ ] Azure subscription access
-- [ ] Environment secrets set in the azd environment: `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`; never commit values). Optionally set `ADMIN_EMAILS` (comma-separated admin addresses; defaults to `travel@kingdavidconsulting.com`)
+- [ ] Environment secrets set in the azd environment: `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`; never commit values). Optionally set `ADMIN_EMAILS` (comma-separated admin addresses; defaults to `travel@kingdavidconsulting.com`; if you customize it, also set the repository variable `ADMIN_EMAILS`, because the deploy workflow reapplies it from that variable on every push to `master`)
 
 ## Quick Start Commands
 
@@ -33,7 +33,7 @@ This single command will:
 - Build the SPA and the bundled API (`swa-cli.config.json`: `env: production`, `apiLocation: api/scripts`)
 - Deploy to Azure
 
-After the first provision, apply the database schema once with `scripts/db-migrate.sh` (see `db/README.md`) using a connection string with DDL rights. `azd` does not run it. When upgrading an existing deployment to this release, apply migration `002-per-trip-and-invites.sql` the same way before deploying the new API (it backfills existing trips into per-trip rows).
+After the first provision, apply the database schema once with `scripts/db-migrate.sh` (see `db/README.md`) using a connection string with DDL rights. `azd` does not run it, but the deploy workflow applies migrations automatically on each push to `master`, so the manual script is optional after the first provision when you deploy through that workflow (a local `azd deploy` does not apply migrations). When upgrading an existing deployment to this release, apply migration `002-per-trip-and-invites.sql` the same way before deploying the new API (it backfills existing trips into per-trip rows).
 
 **Expected time:** a few minutes (a deploy alone took about 1 minute in the recorded run)
 
