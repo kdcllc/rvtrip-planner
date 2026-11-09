@@ -39,6 +39,8 @@ Applies every file in `db/migrations/` in lexical order; safe to re-run. It exit
 any SQL error. Needs `sqlcmd` (go-sqlcmd or `/opt/mssql-tools18/bin/sqlcmd`; override with `SQLCMD`).
 Against Azure SQL use its connection string (no database creation, no retry; drop `TrustServerCertificate`).
 
+The deploy workflow (`.github/workflows/azure-dev.yml`) runs this script against Azure SQL before its `azd deploy`, so manual runs are optional when you deploy through it. A local `azd deploy` or `azd up` does not apply migrations.
+
 ## Connect
 
 ```bash

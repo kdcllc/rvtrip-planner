@@ -15,6 +15,7 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - Multi-user accounts: register (shared invite code or a single-use emailed invite code), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
 - Each trip is saved separately; saves retry automatically while the serverless database wakes, with a "Retry now" banner and a prompt to keep your version or load the saved one on a conflict
+- Sync button in the header (next to Sign out): flushes pending edits, then reloads your trips from the server and shows "Synced at HH:MM". The server copy wins; trips whose unsaved local edits were replaced are named in a notice. The app also syncs automatically when the tab regains focus or becomes visible, only if nothing is unsaved and at least 30 seconds have passed since the last sync (no polling)
 - Import a single trip or a full backup as JSON (trips whose ids already exist are skipped); "Download all trips" backup and a per-trip Download button
 - Trips from older browser storage are imported into your account on sign-in
 - Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites
@@ -144,7 +145,7 @@ azd deploy
 
 ### GitHub Actions CI/CD
 
-`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then `azd deploy` using a federated credential. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
+`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then, using a federated credential, applies database migrations (`scripts/db-migrate.sh`, opening a temporary SQL firewall rule for the runner and removing it afterwards), sets the `ADMIN_EMAILS` app setting from the optional repository variable `ADMIN_EMAILS` (default `travel@kingdavidconsulting.com`) when it differs, and runs `azd deploy`. A migration failure skips the deploy. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).

@@ -27,13 +27,13 @@ Set these in the azd environment before provisioning (names only; never commit o
 
 - `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`
 - `AZURE_SQL_LOCATION` (optional, defaults to `centralus`; keep it lowercase)
-- `ADMIN_EMAILS` (optional, comma-separated admin addresses that receive invite requests and see "Access requests"; defaults to `travel@kingdavidconsulting.com`; the provision workflow reads it from the optional repository variable `ADMIN_EMAILS`)
+- `ADMIN_EMAILS` (optional, comma-separated admin addresses that receive invite requests and see "Access requests"; defaults to `travel@kingdavidconsulting.com`; the provision and deploy workflows read it from the optional repository variable `ADMIN_EMAILS`; the deploy workflow reapplies it on every run, defaulting to `travel@kingdavidconsulting.com` when the variable is unset, so if you customize it also set the repository variable or the value set via azd/Bicep reverts on the next deploy)
 
 Bicep applies seven app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`. Registration requires the shared `INVITE_CODE` or a single-use emailed invite code.
 
 ### Database schema
 
-`azd` does not apply migrations. After the first provision, run `scripts/db-migrate.sh` once against the Azure SQL database with a connection string that has DDL rights (it is idempotent). Migration 002 (per-trip rows, invite requests and codes) must be applied before deploying the API that uses it. A freshly resumed serverless database can make the first login attempts time out, so retry. See `db/README.md`.
+`azd` does not apply migrations, but the deploy workflow (`.github/workflows/azure-dev.yml`) applies them automatically before the `azd deploy` it runs (see Phase 3; a local `azd deploy` does not apply them). After the first provision you can also run `scripts/db-migrate.sh` manually against the Azure SQL database with a connection string that has DDL rights (it is idempotent). Migration 002 (per-trip rows, invite requests and codes) must be applied before deploying the API that uses it. A freshly resumed serverless database can make the first login attempts time out, so retry. See `db/README.md`.
 
 ### Local development
 
@@ -76,7 +76,7 @@ This creates the resource group `rg-{environmentName}`, the Static Web App, the 
 
 ### Step 4: Apply the database schema
 
-Run `scripts/db-migrate.sh` as described above. When upgrading an existing deployment to the per-trip and invite-request release, apply migration 002 **before** deploying the new API; it backfills existing trips into `dbo.user_trips` and keeps the legacy `dbo.trips` table.
+Run `scripts/db-migrate.sh` as described above (or let the deploy workflow apply it on the next push to `master`). When upgrading an existing deployment to the per-trip and invite-request release, apply migration 002 **before** deploying the new API; it backfills existing trips into `dbo.user_trips` and keeps the legacy `dbo.trips` table.
 
 ### Step 5: Deploy the Application
 
@@ -160,7 +160,7 @@ You can check the status in Azure Portal under "Custom domains."
 
 **Workflow:** `.github/workflows/azure-dev.yml` (push to `master` or manual `workflow_dispatch`).
 
-It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), and finishes with `azd deploy --no-prompt`. It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
+It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), then applies migrations and `ADMIN_EMAILS` before `azd deploy --no-prompt`. The migration steps: `azure/login` (OIDC); find the Static Web App (the resource group must contain exactly one) and read `SQL_CONNECTION_STRING` from its app settings (masked); open a temporary SQL firewall rule `gha-migrate-<run_id>-<attempt>` for the runner IP (from api.ipify.org, fallback ifconfig.me); install `sqlcmd` on the runner if missing; run `scripts/db-migrate.sh` (3 attempts, 30 s apart, since a serverless database may be resuming); set the `ADMIN_EMAILS` app setting only when it differs from the repository variable `ADMIN_EMAILS` (default `travel@kingdavidconsulting.com`); deploy; and always remove the firewall rule. A migration failure skips the deploy. The deploy identity needs, on the resource group, firewall-rule write and delete on the SQL server (SQL Server Contributor or Contributor) and Static Web App app-settings read/write (Contributor). It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
 
 Infrastructure is provisioned manually: run `azd provision` locally, or the **Provision Azure infrastructure (manual)** workflow (`.github/workflows/azure-provision.yml`) from the Actions tab on `master`. It always runs `azd provision --preview`, refuses to apply a preview that deletes or replaces a resource, and applies only when the `apply` box is checked. It needs the repository secrets `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET` and `INVITE_CODE` (the same values as your azd environment; different values rotate them) and, for a custom domain, the repository variable `APP_BASE_URL`.
 
@@ -238,7 +238,7 @@ Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `AC
 `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`, `ADMIN_EMAILS` (optional, see `infra/main.parameters.json`).
 
 ### GitHub Actions
-Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional variable `ADMIN_EMAILS` (used by the provision workflow); optional secret `VITE_OPENROUTE_API_KEY`.
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`; optional variable `ADMIN_EMAILS` (used by the provision and deploy workflows; the deploy workflow reapplies it on every run, default `travel@kingdavidconsulting.com`); optional secret `VITE_OPENROUTE_API_KEY`.
 
 ---
 
@@ -254,7 +254,7 @@ CI must log in with the federated credential (the workflow passes `--federated-c
 The API was not deployed, or the deploy targeted the wrong SWA environment. `swa-cli.config.json` must have `env: production` and `apiLocation: api/scripts`; re-run `azd deploy`.
 
 ### First request after idle returns 500/503 or login times out
-The serverless database auto-pauses and takes up to about a minute to resume. Retry. The API returns 503 with `Retry-After` for this case; migrations run during a resume may time out at login and succeed on retry.
+The serverless database auto-pauses and takes up to about a minute to resume. Retry. The API returns 503 with `Retry-After` for this case; migrations run during a resume may time out at login and succeed on retry (the deploy workflow retries the migration step up to 3 times, 30 s apart).
 
 ### Workflow Doesn't Trigger Automatically
 1. Check the workflow file exists: `.github/workflows/azure-dev.yml`
@@ -281,7 +281,7 @@ This project uses Azure Static Web Apps (not Blob Storage static websites). Chec
 GitHub (push to master)
    |
    v
-GitHub Actions: lint, tests, azd deploy (federated credential)
+GitHub Actions: lint, tests, DB migrations, azd deploy (federated credential)
    |
    v
 Azure Static Web App (eastus2): SPA from dist/ + managed Functions from api/scripts bundle
@@ -294,7 +294,7 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 
 ### Configuration Files
 - `azure.yaml` - Azure Developer CLI configuration (defines services and hooks)
-- `.github/workflows/azure-dev.yml` - GitHub Actions workflow (azd deploy with federated credential)
+- `.github/workflows/azure-dev.yml` - GitHub Actions workflow (DB migrations, then azd deploy with federated credential)
 - `swa-cli.config.json` - SWA CLI deploy settings used by `azd` (`env`, `apiLocation`, build commands)
 - `staticwebapp.config.json` - SWA routing, headers, `platform.apiRuntime`
 - `DEPLOYMENT.md` - This deployment guide

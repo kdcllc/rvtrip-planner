@@ -60,6 +60,7 @@ import { useRoutesEnabled } from '../hooks/useRoutesEnabled'
 import { createOpenSourceRoutingProvider } from '../services/maps/openSourceRouting'
 import { setRoutingProvider } from '../services/maps/routesService'
 import { getRelevantStopIdForDate } from '../utils/date'
+import { mergeServerTrips } from '../domain/trip/syncMerge'
 
 const getTodayKey = () => {
   const now = new Date()
@@ -90,6 +91,7 @@ type FlushOutcome = 'session-expired' | undefined
 const SAVE_DEBOUNCE_MS = 800
 const RETRY_BASE_MS = 5000
 const RETRY_MAX_MS = 60000
+const AUTO_SYNC_MIN_INTERVAL_MS = 30000
 
 const downloadJsonFile = (payload: unknown, fileName: string) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -119,6 +121,8 @@ function Planner({
   const [saveBanner, setSaveBanner] = useState<SaveBanner>({ kind: 'none' })
   const [conflicts, setConflicts] = useState<Record<string, VersionedTrip | null>>({})
   const [hasUnsaved, setHasUnsaved] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
   const [showImportModal, setShowImportModal] = useState(false)
   const [showAccessRequests, setShowAccessRequests] = useState(false)
   const [weatherByStopId, setWeatherByStopId] = useState<
@@ -495,6 +499,116 @@ function Planner({
     },
     [clearConflict],
   )
+
+  const syncRunningRef = useRef(false)
+  const lastSyncAtRef = useRef(0)
+
+  const syncTrips = useCallback(
+    async (mode: 'manual' | 'auto'): Promise<void> => {
+      if (syncRunningRef.current) return
+      syncRunningRef.current = true
+      if (!unmountedRef.current) {
+        setIsSyncing(true)
+        if (mode === 'manual') setSyncMessage('')
+      }
+      const report = (message: string) => {
+        if (!unmountedRef.current) setSyncMessage(message)
+      }
+      try {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current)
+          saveTimerRef.current = null
+        }
+        const outcome = await flush()
+        if (outcome === 'session-expired') return
+        if (mode === 'auto' && needsSave()) return
+
+        const snapshot = latestStateRef.current
+        let result = await loadTrips()
+        for (let wake = 0; result.kind === 'database-waking' && wake < MAX_WAKE_RETRIES; wake += 1) {
+          const delay = Math.min(
+            (result.retryAfterSeconds ?? DEFAULT_WAKE_DELAY_MS / 1000) * 1000,
+            MAX_WAKE_DELAY_MS,
+          )
+          await new Promise<void>((resolve) => setTimeout(resolve, delay))
+          if (unmountedRef.current) return
+          result = await loadTrips()
+        }
+        if (unmountedRef.current) return
+
+        if (result.kind === 'session-expired') {
+          void onSessionExpiredRef.current()
+          return
+        }
+        if (result.kind === 'database-waking') {
+          if (mode === 'manual') report('The database is still waking up. Please try again.')
+          return
+        }
+        if (result.kind === 'error') {
+          if (mode === 'manual') report(result.message)
+          return
+        }
+
+        if (latestStateRef.current !== snapshot) {
+          if (mode === 'manual') report('Your trips changed while syncing — press Sync again.')
+          return
+        }
+        const merged = mergeServerTrips({
+          local: latestStateRef.current,
+          savedTrips: savedTripsRef.current,
+          versions: versionsRef.current,
+          pendingDeletes: pendingDeletesRef.current,
+          server: { trips: result.trips, currentTripId: result.currentTripId },
+        })
+        versionsRef.current = merged.versions
+        savedTripsRef.current = merged.savedTrips
+        savedSelectionRef.current =
+          merged.state.currentTripId !== null &&
+          result.currentTripId === merged.state.currentTripId
+            ? merged.state.currentTripId
+            : result.currentTripId
+        conflictsRef.current = {}
+        setConflicts({})
+        setTripsState(merged.state)
+
+        if (merged.overwritten.length > 0) {
+          report(
+            `Server copy kept for: ${merged.overwritten.join(', ')}. Edits to these trips on this device were not saved.`,
+          )
+        } else if (mode === 'manual') {
+          report(
+            `Synced at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          )
+        }
+      } finally {
+        syncRunningRef.current = false
+        lastSyncAtRef.current = Date.now()
+        if (!unmountedRef.current) setIsSyncing(false)
+      }
+    },
+    [flush, needsSave],
+  )
+
+  // Auto-sync when the tab regains focus. Never on mount, never from timers, and only when
+  // nothing is unsaved, no flush/conflict/sync is active, and 30 s have passed.
+  useEffect(() => {
+    lastSyncAtRef.current = Date.now()
+    const maybeAutoSync = () => {
+      if (syncRunningRef.current || inFlightRef.current !== null) return
+      if (needsSave() || Object.keys(conflictsRef.current).length > 0) return
+      if (Date.now() - lastSyncAtRef.current < AUTO_SYNC_MIN_INTERVAL_MS) return
+      void syncTrips('auto')
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') maybeAutoSync()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', maybeAutoSync)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', maybeAutoSync)
+    }
+  }, [needsSave, syncTrips])
 
   const addStop = useCallback(
     (stop: TripStop) => {
@@ -1439,6 +1553,17 @@ function Planner({
               >
                 Sign out
               </button>
+              <button
+                className="ghost"
+                type="button"
+                onClick={() => void syncTrips('manual')}
+                disabled={isSyncing}
+                aria-busy={isSyncing}
+                title="Load your latest trips from the server"
+              >
+                {isSyncing ? 'Syncing…' : 'Sync'}
+              </button>
+              {syncMessage ? <span className="import-status" role="status">{syncMessage}</span> : null}
               {notice ? <span className="import-status" role="status">{notice}</span> : null}
               {saveBanner.kind === 'waking' ? (
                 <span className="import-status" role="status">
