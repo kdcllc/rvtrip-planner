@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { declineInvite, listInviteRequests, sendInvite } from '../../services/admin/adminClient'
-import type { InviteActionResult } from '../../services/admin/adminClient'
+import type { FormEvent } from 'react'
+import {
+  createInvite,
+  declineInvite,
+  listInviteRequests,
+  sendInvite,
+} from '../../services/admin/adminClient'
+import type { InviteActionResult, InviteSentResult } from '../../services/admin/adminClient'
 import type { AdminInviteRequest, InviteRequestStatus } from '../../types/api'
 import './AccessRequestsPanel.css'
 
@@ -29,6 +35,50 @@ const formatDate = (iso: string | null): string => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
 }
 
+interface InviteLinkInfo {
+  email: string
+  link: string
+  emailSent: boolean
+}
+
+function InviteLinkPanel({ info, onDone }: { info: InviteLinkInfo; onDone: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(info.link)
+      setCopied(true)
+    } catch {
+      inputRef.current?.select()
+    }
+  }
+  return (
+    <div className="access-link-panel">
+      <p className="access-link-message">
+        {info.emailSent
+          ? `Invite emailed to ${info.email}. You can also copy the link — it is shown only once.`
+          : 'Email not sent — copy the link below and send it yourself.'}
+      </p>
+      <div className="access-link-row">
+        <input
+          ref={inputRef}
+          type="text"
+          readOnly
+          value={info.link}
+          aria-label={`Invite link for ${info.email}`}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <button type="button" className="ghost" onClick={() => void copy()}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        <button type="button" className="ghost" onClick={onDone}>
+          Done
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequestsPanelProps) {
   const [requests, setRequests] = useState<AdminInviteRequest[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
@@ -38,6 +88,11 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
   const [announcement, setAnnouncement] = useState('')
+  const [inviteLink, setInviteLink] = useState<InviteLinkInfo | null>(null)
+  const [formEmail, setFormEmail] = useState('')
+  const [formName, setFormName] = useState('')
+  const [formError, setFormError] = useState('')
+  const [inviting, setInviting] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const onSessionExpiredRef = useRef(onSessionExpired)
@@ -90,7 +145,7 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
       delete next[req.id]
       return next
     })
-    const result: InviteActionResult =
+    const result: InviteActionResult | InviteSentResult =
       action === 'invite' ? await sendInvite(req.id) : await declineInvite(req.id)
     setBusyIds((prev) => {
       const next = new Set(prev)
@@ -101,8 +156,13 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
     switch (result.kind) {
       case 'ok':
         setRequests((prev) => prev.map((r) => (r.id === result.request.id ? result.request : r)))
+        setAnnouncement(`Request from ${req.email} declined`)
+        break
+      case 'sent':
+        setRequests((prev) => prev.map((r) => (r.id === result.request.id ? result.request : r)))
+        setInviteLink({ email: req.email, link: result.inviteLink, emailSent: result.emailSent })
         setAnnouncement(
-          action === 'invite' ? `Invite sent to ${req.email}` : `Request from ${req.email} declined`
+          result.emailSent ? `Invite sent to ${req.email}` : `Invite link created for ${req.email}`
         )
         break
       case 'session-expired':
@@ -110,9 +170,6 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
         break
       case 'forbidden':
         fail(ADMINS_ONLY)
-        break
-      case 'email-failed':
-        fail(`Email could not be sent: ${result.message}`)
         break
       case 'conflict':
         fail(`Conflict: ${result.message}`)
@@ -122,6 +179,50 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
         break
       default:
         fail(result.message)
+    }
+  }
+
+  const submitInvite = async (e: FormEvent) => {
+    e.preventDefault()
+    if (inviting) return
+    const email = formEmail.trim()
+    if (!email || !email.includes('@')) {
+      setFormError('Enter a valid email address')
+      return
+    }
+    setFormError('')
+    setInviting(true)
+    const name = formName.trim()
+    const result = await createInvite(name ? { email, name } : { email })
+    setInviting(false)
+    switch (result.kind) {
+      case 'sent':
+        setFormEmail('')
+        setFormName('')
+        setRequests((prev) =>
+          prev.some((r) => r.id === result.request.id)
+            ? prev.map((r) => (r.id === result.request.id ? result.request : r))
+            : [result.request, ...prev]
+        )
+        setInviteLink({ email, link: result.inviteLink, emailSent: result.emailSent })
+        setAnnouncement(
+          result.emailSent ? `Invite sent to ${email}` : `Invite link created for ${email}`
+        )
+        break
+      case 'session-expired':
+        onSessionExpiredRef.current()
+        break
+      case 'forbidden':
+        setFormError(ADMINS_ONLY)
+        break
+      case 'conflict':
+        setFormError(`${email} already has an account.`)
+        break
+      case 'database-waking':
+        setFormError('The database is waking up. Try again in a moment.')
+        break
+      default:
+        setFormError(result.message)
     }
   }
 
@@ -159,7 +260,7 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
     if (dialogRef.current && !dialogRef.current.contains(document.activeElement)) {
       closeRef.current?.focus()
     }
-  }, [confirmId, busyIds, requests, loadState])
+  }, [confirmId, busyIds, requests, loadState, inviteLink])
 
   const counts = (id: Filter) =>
     id === 'all' ? requests.length : requests.filter((r) => r.status === id).length
@@ -204,6 +305,42 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
       </span>
     )
   }
+
+  const renderInviteForm = () => (
+    <form className="access-invite-form" onSubmit={(e) => void submitInvite(e)} noValidate>
+      <div className="access-field">
+        <label htmlFor="access-invite-email">Email</label>
+        <input
+          id="access-invite-email"
+          type="email"
+          required
+          value={formEmail}
+          disabled={inviting}
+          aria-invalid={formError ? true : undefined}
+          aria-describedby={formError ? 'access-invite-error' : undefined}
+          onChange={(e) => setFormEmail(e.target.value)}
+        />
+      </div>
+      <div className="access-field">
+        <label htmlFor="access-invite-name">Name (optional)</label>
+        <input
+          id="access-invite-name"
+          type="text"
+          value={formName}
+          disabled={inviting}
+          onChange={(e) => setFormName(e.target.value)}
+        />
+      </div>
+      <button type="submit" disabled={inviting}>
+        {inviting ? 'Inviting…' : 'Invite'}
+      </button>
+      {formError && (
+        <p id="access-invite-error" className="access-row-error access-form-error" role="alert">
+          {formError}
+        </p>
+      )}
+    </form>
+  )
 
   const renderBody = () => {
     if (loadState === 'loading') return <p className="access-state">Loading access requests…</p>
@@ -313,6 +450,10 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
         <div role="status" aria-live="polite" className="access-sr-only">
           {announcement}
         </div>
+        {loadState !== 'forbidden' && renderInviteForm()}
+        {inviteLink && (
+          <InviteLinkPanel key={inviteLink.link} info={inviteLink} onDone={() => setInviteLink(null)} />
+        )}
         {renderBody()}
       </div>
     </div>

@@ -55,7 +55,7 @@ vi.mock('../shared/email', async () => {
 })
 
 
-import { declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
+import { createInvite, declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
 import { inviteRequests } from '../functions/inviteRequests'
 import { register } from '../functions/register'
 import { getTrips, putTrip } from '../functions/trips'
@@ -114,6 +114,22 @@ function installFakeDb() {
     if (/^DELETE FROM dbo\.sessions/.test(text)) return rs([])
     if (/^SELECT COUNT\(\*\) AS n FROM dbo\.invite_requests/.test(text)) {
       return rs([{ n: [...reqs().values()].filter((r) => r.ip_hash === v('ipHash')).length }])
+    }
+    if (/^SELECT id FROM dbo\.users WHERE email/.test(text)) {
+      return rs([...users().values()].filter((u) => u.email === v('email')).map((u) => ({ id: u.id })))
+    }
+    if (/^SELECT id, email, name, note, status, created_at, invited_at, invite_count FROM dbo\.invite_requests WHERE email/.test(text)) {
+      return rs([...reqs().values()].filter((r) => r.email === v('email')))
+    }
+    if (/^INSERT INTO dbo\.invite_requests[\s\S]*OUTPUT inserted/.test(text)) {
+      if ([...reqs().values()].some((r) => r.email === v('email'))) throw Object.assign(new Error('dup'), { number: 2627 })
+      const id = randomUUID()
+      const r = {
+        id, email: v('email') as string, name: v('name') as string, note: null, status: 'pending',
+        created_at: new Date(), invited_at: null, invite_count: 0, ip_hash: null,
+      }
+      reqs().set(id, r as never)
+      return rs([r])
     }
     if (/^SELECT 1 AS x FROM dbo\.invite_requests WHERE email/.test(text)) {
       return rs([...reqs().values()].filter((r) => r.email === v('email')).map(() => ({ x: 1 })))
@@ -319,15 +335,44 @@ describe('request invite -> admin invite -> register -> save trip', () => {
     expect(fresh.status).toBe(201)
   })
 
-  it('an email failure returns 502, revokes the just-issued code and does not mark the request invited', async () => {
+  it('an email failure returns 200 emailSent false, keeps the code valid and marks the request invited', async () => {
     await requestInvite()
     const admin = await registerAdmin()
     const id = [...reqs().keys()][0]
     h.emailOk.on = false
     const res = await sendInvite(mkReq('POST', admin, {}, { id }))
-    expect(res.status).toBe(502)
-    expect(reqs().get(id)).toMatchObject({ status: 'pending', invite_count: 0 })
-    expect([...codes().values()].every((c) => c.revoked)).toBe(true)
+    expect(res.status).toBe(200)
+    const body = res.jsonBody as { inviteLink: string; emailSent: boolean }
+    expect(body.emailSent).toBe(false)
+    expect(reqs().get(id)).toMatchObject({ status: 'invited', invite_count: 1 })
+    expect([...codes().values()].every((c) => !c.revoked)).toBe(true)
+    const code = new URL(body.inviteLink).searchParams.get('invite')!
+    h.emailOk.on = true
+    const reg = await register(mkReq('POST', anon(), { email: 'dana@example.com', password: PASSWORD, inviteCode: code }))
+    expect(reg.status).toBe(201)
+  })
+
+  it('admin invites an address with no prior request: returns the link, which registers', async () => {
+    const admin = await registerAdmin()
+    const res = await createInvite(mkReq('POST', admin, { email: 'Dana@Example.com' }))
+    expect(res.status).toBe(200)
+    const body = res.jsonBody as { inviteLink: string; emailSent: boolean; request: { name: string; status: string } }
+    expect(body).toMatchObject({ emailSent: true, request: { name: 'dana', status: 'invited' } })
+    const code = new URL(body.inviteLink).searchParams.get('invite')!
+    const reg = await register(mkReq('POST', anon(), { email: 'dana@example.com', password: PASSWORD, inviteCode: code }))
+    expect(reg.status).toBe(201)
+    expect((await createInvite(mkReq('POST', admin, { email: 'dana@example.com' }))).status).toBe(409)
+  })
+
+  it('createInvite refuses a signed-out caller (401) and a non-admin (403) and sends nothing', async () => {
+    expect((await createInvite(mkReq('POST', anon(), { email: 'dana@example.com' }))).status).toBe(401)
+    const jar = anon()
+    const reg = await register(mkReq('POST', jar, { email: 'u@example.com', password: PASSWORD, inviteCode: 'shared-fallback-code' }))
+    expect(reg.status).toBe(201)
+    absorb(jar, reg)
+    expect((await createInvite(mkReq('POST', jar, { email: 'dana@example.com' }))).status).toBe(403)
+    expect(h.invites).toHaveLength(0)
+    expect(reqs().size).toBe(0)
   })
 
   it('declining revokes unused codes so the emailed link stops working', async () => {

@@ -165,3 +165,9 @@ export type AdminInviteRequest = {
 }
 export type ListInviteRequestsResponse = { requests: AdminInviteRequest[] }
 export type InviteActionResponse = { request: AdminInviteRequest }
+// POST /api/manage/invites (admin only). Blank/missing name defaults server-side to the email local part.
+export type CreateAdminInvite = { email: string; name?: string }
+// Returned by POST /api/manage/invites and POST /api/manage/invite-requests/{id}/invite.
+// inviteLink carries the plain one-time code: shown to the admin once, never stored or logged.
+// emailSent=false means the email failed or is not configured; the code stays valid.
+export type InviteSentResponse = { request: AdminInviteRequest; inviteLink: string; emailSent: boolean }

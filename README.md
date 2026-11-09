@@ -12,13 +12,13 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data)
 - Fuel cost estimation based on vehicle MPG and gas prices
-- Multi-user accounts: register (shared invite code or a single-use emailed invite code), log in, log out, and password reset by email
+- Multi-user accounts: register (shared invite code or a single-use invite code, emailed or sent as a link by an admin), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
 - Each trip is saved separately; saves retry automatically while the serverless database wakes, with a "Retry now" banner and a prompt to keep your version or load the saved one on a conflict
 - Sync button in the header (next to Sign out): flushes pending edits, then reloads your trips from the server and shows "Synced at HH:MM". The server copy wins; trips whose unsaved local edits were replaced are named in a notice. The app also syncs automatically when the tab regains focus or becomes visible, only if nothing is unsaved and at least 30 seconds have passed since the last sync (no polling)
 - Import a single trip or a full backup as JSON (trips whose ids already exist are skipped); "Download all trips" backup and a per-trip Download button
 - Trips from older browser storage are imported into your account on sign-in
-- Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites
+- Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites, or invite any email address directly with the Email/Name form at the top of the panel (Invite button); after inviting, sending or resending, the panel shows the invite link once to copy
 - Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
 
@@ -156,7 +156,7 @@ azd deploy
 
 - **Frontend:** React 19 + TypeScript + Vite
 - **Hosting:** Azure Static Web Apps (SPA) with built-in managed Azure Functions (`api/`)
-- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration (the shared `INVITE_CODE` or a single-use emailed invite code), and Azure Communication Services email for password reset
+- **Backend:** Azure Functions (Node 22) with cookie-session, invite-code-gated registration (the shared `INVITE_CODE` or a single-use invite code, emailed or sent as a link by an admin), and Azure Communication Services email for password reset
 - **Database:** Azure SQL Database (serverless, free offer); schema in `db/migrations/`
 - **Mapping:** MapLibre GL JS + OpenStreetMap tiles (free)
 - **Routing:** OSRM + OpenRouteService (free, with optional API key)
