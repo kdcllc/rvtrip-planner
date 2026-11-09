@@ -59,7 +59,7 @@ import { me } from '../functions/me'
 import { register } from '../functions/register'
 import { resetPassword } from '../functions/resetPassword'
 import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
-import { declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
+import { createInvite, declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
 import { inviteRequests } from '../functions/inviteRequests'
 
 const users = () => h.users as Map<string, User>
@@ -155,11 +155,15 @@ function installFakeDb() {
     if (/^SELECT 1 AS x FROM dbo\.invite_requests WHERE email/.test(text)) {
       return rs(h.reqs.filter((r) => r.email === v('email')).map(() => ({ x: 1 })))
     }
-    if (/^INSERT INTO dbo\.invite_requests/.test(text)) {
+    if (/^INSERT INTO dbo\.invite_requests/.test(text) && !/OUTPUT inserted/.test(text)) {
       h.reqs.push({ email: v('email') as string, name: v('name') as string, ipHash: v('ipHash') as string })
       return rs([])
     }
-    if (/^SELECT id, email, name, note, status.* FROM dbo\.invite_requests WHERE id/.test(text)) return rs([])
+    if (/^SELECT id, email, name, note, status.* FROM dbo\.invite_requests WHERE (id|email)/.test(text)) return rs([])
+    if (/^INSERT INTO dbo\.invite_requests[\s\S]*OUTPUT inserted/.test(text)) {
+      h.reqs.push({ email: v('email') as string, name: v('name') as string, ipHash: '' })
+      return rs([{ id: 'new-req', email: v('email'), name: v('name'), note: null, status: 'pending', created_at: new Date(), invited_at: null, invite_count: 0 }])
+    }
     const tk = () => `${v('userId')}|${v('tripId')}`
     if (/^SELECT trip_id, data, version FROM dbo\.user_trips/.test(text)) {
       const prefix = `${v('userId')}|`
@@ -565,6 +569,7 @@ describe('admin routes are admin-only', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000'
   const routes: Array<[string, (jar: Cookies) => Promise<{ status?: number }>]> = [
     ['GET /manage/invite-requests', (jar) => listInviteRequests(Object.assign(mkReq('GET', jar), { params: {} }) as never)],
+    ['POST /manage/invites', (jar) => createInvite(mkReq('POST', jar, { email: 'new@example.com', name: 'New' }))],
     ['POST /manage/invite-requests/{id}/invite', (jar) => sendInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
     ['POST /manage/invite-requests/{id}/decline', (jar) => declineInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
   ]
@@ -593,7 +598,7 @@ describe('admin routes are admin-only', () => {
     const admin = await registerUser()
     h.queryFn.mockClear()
     // Unknown request id: reaches the data layer and answers 404, not 401/403.
-    const res = await routes[1][1](admin.jar)
+    const res = await routes[2][1](admin.jar)
     expect(res.status).toBe(404)
     expect(touchedInvites()).toBe(true)
   })
@@ -602,6 +607,7 @@ describe('admin routes are admin-only', () => {
 describe('CSRF protection on admin and invite-request routes', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000'
   const adminCases: Array<[string, (extra: Record<string, string>, jar: Cookies) => Promise<{ status?: number }>]> = [
+    ['admin create invite', (x, jar) => createInvite(mkReq('POST', jar, { email: 'new@example.com' }, x))],
     ['admin send invite', (x, jar) => sendInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
     ['admin decline', (x, jar) => declineInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
     ['request invite (anonymous)', (x, jar) => inviteRequests(mkReq('POST', jar, { email: 'a@example.com', name: 'A' }, x))],

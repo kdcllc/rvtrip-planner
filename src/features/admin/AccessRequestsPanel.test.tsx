@@ -5,6 +5,7 @@ import type { AdminInviteRequest } from '../../types/api'
 
 const admin = vi.hoisted(() => ({
   listInviteRequests: vi.fn(),
+  createInvite: vi.fn(),
   sendInvite: vi.fn(),
   declineInvite: vi.fn(),
 }))
@@ -66,8 +67,10 @@ describe('AccessRequestsPanel', () => {
 
   it('send success updates the row and announces', async () => {
     admin.sendInvite.mockResolvedValue({
-      kind: 'ok',
+      kind: 'sent',
       request: { ...rows[0], status: 'invited', invitedAt: '2026-02-01T00:00:00Z', inviteCount: 1 },
+      inviteLink: 'https://app.test/invite?code=abc',
+      emailSent: true,
     })
     const { user } = await setup()
     await user.click(screen.getByRole('button', { name: 'Send invite' }))
@@ -75,12 +78,15 @@ describe('AccessRequestsPanel', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent('Invite sent to ann@example.com')
     )
+    expect(screen.getByLabelText('Invite link for ann@example.com')).toHaveValue(
+      'https://app.test/invite?code=abc'
+    )
     expect(screen.getByRole('button', { name: 'Pending (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Invited (2)' })).toBeInTheDocument()
   })
 
-  it('shows a row-level alert on email failure', async () => {
-    admin.sendInvite.mockResolvedValue({ kind: 'email-failed', message: 'smtp down' })
+  it('shows a row-level alert on send error', async () => {
+    admin.sendInvite.mockResolvedValue({ kind: 'error', message: 'smtp down' })
     const { user } = await setup()
     await user.click(screen.getByRole('button', { name: 'Send invite' }))
     const alert = await screen.findByRole('alert')
@@ -146,7 +152,12 @@ describe('AccessRequestsPanel', () => {
     const [btnA, btnB] = screen.getAllByRole('button', { name: 'Send invite' })
     await user.click(btnA)
     await user.click(btnB)
-    resolveA({ kind: 'ok', request: { ...rows[0], status: 'invited', inviteCount: 1, invitedAt: '2026-02-01T00:00:00Z' } })
+    resolveA({
+      kind: 'sent',
+      request: { ...rows[0], status: 'invited', inviteCount: 1, invitedAt: '2026-02-01T00:00:00Z' },
+      inviteLink: 'https://app.test/l',
+      emailSent: true,
+    })
     await waitFor(() => expect(screen.queryByText('ann@example.com')).not.toBeInTheDocument())
     const rowB = screen.getByText('eve@example.com').closest('tr')!
     expect(rowB).toHaveAttribute('aria-busy', 'true')
@@ -170,5 +181,86 @@ describe('AccessRequestsPanel', () => {
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement)
     await user.keyboard('{Escape}')
     expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  describe('invite form', () => {
+    const sentResult = (emailSent: boolean) => ({
+      kind: 'sent',
+      request: mk({ id: '9', email: 'new@example.com', name: 'new', status: 'invited', inviteCount: 1 }),
+      inviteLink: 'https://app.test/invite?code=zzz',
+      emailSent,
+    })
+    const fill = async (user: ReturnType<typeof userEvent.setup>, email: string) => {
+      await user.type(screen.getByLabelText('Email'), email)
+      await user.click(screen.getByRole('button', { name: 'Invite' }))
+    }
+
+    it('validates the email client-side without calling the API', async () => {
+      const { user } = await setup()
+      await fill(user, 'not-an-email')
+      const alert = await screen.findByText('Enter a valid email address')
+      expect(screen.getByLabelText('Email')).toHaveAttribute('aria-describedby', alert.id)
+      expect(admin.createInvite).not.toHaveBeenCalled()
+    })
+
+    it('shows the link and emailed message on success and clears the form', async () => {
+      admin.createInvite.mockResolvedValue(sentResult(true))
+      const { user } = await setup()
+      await user.type(screen.getByLabelText('Name (optional)'), 'New')
+      await fill(user, ' new@example.com ')
+      expect(admin.createInvite).toHaveBeenCalledWith({ email: 'new@example.com', name: 'New' })
+      expect(await screen.findByText(/Invite emailed to new@example.com\./)).toBeInTheDocument()
+      expect(screen.getByLabelText('Invite link for new@example.com')).toHaveValue(
+        'https://app.test/invite?code=zzz'
+      )
+      expect(screen.getByLabelText('Email')).toHaveValue('')
+      expect(screen.getByLabelText('Name (optional)')).toHaveValue('')
+      await user.click(screen.getByRole('button', { name: 'Invited (2)' }))
+      expect(screen.getByText('new@example.com')).toBeInTheDocument()
+    })
+
+    it('shows the manual-send message when email was not sent', async () => {
+      admin.createInvite.mockResolvedValue(sentResult(false))
+      const { user } = await setup()
+      await fill(user, 'new@example.com')
+      expect(
+        await screen.findByText('Email not sent — copy the link below and send it yourself.')
+      ).toBeInTheDocument()
+    })
+
+    it('shows a conflict message', async () => {
+      admin.createInvite.mockResolvedValue({ kind: 'conflict', message: 'exists' })
+      const { user } = await setup()
+      await fill(user, 'ann@example.com')
+      expect(await screen.findByText('ann@example.com already has an account.')).toBeInTheDocument()
+    })
+
+    it('shows Inviting… and disables submit while busy', async () => {
+      admin.createInvite.mockImplementation(() => new Promise(() => {}))
+      const { user } = await setup()
+      await fill(user, 'new@example.com')
+      expect(await screen.findByRole('button', { name: 'Inviting…' })).toBeDisabled()
+    })
+
+    it('Copy writes to the clipboard and shows Copied; Done hides the link', async () => {
+      admin.createInvite.mockResolvedValue(sentResult(true))
+      const { user } = await setup()
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      await fill(user, 'new@example.com')
+      await user.click(await screen.findByRole('button', { name: 'Copy' }))
+      expect(writeText).toHaveBeenCalledWith('https://app.test/invite?code=zzz')
+      expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Done' }))
+      expect(screen.queryByLabelText('Invite link for new@example.com')).not.toBeInTheDocument()
+    })
+
+    it('Send invite emailSent=false shows the manual-send message', async () => {
+      admin.sendInvite.mockResolvedValue({ ...sentResult(false), request: { ...rows[0], status: 'invited' } })
+      const { user } = await setup()
+      await user.click(screen.getByRole('button', { name: 'Send invite' }))
+      expect(await screen.findByText(/Email not sent/)).toBeInTheDocument()
+      expect(screen.getByLabelText('Invite link for ann@example.com')).toBeInTheDocument()
+    })
   })
 })

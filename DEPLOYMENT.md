@@ -29,7 +29,7 @@ Set these in the azd environment before provisioning (names only; never commit o
 - `AZURE_SQL_LOCATION` (optional, defaults to `centralus`; keep it lowercase)
 - `ADMIN_EMAILS` (optional, comma-separated admin addresses that receive invite requests and see "Access requests"; defaults to `travel@kingdavidconsulting.com`; the provision and deploy workflows read it from the optional repository variable `ADMIN_EMAILS`; the deploy workflow reapplies it on every run, defaulting to `travel@kingdavidconsulting.com` when the variable is unset, so if you customize it also set the repository variable or the value set via azd/Bicep reverts on the next deploy)
 
-Bicep applies seven app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`. Registration requires the shared `INVITE_CODE` or a single-use emailed invite code.
+Bicep applies seven app settings to the Static Web App: `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`. Registration requires the shared `INVITE_CODE` or a single-use invite code, which arrives by email or as the link an admin copies from Access requests. If ACS email fails or `ACS_CONNECTION_STRING`/`ACS_SENDER_ADDRESS` are not set, invites still work: the panel reports "Email not sent" and the admin copies the link (the code stays valid for 14 days, single use).
 
 ### Database schema
 
@@ -90,7 +90,7 @@ This builds the SPA and the bundled API (via `swa-cli.config.json`) and deploys 
 
 - `GET /api/ping` returns 200 `application/json` (`{"ok":true}`)
 - `GET /api/trips` without a session returns 401
-- The site root shows the landing page for signed-out visitors (Sign up, Log in, Request an invite); register with the shared invite code or an emailed single-use invite code
+- The site root shows the landing page for signed-out visitors (Sign up, Log in, Request an invite); register with the shared invite code or a single-use invite link (emailed, or copied by an admin from Access requests)
 - A signed-in admin (an address in `ADMIN_EMAILS`) sees "Access requests"; trips are saved per trip through `PUT /api/trips/{tripId}`
 
 ---

@@ -157,6 +157,8 @@ describe('admin flow', () => {
       '/api/manage/invite-requests': ok({ requests: [pending] }),
       [`/api/manage/invite-requests/${pending.id}/invite`]: ok({
         request: { ...pending, status: 'invited', invitedAt: '2026-03-02T09:00:00.000Z', inviteCount: 1 },
+        inviteLink: 'https://app.example.com/?invite=resend1',
+        emailSent: true,
       }),
     })
 
@@ -181,6 +183,36 @@ describe('admin flow', () => {
     expect(within(dialog).getByRole('button', { name: 'Resend' })).toBeInTheDocument()
     expect(within(dialog).getByText('invited')).toBeInTheDocument()
     expect(within(dialog).getByText(/×1/)).toBeInTheDocument()
+  })
+
+  it('an admin invites someone directly: POSTs /api/manage/invites with CSRF and shows the link and emailed message', async () => {
+    const link = 'https://app.example.com/?invite=abc123'
+    installBackend({
+      '/api/ping': ok({ ok: true }),
+      '/api/me': ok({ user: { id: 'u1', email: 'admin@example.com', isAdmin: true } }),
+      '/api/trips': ok({ trips: [], currentTripId: null }),
+      '/api/manage/invite-requests': ok({ requests: [] }),
+      '/api/manage/invites': ok({
+        request: { ...pending, status: 'invited', invitedAt: '2026-03-02T09:00:00.000Z', inviteCount: 1 },
+        inviteLink: link,
+        emailSent: true,
+      }),
+    })
+    renderApp()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Access requests' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Access requests' })
+    await userEvent.type(await within(dialog).findByLabelText('Email'), 'dana@example.com')
+    await userEvent.type(within(dialog).getByLabelText('Name (optional)'), 'Dana Driver')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+
+    expect(await within(dialog).findByText(/Invite emailed to dana@example\.com/)).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Invite link for dana@example.com')).toHaveValue(link)
+    const posts = callsTo('/api/manage/invites', 'POST')
+    expect(posts).toHaveLength(1)
+    const init = posts[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBe('tok')
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'dana@example.com', name: 'Dana Driver' })
   })
 
   it('a non-admin never sees Access requests and no admin endpoint is called', async () => {

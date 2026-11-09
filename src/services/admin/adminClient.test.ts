@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { declineInvite, listInviteRequests, sendInvite } from './adminClient'
+import { createInvite, declineInvite, listInviteRequests, sendInvite } from './adminClient'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -46,17 +46,72 @@ describe('adminClient', () => {
     fetchMock.mockImplementation(async () => json(503, {}, { 'Retry-After': '0' }))
     expect(await listInviteRequests()).toEqual({ kind: 'database-waking' })
     fetchMock.mockResolvedValueOnce(json(500, { error: 'boom' }))
-    expect(await listInviteRequests()).toEqual({ kind: 'error', message: 'boom' })
+    expect(await listInviteRequests()).toEqual({
+      kind: 'error',
+      message: 'boom',
+    })
     fetchMock.mockResolvedValueOnce(json(200, {}))
-    expect(await listInviteRequests()).toEqual({ kind: 'error', message: 'Invalid response' })
+    expect(await listInviteRequests()).toEqual({
+      kind: 'error',
+      message: 'Invalid response',
+    })
   })
 
-  it('sendInvite POSTs /invite and returns the request', async () => {
-    fetchMock.mockResolvedValue(json(200, { request: req }))
-    expect(await sendInvite('r 1')).toEqual({ kind: 'ok', request: req })
+  const sentBody = {
+    request: req,
+    inviteLink: 'https://x/#code',
+    emailSent: true,
+  }
+
+  it('sendInvite POSTs /invite and returns link + emailSent', async () => {
+    fetchMock.mockResolvedValue(json(200, sentBody))
+    expect(await sendInvite('r 1')).toEqual({ kind: 'sent', ...sentBody })
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/manage/invite-requests/r%201/invite')
     expect(init.method).toBe('POST')
+  })
+
+  it('createInvite POSTs /api/manage/invites with email and name only', async () => {
+    fetchMock.mockResolvedValue(json(200, { ...sentBody, emailSent: false }))
+    expect(await createInvite({ email: 'a@b.co', name: 'Ann' })).toEqual({
+      kind: 'sent',
+      ...sentBody,
+      emailSent: false,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/manage/invites')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({
+      email: 'a@b.co',
+      name: 'Ann',
+    })
+  })
+
+  it('createInvite omits name when undefined', async () => {
+    fetchMock.mockResolvedValue(json(200, sentBody))
+    await createInvite({ email: 'a@b.co' })
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'a@b.co' })
+  })
+
+  it('maps invalid success bodies to Invalid response', async () => {
+    const bad = [
+      { request: req, emailSent: true },
+      { request: req, inviteLink: 'l' },
+      { inviteLink: 'l', emailSent: true },
+    ]
+    for (const body of bad) {
+      fetchMock.mockResolvedValueOnce(json(200, body))
+      expect(await sendInvite('r1')).toEqual({
+        kind: 'error',
+        message: 'Invalid response',
+      })
+      fetchMock.mockResolvedValueOnce(json(200, body))
+      expect(await createInvite({ email: 'a@b.co' })).toEqual({
+        kind: 'error',
+        message: 'Invalid response',
+      })
+    }
   })
 
   it('declineInvite POSTs /decline', async () => {
@@ -66,18 +121,46 @@ describe('adminClient', () => {
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe('/api/manage/invite-requests/r1/decline')
   })
 
-  it('maps email-failed, conflict, forbidden, session-expired, waking and error for actions', async () => {
+  it('maps failures for sendInvite, createInvite and declineInvite', async () => {
     fetchMock.mockResolvedValueOnce(json(502, { error: 'mail', code: 'EMAIL_FAILED' }))
-    expect(await sendInvite('r1')).toEqual({ kind: 'email-failed', message: 'mail' })
+    expect(await sendInvite('r1')).toEqual({ kind: 'error', message: 'mail' })
     fetchMock.mockResolvedValueOnce(json(409, { error: 'registered' }))
-    expect(await sendInvite('r1')).toEqual({ kind: 'conflict', message: 'registered' })
+    expect(await sendInvite('r1')).toEqual({
+      kind: 'conflict',
+      message: 'registered',
+    })
+    fetchMock.mockResolvedValueOnce(json(409, { error: 'registered' }))
+    expect(await createInvite({ email: 'a@b.co' })).toEqual({
+      kind: 'conflict',
+      message: 'registered',
+    })
+    fetchMock.mockResolvedValueOnce(json(400, { error: 'bad email' }))
+    expect(await createInvite({ email: 'x' })).toEqual({
+      kind: 'error',
+      message: 'bad email',
+    })
+    fetchMock.mockResolvedValueOnce(json(403, { error: 'no' }))
+    expect(await createInvite({ email: 'a@b.co' })).toEqual({
+      kind: 'forbidden',
+    })
+    fetchMock.mockResolvedValueOnce(json(401, { error: 'no' }))
+    expect(await createInvite({ email: 'a@b.co' })).toEqual({
+      kind: 'session-expired',
+    })
     fetchMock.mockResolvedValueOnce(json(403, { error: 'no' }))
     expect(await declineInvite('r1')).toEqual({ kind: 'forbidden' })
     fetchMock.mockResolvedValueOnce(json(401, { error: 'no' }))
     expect(await declineInvite('r1')).toEqual({ kind: 'session-expired' })
     fetchMock.mockImplementation(async () => json(503, {}, { 'Retry-After': '0' }))
     expect(await declineInvite('r1')).toEqual({ kind: 'database-waking' })
+    expect(await createInvite({ email: 'a@b.co' })).toEqual({
+      kind: 'database-waking',
+    })
+    fetchMock.mockReset()
     fetchMock.mockResolvedValueOnce(json(500, { error: 'boom' }))
-    expect(await declineInvite('r1')).toEqual({ kind: 'error', message: 'boom' })
+    expect(await declineInvite('r1')).toEqual({
+      kind: 'error',
+      message: 'boom',
+    })
   })
 })
