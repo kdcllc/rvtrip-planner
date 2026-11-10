@@ -8,6 +8,7 @@ const admin = vi.hoisted(() => ({
   createInvite: vi.fn(),
   sendInvite: vi.fn(),
   declineInvite: vi.fn(),
+  sendTestEmail: vi.fn(),
 }))
 vi.mock('../../services/admin/adminClient', () => admin)
 
@@ -261,6 +262,56 @@ describe('AccessRequestsPanel', () => {
       await user.click(screen.getByRole('button', { name: 'Send invite' }))
       expect(await screen.findByText(/Email not sent/)).toBeInTheDocument()
       expect(screen.getByLabelText('Invite link for ann@example.com')).toBeInTheDocument()
+    })
+  })
+
+  describe('email delivery', () => {
+    it('disables the button and shows Sending… while the request is pending', async () => {
+      let resolve!: (v: unknown) => void
+      admin.sendTestEmail.mockReturnValue(new Promise((r) => (resolve = r)))
+      const { user } = await setup()
+      expect(screen.getByRole('heading', { name: 'Email delivery' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Send test email' }))
+      expect(await screen.findByRole('button', { name: 'Sending…' })).toBeDisabled()
+      resolve({ kind: 'sent', sentTo: 'a@b.co', sender: 's@x.dev' })
+      expect(await screen.findByRole('button', { name: 'Send test email' })).toBeEnabled()
+      expect(admin.sendTestEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the address and sender after success', async () => {
+      admin.sendTestEmail.mockResolvedValue({ kind: 'sent', sentTo: 'a@b.co', sender: 's@x.dev' })
+      const { user } = await setup()
+      await user.click(screen.getByRole('button', { name: 'Send test email' }))
+      expect(await screen.findByText('Test email sent to a@b.co from s@x.dev.')).toBeInTheDocument()
+    })
+
+    it('shows the wait message when rate-limited', async () => {
+      admin.sendTestEmail.mockResolvedValue({ kind: 'rate-limited', retryAfterSeconds: 60 })
+      const { user } = await setup()
+      await user.click(screen.getByRole('button', { name: 'Send test email' }))
+      expect(await screen.findByText(/Try again in about a minute/)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('renders an alert when the email fails', async () => {
+      admin.sendTestEmail.mockResolvedValue({ kind: 'email-failed', message: 'Email could not be sent' })
+      const { user } = await setup()
+      await user.click(screen.getByRole('button', { name: 'Send test email' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Test email failed: Email could not be sent')
+    })
+
+    it('session expiry calls onSessionExpired', async () => {
+      admin.sendTestEmail.mockResolvedValue({ kind: 'session-expired' })
+      const { user, props } = await setup()
+      await user.click(screen.getByRole('button', { name: 'Send test email' }))
+      await waitFor(() => expect(props.onSessionExpired).toHaveBeenCalled())
+    })
+
+    it('is hidden when the list load is forbidden', async () => {
+      admin.listInviteRequests.mockResolvedValue({ kind: 'forbidden' })
+      render(<AccessRequestsPanel onClose={vi.fn()} onSessionExpired={vi.fn()} />)
+      await screen.findByRole('dialog')
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Send test email' })).not.toBeInTheDocument())
     })
   })
 })

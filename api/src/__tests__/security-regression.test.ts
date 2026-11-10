@@ -61,6 +61,13 @@ import { resetPassword } from '../functions/resetPassword'
 import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
 import { createInvite, declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
 import { inviteRequests } from '../functions/inviteRequests'
+import '../functions/adminTestEmail'
+import { app } from '@azure/functions'
+
+// adminTestEmail does not export its handler; pick it up from the (mocked) route registration.
+const sendTestEmailHandler = (vi.mocked(app.http).mock.calls.find((c) => c[0] === 'adminSendTestEmail')?.[1] as {
+  handler: (req: never) => Promise<{ status?: number }>
+}).handler
 
 const users = () => h.users as Map<string, User>
 const sessions = () => h.sessions as Map<string, Session>
@@ -572,6 +579,7 @@ describe('admin routes are admin-only', () => {
     ['POST /manage/invites', (jar) => createInvite(mkReq('POST', jar, { email: 'new@example.com', name: 'New' }))],
     ['POST /manage/invite-requests/{id}/invite', (jar) => sendInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
     ['POST /manage/invite-requests/{id}/decline', (jar) => declineInvite(Object.assign(mkReq('POST', jar, {}), { params: { id: ID } }) as never)],
+    ['POST /api/manage/test-email', (jar) => sendTestEmailHandler(mkReq('POST', jar, {}) as never)],
   ]
   const touchedInvites = () => h.queryFn.mock.calls.some((c) => /invite_requests|invite_codes/.test(c[0]))
 
@@ -610,6 +618,7 @@ describe('CSRF protection on admin and invite-request routes', () => {
     ['admin create invite', (x, jar) => createInvite(mkReq('POST', jar, { email: 'new@example.com' }, x))],
     ['admin send invite', (x, jar) => sendInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
     ['admin decline', (x, jar) => declineInvite(Object.assign(mkReq('POST', jar, {}, x), { params: { id: ID } }) as never)],
+    ['admin test email', (x, jar) => sendTestEmailHandler(mkReq('POST', jar, {}, x) as never)],
     ['request invite (anonymous)', (x, jar) => inviteRequests(mkReq('POST', jar, { email: 'a@example.com', name: 'A' }, x))],
   ]
   const adminJar = async () => {

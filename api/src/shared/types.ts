@@ -171,3 +171,7 @@ export type CreateAdminInvite = { email: string; name?: string }
 // inviteLink carries the plain one-time code: shown to the admin once, never stored or logged.
 // emailSent=false means the email failed or is not configured; the code stays valid.
 export type InviteSentResponse = { request: AdminInviteRequest; inviteLink: string; emailSent: boolean }
+/** Response of POST /api/manage/test-email. */
+export type TestEmailResponse = { sentTo: string; sender: string }
+/** Minimum seconds between test emails per admin (429 RATE_LIMITED inside the window). */
+export const TEST_EMAIL_COOLDOWN_SECONDS = 60

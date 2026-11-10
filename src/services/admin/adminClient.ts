@@ -4,8 +4,10 @@ import type {
   InviteActionResponse,
   InviteSentResponse,
   ListInviteRequestsResponse,
+  TestEmailResponse,
 } from '../../types/api'
 import type { ApiResult } from '../../types/auth'
+import { TEST_EMAIL_COOLDOWN_SECONDS } from '../../types/api'
 import { apiGet, apiPost } from '../auth/apiClient'
 
 type AdminFailure =
@@ -26,6 +28,12 @@ export type InviteSentResult =
       inviteLink: string
       emailSent: boolean
     }
+  | AdminFailure
+
+export type TestEmailResult =
+  | { kind: 'sent'; sentTo: string; sender: string }
+  | { kind: 'rate-limited'; retryAfterSeconds: number }
+  | { kind: 'email-failed'; message: string }
   | AdminFailure
 
 const toFailure = (result: Exclude<ApiResult<unknown>, { kind: 'success' }>): AdminFailure => {
@@ -101,3 +109,22 @@ export const sendInvite = async (id: string): Promise<InviteSentResult> =>
 
 /** Decline a request. */
 export const declineInvite = (id: string): Promise<InviteActionResult> => decline(id)
+
+/** Send a test email to the signed-in admin (POST /api/manage/test-email). */
+export async function sendTestEmail(): Promise<TestEmailResult> {
+  const result = await apiPost<TestEmailResponse>('/api/manage/test-email', {})
+  if (result.kind === 'success') {
+    const d = result.data
+    if (!d || typeof d.sentTo !== 'string' || typeof d.sender !== 'string') {
+      return { kind: 'error', message: 'Invalid response' }
+    }
+    return { kind: 'sent', sentTo: d.sentTo, sender: d.sender }
+  }
+  if (result.kind === 'error') {
+    if (result.status === 429 || result.code === 'RATE_LIMITED') {
+      return { kind: 'rate-limited', retryAfterSeconds: TEST_EMAIL_COOLDOWN_SECONDS }
+    }
+    if (result.code === 'EMAIL_FAILED') return { kind: 'email-failed', message: result.error }
+  }
+  return toFailure(result)
+}
