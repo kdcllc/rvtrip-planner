@@ -37,6 +37,19 @@ describe('email sender', () => {
     expect(msg.senderAddress).toBe('DoNotReply@managed.example')
     expect(msg.recipients.to[0].address).toBe('a@b.co')
     expect(msg.content.plainText).toContain('https://l')
+    expect(msg.content.subject).toBe('Reset your RV Trip Planner password')
+    expect(msg.content.html).toBeTruthy()
+    expect(msg.content.html).toContain('href="https://l"')
+  })
+
+  it('reset link with special characters is escaped in html and verbatim in plain text', async () => {
+    h.beginSend.mockResolvedValue({})
+    const link = 'https://app.example.com/reset-password?token=a&b'
+    await sendPasswordResetEmail('a@b.co', link)
+    const c = h.beginSend.mock.calls[0][0].content
+    expect(c.plainText).toContain(link)
+    expect(c.html).toContain('token=a&amp;b')
+    expect(c.html).not.toContain('token=a&b')
   })
 
   it('429 is returned as retryable, not thrown', async () => {
@@ -105,5 +118,85 @@ describe('invite emails', () => {
     expect(await sendInviteEmail('a@b.co', 'N', 'l', new Date())).toEqual({ ok: false, retryable: true })
     h.beginSend.mockRejectedValue(new Error('net'))
     expect(await sendInviteEmail('a@b.co', 'N', 'l', new Date())).toEqual({ ok: false, retryable: false })
+  })
+})
+
+describe('shared branded layout', () => {
+  const SITE = 'https://app.example.com'
+  const RESET = 'https://app.example.com/reset-password?token=t1'
+  const INVITE = 'https://app.example.com/?invite=c1'
+
+  const cases: { name: string; cta: string; send: () => Promise<unknown> }[] = [
+    { name: 'password reset', cta: RESET, send: () => sendPasswordResetEmail('a@b.co', RESET) },
+    {
+      name: 'access request',
+      cta: SITE,
+      send: () => sendInviteRequestNotification('admin@x.co', { name: 'N', email: 'e@x.co', note: 'hi' }),
+    },
+    {
+      name: 'invite',
+      cta: INVITE,
+      send: () => sendInviteEmail('v@x.co', 'Bob', INVITE, new Date('2026-12-01T10:00:00Z')),
+    },
+  ]
+
+  it.each(cases)('$name email has a branded, image/script-free HTML body and a plain-text twin', async ({ cta, send }) => {
+    h.beginSend.mockResolvedValue({})
+    expect(await send()).toEqual({ ok: true })
+    const { html, plainText } = h.beginSend.mock.calls[0][0].content
+    expect(html.trimStart().toLowerCase().startsWith('<!doctype html>')).toBe(true)
+    expect(html).toContain('RV Trip Planner')
+    expect(html).toContain(`<a href="${cta}"`)
+    expect(html).toContain(`<a href="${SITE}"`)
+    for (const tag of ['<img', '<script', '<style', '<link']) {
+      expect(html.toLowerCase()).not.toContain(tag)
+    }
+    expect(plainText).toContain(cta)
+    expect(plainText).toContain(SITE)
+  })
+
+  it('reset email states the 1 hour validity and footer reason in html and plain text', async () => {
+    h.beginSend.mockResolvedValue({})
+    await sendPasswordResetEmail('a@b.co', RESET)
+    const { html, plainText } = h.beginSend.mock.calls[0][0].content
+    for (const body of [html, plainText]) {
+      expect(body).toContain('1 hour')
+      expect(body).toContain('a password reset was requested for your account')
+    }
+  })
+
+  it('invite email shows the expiry date and footer reason in html and plain text', async () => {
+    h.beginSend.mockResolvedValue({})
+    await sendInviteEmail('v@x.co', 'Bob', INVITE, new Date('2026-12-01T10:00:00Z'))
+    const { html, plainText } = h.beginSend.mock.calls[0][0].content
+    for (const body of [html, plainText]) {
+      expect(body).toContain('2026-12-01')
+      expect(body).toContain('an administrator invited you to RV Trip Planner')
+    }
+  })
+
+  it('access request footer reason is present in html and plain text', async () => {
+    h.beginSend.mockResolvedValue({})
+    await sendInviteRequestNotification('admin@x.co', { name: 'N', email: 'e@x.co', note: null })
+    const { html, plainText } = h.beginSend.mock.calls[0][0].content
+    for (const body of [html, plainText]) {
+      expect(body).toContain('you are an administrator of RV Trip Planner')
+      expect(body).toContain('(none)')
+    }
+  })
+
+  it('escapes invite name in heading and request name/email/note in the new layout', async () => {
+    h.beginSend.mockResolvedValue({})
+    await sendInviteEmail('v@x.co', '<i>Eve</i>', INVITE, new Date('2026-12-01T10:00:00Z'))
+    let html: string = h.beginSend.mock.calls[0][0].content.html
+    expect(html).toContain('&lt;i&gt;Eve&lt;/i&gt;')
+    expect(html).not.toContain('<i>')
+    h.beginSend.mockClear()
+    await sendInviteRequestNotification('admin@x.co', { name: '<b>n</b>', email: 'a"b@x.co', note: '<u>note</u>' })
+    html = h.beginSend.mock.calls[0][0].content.html
+    expect(html).toContain('&lt;b&gt;n&lt;/b&gt;')
+    expect(html).toContain('a&quot;b@x.co')
+    expect(html).toContain('&lt;u&gt;note&lt;/u&gt;')
+    expect(html).not.toContain('<u>')
   })
 })

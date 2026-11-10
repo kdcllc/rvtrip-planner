@@ -170,7 +170,7 @@ Linked as the sender only when `USE_CUSTOM_EMAIL_DOMAIN` is `true`. By default m
 
 Note that `infra/main.parameters.json` defaults `CUSTOM_EMAIL_DOMAIN`, `EMAIL_DNS_ZONE_NAME` and `EMAIL_DNS_ZONE_RESOURCE_GROUP` to `moedim.dev` / `moedim-rg`, so every `azd provision` creates the custom domain and writes the DNS records, which requires DNS Zone Contributor on `moedim-rg`. A deployment without this zone must change those defaults in `infra/main.parameters.json`; an empty value skips the custom domain and the DNS module (see the `if` in `infra/main.bicep`).
 
-- **DNS records**: when the domain, `EMAIL_DNS_ZONE_NAME` (default `moedim.dev`) and `EMAIL_DNS_ZONE_RESOURCE_GROUP` (default `moedim-rg`) are all non-empty, `infra/core/communication/email-dns-records.bicep` writes into that existing Azure DNS zone (cross resource group) the apex `@` TXT record set (including the ACS `ms-domain-verification` value) and two DKIM CNAMEs.
+- **DNS records**: when the domain, `EMAIL_DNS_ZONE_NAME` (default `moedim.dev`) and `EMAIL_DNS_ZONE_RESOURCE_GROUP` (default `moedim-rg`) are all non-empty, `infra/core/communication/email-dns-records.bicep` writes into that existing Azure DNS zone (cross resource group) the apex `@` TXT record set (including the ACS `ms-domain-verification` value) and two DKIM CNAMEs. It also writes a separate `_dmarc` TXT record (`v=DMARC1; p=none; rua=mailto:rvtrip@moedim.dev` with the defaults), only when the DMARC policy is non-empty. The policy is the `emailDmarcPolicy` param in `infra/main.bicep` (default `none`; allowed `none`, `quarantine`, `reject`, or empty to skip the record); it has no azd env var, so change it by editing that default. The deployment owns `_dmarc` whenever it writes it, so a manually created `_dmarc` value is overwritten.
 - **Warning, apex TXT ownership**: the deployment fully owns the apex TXT set, so any apex TXT value not listed is removed on each provision. The values to keep are the `existingApexTxtValues` default in `infra/main.bicep` (the zone's current SPF, `MS=` and site-verification values). To add a new apex TXT value, add it to that array and provision again.
 - **Permission (manual step)**: the deploying identity, both your local login and the CI federated identity (`AZURE_CLIENT_ID`), needs **DNS Zone Contributor** on the zone's resource group:
 
@@ -334,7 +334,7 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 - `infra/core/host/staticwebapp-appsettings.bicep` - SWA app settings module
 - `infra/core/database/sql-server.bicep` - SQL server, free-offer database, `AllowAzureServices` rule
 - `infra/core/communication/communication-services.bicep` - Communication Services email (Azure-managed domain, optional custom domain and sender)
-- `infra/core/communication/email-dns-records.bicep` - Apex TXT and DKIM CNAME records in an existing Azure DNS zone for the custom email domain
+- `infra/core/communication/email-dns-records.bicep` - Apex TXT, DMARC and DKIM CNAME records in an existing Azure DNS zone for the custom email domain
 - `infra/core/storage/storage-account.bicep` - Storage account module (not used by the current deployment)
 
 ### Build Configuration

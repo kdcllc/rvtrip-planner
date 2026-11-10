@@ -68,6 +68,10 @@ param existingApexTxtValues array = [
   'google-site-verification=meqoDQQNAfzllMDTjwZDXo9scXEVdIfO3kPsgMbrwP0'
 ]
 
+@allowed(['', 'none', 'quarantine', 'reject'])
+@description('DMARC policy written to _dmarc on the email DNS zone. Empty = no _dmarc record is managed.')
+param emailDmarcPolicy string = 'none'
+
 // Tags that should be applied to all resources
 var tags = {
   'azd-env-name': environmentName
@@ -134,6 +138,8 @@ module emailDns 'core/communication/email-dns-records.bicep' = if (!empty(custom
     dkimRecordValue: communication.outputs.dkimRecordValue
     dkim2RecordName: communication.outputs.dkim2RecordName
     dkim2RecordValue: communication.outputs.dkim2RecordValue
+    dmarcPolicy: emailDmarcPolicy
+    dmarcReportAddress: '${customSenderUsername}@${customEmailDomain}'
   }
 }
 
