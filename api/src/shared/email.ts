@@ -136,3 +136,15 @@ export async function sendInviteEmail(
   })
   return send(to, 'Your invitation to RV Trip Planner', plainText, html)
 }
+
+/** Sends the admin diagnostic email. Render-time settings (sender, base URL) may throw; ACS failures never do. */
+export async function sendTestEmail(to: string, sentAt: Date): Promise<SendResult> {
+  const sender = requireSetting('ACS_SENDER_ADDRESS')
+  const { html, plainText } = renderEmail({
+    heading: 'Test email',
+    paragraphs: [`Sent from ${sender} at ${sentAt.toISOString()}`, 'If you received this, email delivery works.'],
+    cta: { label: 'Open RV Trip Planner', url: baseUrl() },
+    footerNote: 'You received this because an admin requested a test email.',
+  })
+  return send(to, 'RV Trip Planner test email', plainText, html)
+}

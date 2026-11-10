@@ -16,6 +16,7 @@ import {
   sendInviteEmail,
   sendInviteRequestNotification,
   sendPasswordResetEmail,
+  sendTestEmail,
 } from './email'
 
 process.env.ACS_CONNECTION_STRING = 'endpoint=https://x/;accesskey=k'
@@ -198,5 +199,51 @@ describe('shared branded layout', () => {
     expect(html).toContain('a&quot;b@x.co')
     expect(html).toContain('&lt;u&gt;note&lt;/u&gt;')
     expect(html).not.toContain('<u>')
+  })
+})
+
+describe('sendTestEmail', () => {
+  const SENT_AT = new Date('2026-11-09T22:28:00Z')
+
+  it('sends the diagnostic subject to the recipient with sender, ISO time, CTA and footer in html and text', async () => {
+    h.beginSend.mockResolvedValue({})
+    expect(await sendTestEmail('admin@x.co', SENT_AT)).toEqual({ ok: true })
+    const msg = h.beginSend.mock.calls[0][0]
+    expect(msg.content.subject).toBe('RV Trip Planner test email')
+    expect(msg.recipients.to[0].address).toBe('admin@x.co')
+    expect(msg.senderAddress).toBe('DoNotReply@managed.example')
+    const { html, plainText } = msg.content
+    for (const body of [html, plainText]) {
+      expect(body).toContain('DoNotReply@managed.example')
+      expect(body).toContain('2026-11-09T22:28:00.000Z')
+      expect(body).toContain('email delivery works')
+      expect(body).toContain('You received this because an admin requested a test email.')
+    }
+    expect(html).toContain('href="https://app.example.com"')
+    expect(plainText).toContain('https://app.example.com')
+  })
+
+  it('html contains no script, iframe, form or img tags', async () => {
+    h.beginSend.mockResolvedValue({})
+    await sendTestEmail('admin@x.co', SENT_AT)
+    expect(h.beginSend.mock.calls[0][0].content.html).not.toMatch(/<(script|iframe|form|img|link)\b/i)
+  })
+
+  it('ACS failures come back as results, not exceptions', async () => {
+    h.beginSend.mockRejectedValue(Object.assign(new Error('Too many'), { statusCode: 429 }))
+    expect(await sendTestEmail('admin@x.co', SENT_AT)).toEqual({ ok: false, retryable: true })
+    h.beginSend.mockRejectedValue(new Error('nope'))
+    expect(await sendTestEmail('admin@x.co', SENT_AT)).toEqual({ ok: false, retryable: false })
+  })
+
+  it('throws when the sender setting is missing (render-time failure)', async () => {
+    const saved = process.env.ACS_SENDER_ADDRESS
+    delete process.env.ACS_SENDER_ADDRESS
+    try {
+      await expect(sendTestEmail('admin@x.co', SENT_AT)).rejects.toThrow(/ACS_SENDER_ADDRESS/)
+      expect(h.beginSend).not.toHaveBeenCalled()
+    } finally {
+      process.env.ACS_SENDER_ADDRESS = saved
+    }
   })
 })

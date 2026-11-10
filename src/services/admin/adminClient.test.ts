@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createInvite, declineInvite, listInviteRequests, sendInvite } from './adminClient'
+import { createInvite, declineInvite, listInviteRequests, sendInvite, sendTestEmail } from './adminClient'
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -161,6 +161,43 @@ describe('adminClient', () => {
     expect(await declineInvite('r1')).toEqual({
       kind: 'error',
       message: 'boom',
+    })
+  })
+
+  describe('sendTestEmail', () => {
+    it('POSTs to the test-email route and maps success to sent', async () => {
+      fetchMock.mockResolvedValue(json(200, { sentTo: 'a@b.co', sender: 'rvtrip@moedim.dev' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'sent', sentTo: 'a@b.co', sender: 'rvtrip@moedim.dev' })
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('/api/manage/test-email')
+      expect(init.method).toBe('POST')
+    })
+
+    it('maps a malformed success body to error', async () => {
+      fetchMock.mockResolvedValue(json(200, { sentTo: 5 }))
+      expect(await sendTestEmail()).toEqual({ kind: 'error', message: 'Invalid response' })
+    })
+
+    it('maps 429 to rate-limited with a 60 second wait', async () => {
+      fetchMock.mockResolvedValue(json(429, { error: 'slow down', code: 'RATE_LIMITED' }, { 'Retry-After': '30' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'rate-limited', retryAfterSeconds: 60 })
+    })
+
+    it('maps EMAIL_FAILED to email-failed with the server message', async () => {
+      fetchMock.mockResolvedValue(json(502, { error: 'Email could not be sent', code: 'EMAIL_FAILED' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'email-failed', message: 'Email could not be sent' })
+    })
+
+    it('maps 403 to forbidden and 401 to session-expired', async () => {
+      fetchMock.mockResolvedValueOnce(json(403, { error: 'no' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'forbidden' })
+      fetchMock.mockResolvedValueOnce(json(401, { error: 'no' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'session-expired' })
+    })
+
+    it('maps other failures to error', async () => {
+      fetchMock.mockResolvedValueOnce(json(500, { error: 'boom' }))
+      expect(await sendTestEmail()).toEqual({ kind: 'error', message: 'boom' })
     })
   })
 })
