@@ -92,6 +92,7 @@ This builds the SPA and the bundled API (via `swa-cli.config.json`) and deploys 
 - `GET /api/trips` without a session returns 401
 - The site root shows the landing page for signed-out visitors (Sign up, Log in, Request an invite); register with the shared invite code or a single-use invite link (emailed, or copied by an admin from Access requests)
 - A signed-in admin (an address in `ADMIN_EMAILS`) sees "Access requests"; trips are saved per trip through `PUT /api/trips/{tripId}`
+- To check email delivery, a signed-in admin opens Access requests, then Email delivery, then "Send test email"; the test email goes to the admin's own address, at most once a minute
 
 ---
 

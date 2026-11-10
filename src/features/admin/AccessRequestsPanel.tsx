@@ -5,6 +5,7 @@ import {
   declineInvite,
   listInviteRequests,
   sendInvite,
+  sendTestEmail,
 } from '../../services/admin/adminClient'
 import type { InviteActionResult, InviteSentResult } from '../../services/admin/adminClient'
 import type { AdminInviteRequest, InviteRequestStatus } from '../../types/api'
@@ -76,6 +77,64 @@ function InviteLinkPanel({ info, onDone }: { info: InviteLinkInfo; onDone: () =>
         </button>
       </div>
     </div>
+  )
+}
+
+function EmailDeliverySection({ onSessionExpired }: { onSessionExpired: () => void }) {
+  const [sending, setSending] = useState(false)
+  const [info, setInfo] = useState('')
+  const [error, setError] = useState('')
+  const send = async () => {
+    if (sending) return
+    setSending(true)
+    setInfo('')
+    setError('')
+    const result = await sendTestEmail()
+    setSending(false)
+    switch (result.kind) {
+      case 'sent':
+        setInfo(`Test email sent to ${result.sentTo} from ${result.sender}.`)
+        break
+      case 'rate-limited':
+        setInfo('A test email was just sent. Try again in about a minute.')
+        break
+      case 'email-failed':
+        setError(`Test email failed: ${result.message}`)
+        break
+      case 'session-expired':
+        onSessionExpired()
+        break
+      case 'forbidden':
+        setError(ADMINS_ONLY)
+        break
+      case 'conflict':
+        setError(`Conflict: ${result.message}`)
+        break
+      case 'database-waking':
+        setError('The database is waking up. Try again in a moment.')
+        break
+      default:
+        setError(result.message)
+    }
+  }
+  return (
+    <section className="access-email-section" aria-labelledby="access-email-title">
+      <h3 id="access-email-title">Email delivery</h3>
+      <p className="access-muted access-email-help">Sends a test email to your own address.</p>
+      <button type="button" className="ghost" disabled={sending} onClick={() => void send()}>
+        {sending ? 'Sending…' : 'Send test email'}
+      </button>
+      {info && (
+        <p className="access-email-result" role="status" aria-live="polite">
+          {info}
+        </p>
+      )}
+      {error && (
+        <p className="access-row-error access-email-result" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -454,6 +513,7 @@ export function AccessRequestsPanel({ onClose, onSessionExpired }: AccessRequest
         {inviteLink && (
           <InviteLinkPanel key={inviteLink.link} info={inviteLink} onDone={() => setInviteLink(null)} />
         )}
+        {loadState !== 'forbidden' && <EmailDeliverySection onSessionExpired={onSessionExpired} />}
         {renderBody()}
       </div>
     </div>

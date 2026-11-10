@@ -174,3 +174,23 @@
     min-width: 640px;
   }
 }
+
+.access-email-section {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.access-email-section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.access-email-help,
+.access-email-result {
+  margin: 0;
+}
+
+.access-email-result:empty {
+  display: none;
+}

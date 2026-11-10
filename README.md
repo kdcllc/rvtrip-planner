@@ -18,7 +18,7 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - Sync button in the header (next to Sign out): flushes pending edits, then reloads your trips from the server and shows "Synced at HH:MM". The server copy wins; trips whose unsaved local edits were replaced are named in a notice. The app also syncs automatically when the tab regains focus or becomes visible, only if nothing is unsaved and at least 30 seconds have passed since the last sync (no polling)
 - Import a single trip or a full backup as JSON (trips whose ids already exist are skipped); "Download all trips" backup and a per-trip Download button
 - Trips from older browser storage are imported into your account on sign-in
-- Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites, or invite any email address directly with the Email/Name form at the top of the panel (Invite button); after inviting, sending or resending, the panel shows the invite link once to copy
+- Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites, or invite any email address directly with the Email/Name form at the top of the panel (Invite button); after inviting, sending or resending, the panel shows the invite link once to copy; an Email delivery section sends a test email to your own address to check delivery
 - Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
 
