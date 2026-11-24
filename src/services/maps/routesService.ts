@@ -145,11 +145,8 @@ export const computeRoute = async (
   // Check cache first (24-hour TTL, persisted to localStorage)
   const cached = routeCache.get(cacheKey)
   if (cached) {
-    console.log('✓ Routes cache hit:', cacheKey, `(${(cached.distanceMeters / 1609.344).toFixed(1)} mi, saved API call)`)
     return cached
   }
-
-  console.log('Routes cache miss, calling API for:', cacheKey)
 
   try {
     const provider =
@@ -161,26 +158,10 @@ export const computeRoute = async (
 
     // Cache the result immediately to persist across requests
     routeCache.set(cacheKey, result)
-    console.log('Route cached:', cacheKey, `(${(result.distanceMeters / 1609.344).toFixed(1)} mi, cache size: ${routeCache.size()})`)
 
     return result
   } catch (error) {
     console.error('Error computing route:', error)
     throw error
   }
-}
-
-/**
- * Clear the route cache (useful when route preferences change or for memory management)
- */
-export const clearRouteCache = () => {
-  routeCache.clear()
-  console.log('Route cache cleared')
-}
-
-/**
- * Get current cache size (for debugging/monitoring)
- */
-export const getRouteCacheSize = () => {
-  return routeCache.size()
 }

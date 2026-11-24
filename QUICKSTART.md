@@ -1,224 +1,163 @@
-# Quick Start Guide - Azure Static Web Apps Deployment
+# Quick Start Guide - Local Setup
+
+This guide gets the full app (SPA, API and database) running on your machine. To deploy to Azure, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Prerequisites Check
 
 Before starting, ensure you have:
 
-- [ ] Azure CLI installed (`az --version`)
-- [ ] Azure Developer CLI installed (`azd version`)
-- [ ] Node.js and npm installed (`node --version`)
-- [ ] Azure subscription access
-- [ ] Environment secrets set in the azd environment: `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE` (see `infra/main.parameters.json`; never commit values). Optionally set `ADMIN_EMAILS` (comma-separated admin addresses; defaults to `travel@kingdavidconsulting.com`; if you customize it, also set the repository variable `ADMIN_EMAILS`, because the deploy workflow reapplies it from that variable on every push to `master`)
+- [ ] Node.js 22 and npm (`node --version`). `api/package.json` sets `engines.node` to `>=22 <23`, the runtime the deployed API uses.
+- [ ] Docker with Docker Compose (`docker compose version`), for the local SQL Server
+- [ ] `sqlcmd` (go-sqlcmd or `/opt/mssql-tools18/bin/sqlcmd`), used by `scripts/db-migrate.sh`
+- [ ] Bash, to run `scripts/db-migrate.sh`
 
-## Quick Start Commands
+No account or API key is needed for maps, routing, geocoding or weather.
 
-### 1. Login to Azure
+## Setup
 
-```bash
-azd auth login
-```
-
-### 2. One-Command Setup and Deploy
+### 1. Install dependencies
 
 ```bash
-azd up
+npm install
+(cd api && npm install)
 ```
 
-This single command will:
+The root install includes the SWA CLI and Azure Functions Core Tools used by `npm run dev:swa`.
 
-- Prompt for environment name (e.g., "prod")
-- Prompt for Azure region (e.g., "eastus2")
-- Create the Azure Static Web App, Azure SQL server and database (`AZURE_SQL_LOCATION`, default `centralus`), and Azure Communication Services email
-- Apply the app settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) to the Static Web App
-  - Mail is sent from the Azure-managed `DoNotReply@...azurecomm.net` address until the optional custom email domain is verified and enabled (see the 'Custom email domain' section of `DEPLOYMENT.md`)
-- Build the SPA and the bundled API (`swa-cli.config.json`: `env: production`, `apiLocation: api/scripts`)
-- Deploy to Azure
-
-After the first provision, apply the database schema once with `scripts/db-migrate.sh` (see `db/README.md`) using a connection string with DDL rights. `azd` does not run it, but the deploy workflow applies migrations automatically on each push to `master`, so the manual script is optional after the first provision when you deploy through that workflow (a local `azd deploy` does not apply migrations). When upgrading an existing deployment to this release, apply migration `002-per-trip-and-invites.sql` the same way before deploying the new API (it backfills existing trips into per-trip rows).
-
-**Expected time:** a few minutes (a deploy alone took about 1 minute in the recorded run)
-
-### 3. Get Your Website URL
-
-After deployment completes, look for output like:
-
-```
-🌐 URL: https://your-app.azurestaticapps.net/
-```
-
-Visit that URL to see your deployed Trip Planner!
-
----
-
-## Alternative: Step-by-Step Deployment
-
-If you prefer more control:
-
-### Step 1: Create Environment
+### 2. Start the local database
 
 ```bash
-azd env new prod
+npm run db:up
 ```
 
-### Step 2: Provision Infrastructure
+This starts SQL Server in Docker (`docker-compose.yml`, service `sqlserver`, port 1433) and waits until it is healthy. The SA password comes from `MSSQL_SA_PASSWORD`; when unset, the compose file uses a development-only default. See [db/README.md](db/README.md) for the default, the data volume and how to connect.
+
+### 3. Apply the schema
 
 ```bash
-azd provision
+export SQL_CONNECTION_STRING='Server=localhost,1433;Database=tripplanner;User Id=sa;Password=your-local-db-password;TrustServerCertificate=True'
+npm run db:migrate
 ```
 
-### Step 3: Deploy Application
+Replace `your-local-db-password` with the SA password from step 2. The script creates the `tripplanner` database if it is missing and applies every file in `db/migrations/` in order. It is safe to re-run.
+
+### 4. Configure the API
+
+The API reads its settings from `process.env`. For local runs, create `api/local.settings.json` (git-ignored):
+
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "SQL_CONNECTION_STRING": "Server=localhost,1433;Database=tripplanner;User Id=sa;Password=your-local-db-password;TrustServerCertificate=True",
+    "SESSION_SECRET": "your-long-random-string",
+    "APP_BASE_URL": "http://localhost:4280",
+    "INVITE_CODE": "your-invite-code",
+    "ADMIN_EMAILS": "admin@example.com"
+  }
+}
+```
+
+| Setting | Required locally | Purpose |
+|---|---|---|
+| `SQL_CONNECTION_STRING` | yes | Database connection (same value as step 3) |
+| `SESSION_SECRET` | yes | Server secret; use a long random string |
+| `APP_BASE_URL` | yes | Origin the API accepts changes from; also used in emailed links. Must match the URL you browse, `http://localhost:4280` |
+| `INVITE_CODE` | yes | Shared code you type when registering |
+| `ADMIN_EMAILS` | no | Comma-separated emails of accounts that see "Access requests" |
+| `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS` | no | Azure Communication Services email. Without them no email is sent: password-reset mail does not arrive, and for invites the admin panel reports "Email not sent" and shows the link to copy |
+
+The same names, with a comment each, are in [.env.example](.env.example). The names come from `api/src/shared/config.ts`.
+
+### 5. (Optional) Routing fallback key
+
+Create a `.env` file in the repo root (git-ignored) to add OpenRouteService as a third routing fallback:
 
 ```bash
-azd deploy
+VITE_OPENROUTE_API_KEY=your-api-key
 ```
 
----
+This is the only variable the browser build reads (`src/config/env.ts`).
 
-## After Initial Deployment
-
-### Update After Code Changes
+### 6. Build the API and start the app
 
 ```bash
-# Build and deploy
-azd deploy
-
-# Or do both provision + deploy
-azd up
+(cd api && npm run build)
+npm run dev:swa
 ```
 
-### View Deployed Resources
+`npm run dev:swa` starts the SWA CLI, which runs the Vite dev server (`npm run dev`, port 5173) and the Functions API from `api/`, and serves both at <http://localhost:4280>. The API runs the compiled output in `api/dist/`, so run the API build again after changing API code.
+
+### 7. Register and sign in
+
+1. Open <http://localhost:4280>. Signed-out visitors see the landing page.
+2. Choose Sign up and register with the `INVITE_CODE` value from step 4.
+3. To see the admin "Access requests" panel, register with an address listed in `ADMIN_EMAILS`.
+
+## Frontend only
+
+`npm run dev` starts just the Vite dev server on <http://localhost:5173>. There is no API on that port, so sign-in, registration and trip storage do not work; use it for UI work that does not need an account.
+
+## Checks
+
+Run these before opening a pull request (see [CONTRIBUTING.md](CONTRIBUTING.md)):
 
 ```bash
-azd show
+npx tsc -b               # type check
+npm run lint             # ESLint
+npm test                 # SPA tests (Vitest)
+(cd api && npm test)     # API tests (Vitest)
+npm run build            # type check + production build into dist/
 ```
 
-### View Environment Variables
+## Stopping and resetting
 
 ```bash
-azd env get-values
+docker compose down        # stop the database, keep the data
+docker compose down -v     # stop it and delete the data volume
 ```
-
-### Clean Up (Delete All Resources)
-
-```bash
-azd down
-```
-
----
-
-## Adding Custom Domain with HTTPS
-
-Azure Static Web Apps makes custom domains easy with free SSL:
-
-### Step 1: Add Domain in Azure Portal
-
-1. Navigate to your Static Web App in Azure Portal
-2. Click "Custom domains"
-3. Click "+ Add"
-4. Enter your domain (e.g., `www.yourdomain.com`)
-
-### Step 2: Configure DNS
-
-Add CNAME record at your DNS provider:
-
-```
-Type: CNAME
-Name: www
-Value: your-app.azurestaticapps.net
-TTL: 3600
-```
-
-### Step 3: Wait for SSL
-
-Azure automatically provisions a free SSL certificate (5-10 minutes).
-
-**Alternative: Using Azure CLI**
-
-```bash
-az staticwebapp hostname set \
-  --name <static-web-app-name> \
-  --resource-group rg-trip-planner \
-  --hostname www.yourdomain.com
-```
-
----
-
-## Environment Variables
-
-The deployment reads these outputs from Azure:
-
-- `AZURE_RESOURCE_GROUP` - Resource group name
-- `STATIC_WEB_APP_NAME` - Static Web App name
-- `STATIC_WEB_APP_URL` - Website URL
-
-These are automatically set by `azd` after provisioning.
-
----
 
 ## Troubleshooting
 
-### "azd: command not found"
+### `npm run db:migrate` cannot connect
 
-Install Azure Developer CLI: <https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd>
+For `localhost` the script waits up to about 60 seconds for SQL Server. Check the container with `docker compose ps`, and check that the password in `SQL_CONNECTION_STRING` matches `MSSQL_SA_PASSWORD`.
 
-### "az: command not found"
+### `sqlcmd: command not found`
 
-Azure CLI is useful for checks such as `az staticwebapp` and `az sql`. Install it: <https://learn.microsoft.com/cli/azure/install-azure-cli>
+Install go-sqlcmd or the SQL Server command-line tools, or point the `SQLCMD` variable at the binary. See [db/README.md](db/README.md).
 
-### `/api/ping` returns 500 or 503 right after a long idle period
+### Sign-in or registration is rejected locally
 
-The serverless database auto-pauses when idle and takes up to about a minute to resume. Retry after a short wait.
+The API accepts changes only from the `APP_BASE_URL` origin. Browse the app at `http://localhost:4280` (the SWA CLI port), not at the Vite port 5173.
 
-### Build Succeeds
+### The API fails with "Missing required environment variable"
 
-The app uses free, open-source mapping services by default - no API keys required!
-
-Optional enhancements can be added via `.env` file:
-
-```bash
-cat .env.example  # See available optional keys
-```
-
----
-
-## Next: Setup CI/CD
-
-After manual deployment works, set up GitHub Actions:
-
-1. Run `azd pipeline config`
-2. Follow prompts to connect GitHub repository
-3. Confirm the repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP` are set
-4. (Optional) Add `VITE_OPENROUTE_API_KEY` as a GitHub secret for the routing fallback
-5. Push code to trigger automated deployment
-
-Full instructions in [DEPLOYMENT.md](DEPLOYMENT.md)
-
----
+The message names the setting. Add it to `api/local.settings.json` and restart `npm run dev:swa`.
 
 ## File Structure
 
 ```
 trip-planner/
-├── azure.yaml                 # azd configuration
-├── infra/                     # Bicep infrastructure templates
-│   ├── main.bicep
-│   ├── main.parameters.json
-│   └── core/                  # communication, database, host, storage modules
-├── api/                       # Azure Functions API (bundled by api/scripts/build-deploy.mjs)
+├── src/                       # SPA source (React + TypeScript)
+├── api/                       # Azure Functions API (bundled for deploy by api/scripts/build-deploy.mjs)
 ├── db/                        # SQL migrations and local DB notes
 ├── scripts/
 │   ├── db-migrate.sh         # Apply db/migrations to a database
 │   └── preflight-azure.sh    # Azure preflight checks (docs/AZURE-PREFLIGHT.md)
+├── docker-compose.yml         # Local SQL Server
+├── infra/                     # Bicep infrastructure templates (see DEPLOYMENT.md)
+├── azure.yaml                 # azd configuration
 ├── swa-cli.config.json        # SWA CLI deploy settings used by azd
+├── staticwebapp.config.json   # SWA routing, headers, API runtime
 ├── .azure/                    # azd environment config (git-ignored)
-├── dist/                      # Build output (git-ignored)
-└── src/                       # Application source
+└── dist/                      # Build output (git-ignored)
 ```
-
----
 
 ## Useful Links
 
-- [Azure Developer CLI Docs](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
-- [Azure Static Web Apps](https://learn.microsoft.com/azure/static-web-apps/)
-- [Full Deployment Guide](DEPLOYMENT.md)
+- [README](README.md): features, npm scripts and project layout
+- [Deployment Guide](DEPLOYMENT.md): Azure provisioning, deploy and CI/CD
+- [Database notes](db/README.md)
+- [Azure Static Web Apps CLI](https://azure.github.io/static-web-apps-cli/)

@@ -61,79 +61,74 @@ To be respectful to free public APIs, route requests are automatically batched:
 
 Geocoding (address → coordinates) runs sequentially in the background with built-in caching (7-day TTL), and autocomplete queries are debounced (250ms) with aggressive caching (5-minute TTL).
 
-## Local Development Setup
+## Prerequisites
 
-1. Install dependencies
-   ```bash
-   npm install
-   ```
+- Node.js 22 and npm. `api/package.json` sets `engines.node` to `>=22 <23`, the runtime of the deployed API.
+- Docker with Docker Compose, `sqlcmd` and Bash, for the local database (full app only).
+- For deployment: an Azure subscription and the [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd).
 
-2. (Optional) Create a `.env` file for enhanced features:
-   ```bash
-   # OpenRouteService (optional - for routing fallback)
-   VITE_OPENROUTE_API_KEY=your_free_key_from_openrouteservice.org
-   
-   ```
+## Run locally
 
-3. Start the development server
-   ```bash
-   npm run dev
-   ```
-
-Mapping and routing services are free and need no API keys. Sign-in, registration and trip storage need the API and a database, so for the full app run it locally against a Docker SQL Server:
+To look at the frontend alone:
 
 ```bash
-npm install                      # root dependencies
-(cd api && npm install)          # API dependencies
-npm run db:up                    # start local SQL Server (docker compose)
-export SQL_CONNECTION_STRING='...'   # see db/README.md
-npm run db:migrate               # apply db/migrations/*.sql
-npm run dev:swa                  # SWA CLI: Vite dev server + /api functions
+npm install
+npm run dev
 ```
 
-The server-side settings (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) are listed by name in `.env.example`; for local runs put them in `api/local.settings.json` (git-ignored) or your shell. See [db/README.md](db/README.md) for the local database.
+This serves the SPA at `http://localhost:5173`. Mapping, routing, geocoding and weather need no API keys, but sign-in, registration and trip storage need the API and a database, so on this port you only get the signed-out landing page.
+
+For the full app (SPA, API and a local SQL Server in Docker), follow [QUICKSTART.md](QUICKSTART.md). The environment variables are listed with a comment each in [.env.example](.env.example).
+
+## npm scripts
+
+Root `package.json`:
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Vite dev server (SPA only) |
+| `npm run dev:swa` | SWA CLI: Vite dev server plus the `api/` functions on one origin |
+| `npm run build` | Type check (`tsc -b`) and production build into `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm run lint` | ESLint |
+| `npm test` | SPA tests (Vitest) |
+| `npm run db:up` | Start the local SQL Server (`docker compose`) |
+| `npm run db:migrate` | Apply `db/migrations/*.sql` with `scripts/db-migrate.sh` |
+| `npm run generate:icons` | Regenerate app icons with `scripts/generate-icons.mjs` |
+
+`api/package.json`:
+
+| Script | What it does |
+|---|---|
+| `npm run build` | Compile the API with `tsc` into `api/dist/` |
+| `npm run build:deploy` | Bundle the API for deployment (`api/scripts/build-deploy.mjs`) |
+| `npm test` | API tests (Vitest) |
+
+## Project layout
+
+```
+src/
+  app/            App shell and the signed-in app
+  features/       UI by area: admin, auth, landing, map, trip, weather
+  components/     Shared UI (components/common)
+  domain/         Pure rules: trip, weather, gas
+  services/       Network, storage, routing, geocoding, weather, auth and other clients
+  hooks/          React context providers and hooks
+  config/env.ts   The only place the browser build reads environment variables
+api/              Azure Functions API (functions in api/src/functions, shared code in api/src/shared)
+db/               SQL migrations (db/migrations) and database notes
+infra/            Bicep templates used by azd
+scripts/          Database migration, CI and Azure helper scripts
+docs/             AZURE-PREFLIGHT.md, a record of the pre-build Azure checks
+public/           Static assets
+.github/          Workflows, issue and pull request templates
+```
 
 ## Deployment to Azure
 
-This application (SPA plus the managed Azure Functions API in `api/`) is deployed to Azure Static Web Apps using Azure Developer CLI (`azd`). Deploys go through `azd` only. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
+The SPA and the managed Azure Functions API in `api/` are deployed to Azure Static Web Apps with the Azure Developer CLI (`azd`). Deploys go through `azd` only. The provisioning, deploy, custom domain and CI/CD steps are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-### Prerequisites
-
-- [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
-- Azure subscription
-
-### Quick Deploy
-
-```bash
-# Login to Azure
-azd auth login
-
-# Deploy (provision + deploy in one command)
-azd up
-```
-
-### Step-by-Step Deploy
-
-```bash
-# Create environment
-azd env new prod
-
-# Provision Azure resources
-azd provision
-
-# Deploy application
-azd deploy
-```
-
-### Update Deployment
-
-After making code changes:
-
-```bash
-azd deploy
-```
-
-### Resources Created
+### Resources created
 
 - **Resource Group:** `rg-{environmentName}`
 - **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`) in `AZURE_LOCATION` (East US 2 for the live deployment)
@@ -141,11 +136,20 @@ azd deploy
 - **Azure Communication Services** with an Azure-managed email domain (password-reset, invite and access-request mail), plus an optional custom sender domain (`rvtrip@moedim.dev`) enabled by `USE_CUSTOM_EMAIL_DOMAIN` after DNS verification; see [DEPLOYMENT.md](DEPLOYMENT.md#custom-email-domain)
 - **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`
 - **Default URL:** `https://{name}.azurestaticapps.net`
-- **Custom Domain:** Supports HTTPS with managed certificates (see DEPLOYMENT.md)
+- **Custom Domain:** Supports HTTPS with managed certificates (see [DEPLOYMENT.md](DEPLOYMENT.md))
 
-### GitHub Actions CI/CD
+### GitHub Actions
 
-`.github/workflows/azure-dev.yml` runs on push to `master`: lint, tests (root and `api/`), then, using a federated credential, applies database migrations (`scripts/db-migrate.sh`, opening a temporary SQL firewall rule for the runner and removing it afterwards), sets the `ADMIN_EMAILS` app setting from the optional repository variable `ADMIN_EMAILS` (default `travel@kingdavidconsulting.com`) when it differs, and runs `azd deploy`. A migration failure skips the deploy. It needs these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_RESOURCE_GROUP`. `azd pipeline config` can create them. Optionally add the `VITE_OPENROUTE_API_KEY` secret for the third routing fallback. See [DEPLOYMENT.md](DEPLOYMENT.md).
+| Workflow | File | Runs on |
+|---|---|---|
+| PR Checks | `.github/workflows/pr-checks.yml` | Pull requests: type check, lint, tests (root and `api/`), build |
+| Secret Scan | `.github/workflows/secret-scan.yml` | Pull requests and pushes to `master`: gitleaks |
+| Deploy to Azure Static Web Apps | `.github/workflows/azure-dev.yml` | Pushes to `master`: lint, tests, database migrations, then `azd deploy` |
+| Provision Azure infrastructure (manual) | `.github/workflows/azure-provision.yml` | Manual run: `azd provision` preview, applied on request |
+
+The repository variables and secrets these workflows need are listed in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Using the app
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
@@ -171,3 +175,9 @@ azd deploy
 - Weather is pulled for the exact date range you provide per stop
 - Route requests are batched and cached to respect free public APIs
 - Trip data persists server-side per account (one row per trip) - use "Download all trips" or a per-trip download for backup
+
+## Contributing, security and license
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): branch and pull request flow, required checks, commit style
+- [SECURITY.md](SECURITY.md): how to report a vulnerability privately
+- [LICENSE](LICENSE): MIT

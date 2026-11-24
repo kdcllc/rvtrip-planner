@@ -203,8 +203,6 @@ export const captureMapAsDataUrl = async (
     const canvas = map.getCanvas()
     const dataUrl = canvas.toDataURL('image/png')
 
-    console.log(`✓ Map captured: ${validStops.length} stops, ${includeRoutes ? routeLabels.length : 0} routes`)
-
     // Cleanup
     markers.forEach((marker) => marker.remove())
     routeLabels.forEach((label) => label.remove())

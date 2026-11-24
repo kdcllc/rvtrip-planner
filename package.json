@@ -2,6 +2,9 @@
   "name": "trip-planner",
   "private": true,
   "version": "0.0.0",
+  "description": "RV trip planner: route planning, weather, gas prices and campground stops for road trips",
+  "license": "MIT",
+  "repository": "github:kdcllc/trip-planner",
   "type": "module",
   "scripts": {
     "dev": "vite",

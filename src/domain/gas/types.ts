@@ -16,13 +16,3 @@ export interface IGasPriceAdapter {
   name: string
   getPriceForState(state: string): Promise<GasPriceLookupResult>
 }
-
-/**
- * Cost calculation result
- */
-export type FuelCostEstimate = {
-  distanceMeters: number
-  mpg: number
-  gasPricePerGallon: number
-  estimatedCost: number   // (distanceMeters / 1609.34 / mpg) * gasPricePerGallon
-}

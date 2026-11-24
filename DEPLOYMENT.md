@@ -2,14 +2,16 @@
 
 This guide walks you through deploying the Trip Planner application to Azure Static Web Apps using the Azure Developer CLI (`azd`). The app has a managed Functions API and an Azure SQL database.
 
+It covers Azure provisioning, deploy, custom domains and CI/CD only. To run the app on your machine, see [QUICKSTART.md](QUICKSTART.md).
+
 ## What is Azure Static Web Apps?
 
 Azure Static Web Apps is a service that automatically builds and deploys full-stack web apps. It provides:
-- ✅ Custom domain with free HTTPS certificate
-- ✅ Global CDN included
-- ✅ Automatic SPA routing support
-- ✅ Free tier (100 GB bandwidth/month)
-- ✅ Built-in managed Functions for the API
+- Custom domain with free HTTPS certificate
+- Global CDN included
+- Automatic SPA routing support
+- Free tier (100 GB bandwidth/month)
+- Built-in managed Functions for the API
 
 ## Architecture at a glance
 
@@ -37,7 +39,7 @@ Bicep applies seven app settings to the Static Web App: `SQL_CONNECTION_STRING`,
 
 ### Local development
 
-`npm run db:up` (local SQL Server in Docker), `npm run db:migrate`, then `npm run dev:swa` (SWA CLI with the Vite dev server and the API). See `db/README.md` and `.env.example`.
+Local setup is not part of this guide. Follow [QUICKSTART.md](QUICKSTART.md).
 
 ### Cold start
 
@@ -47,8 +49,9 @@ The database auto-pauses when idle. The API maps a paused or resuming database t
 
 1. **Azure Developer CLI** - [Install azd](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 2. **Azure Subscription** - You need an active Azure subscription (the free SQL offer region locks per subscription at first free database creation)
-3. **Node.js 22 and npm**
-4. **(Optional)** OpenRouteService API key - See `.env.example` for details
+3. **Node.js 22 and npm** (`api/package.json` sets `engines.node` to `>=22 <23`)
+4. **Azure CLI (`az`)** - used by the custom domain commands, the role assignment and the email domain verification script. [Install it](https://learn.microsoft.com/cli/azure/install-azure-cli)
+5. **(Optional)** OpenRouteService API key - See `.env.example` for details
 
 ## Phase 1: Initial Setup and Provisioning
 
@@ -161,7 +164,7 @@ You can check the status in Azure Portal under "Custom domains."
 
 **Workflow:** `.github/workflows/azure-dev.yml` (push to `master` or manual `workflow_dispatch`).
 
-It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), then applies migrations and `ADMIN_EMAILS` before `azd deploy --no-prompt`. The migration steps: `azure/login` (OIDC); find the Static Web App (the resource group must contain exactly one) and read `SQL_CONNECTION_STRING` from its app settings (masked); open a temporary SQL firewall rule `gha-migrate-<run_id>-<attempt>` for the runner IP (from api.ipify.org, fallback ifconfig.me); install `sqlcmd` on the runner if missing; run `scripts/db-migrate.sh` (3 attempts, 30 s apart, since a serverless database may be resuming); set the `ADMIN_EMAILS` app setting only when it differs from the repository variable `ADMIN_EMAILS` (default `travel@kingdavidconsulting.com`); deploy; and always remove the firewall rule. A migration failure skips the deploy. The deploy identity needs, on the resource group, firewall-rule write and delete on the SQL server (SQL Server Contributor or Contributor) and Static Web App app-settings read/write (Contributor). It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests.
+It checks out, verifies the required repository variables, installs Node 22, runs `npm ci --ignore-scripts` in the root and in `api/`, then lint, `npm test`, API tests (`npm test` in `api/`), installs `azd`, logs in with a federated (OIDC) credential, creates a minimal azd environment (`azd env new` plus `AZURE_RESOURCE_GROUP`; no `azd env refresh`, which would demand the secure provision inputs), then applies migrations and `ADMIN_EMAILS` before `azd deploy --no-prompt`. The migration steps: `azure/login` (OIDC); find the Static Web App (the resource group must contain exactly one) and read `SQL_CONNECTION_STRING` from its app settings (masked); open a temporary SQL firewall rule `gha-migrate-<run_id>-<attempt>` for the runner IP (from api.ipify.org, fallback ifconfig.me); install `sqlcmd` on the runner if missing; run `scripts/db-migrate.sh` (3 attempts, 30 s apart, since a serverless database may be resuming); set the `ADMIN_EMAILS` app setting only when it differs from the repository variable `ADMIN_EMAILS` (default `travel@kingdavidconsulting.com`); deploy; and always remove the firewall rule. A migration failure skips the deploy. The deploy identity needs, on the resource group, firewall-rule write and delete on the SQL server (SQL Server Contributor or Contributor) and Static Web App app-settings read/write (Contributor). It does not provision; run `azd provision` locally for infrastructure changes. `.github/workflows/pr-checks.yml` runs type check, lint, tests, API tests and build on pull requests. `.github/workflows/secret-scan.yml` runs gitleaks on pull requests and on pushes to `master`.
 
 Infrastructure is provisioned manually: run `azd provision` locally, or the **Provision Azure infrastructure (manual)** workflow (`.github/workflows/azure-provision.yml`) from the Actions tab on `master`. It always runs `azd provision --preview`, refuses to apply a preview that deletes or replaces a resource, and applies only when the `apply` box is checked. It needs the repository secrets `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET` and `INVITE_CODE` (the same values as your azd environment; different values rotate them) and, for a custom domain, the repository variable `APP_BASE_URL`.
 
@@ -234,6 +237,13 @@ azd env show
 azd show
 ```
 
+### View azd Environment Values
+```bash
+azd env get-values
+```
+
+After provisioning, `azd` stores the Bicep outputs here, including `AZURE_RESOURCE_GROUP`, `STATIC_WEB_APP_NAME` and `STATIC_WEB_APP_URL` (the site URL).
+
 ### Manual Deploy (after code changes)
 ```bash
 azd deploy
@@ -258,8 +268,7 @@ azd down
 ## Environment Variables
 
 ### Local Development
-Optional `.env` for the SPA: `VITE_OPENROUTE_API_KEY` (routing fallback).
-Server-side settings for the API (`SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`) are listed by name in `.env.example`; use `api/local.settings.json` (git-ignored) or your shell.
+See [QUICKSTART.md](QUICKSTART.md) for where local values go. Every variable the code reads is listed with a comment in [.env.example](.env.example): `VITE_OPENROUTE_API_KEY` for the SPA build, and the server-side settings `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS` (optional) read by `api/src/shared/config.ts`.
 
 ### azd environment (provisioning)
 `AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SQL_LOCATION` (optional), `APP_BASE_URL` (optional — set it to your custom domain, e.g. `https://trip.moedim.dev`; the API accepts sign-in and other changes only from this origin and uses it in reset links), `AZURE_SQL_ADMIN_PASSWORD`, `SESSION_SECRET`, `INVITE_CODE`, `ADMIN_EMAILS` (optional, see `infra/main.parameters.json`), and the custom email domain variables `CUSTOM_EMAIL_DOMAIN` (default `moedim.dev`), `USE_CUSTOM_EMAIL_DOMAIN` (default `false`), `EMAIL_DNS_ZONE_NAME` (default `moedim.dev`), `EMAIL_DNS_ZONE_RESOURCE_GROUP` (default `moedim-rg`).
@@ -272,10 +281,13 @@ Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_I
 ## Troubleshooting
 
 ### CI fails with "Repository variable ... is required and is empty"
-Set the five repository variables listed in Step 10 (for example with `azd pipeline config`).
+Set the six required repository variables listed in Step 10 (for example with `azd pipeline config`).
 
 ### GitHub Actions: "azd auth login" Browser Authentication Error
 CI must log in with the federated credential (the workflow passes `--federated-credential-provider github`). If you see an `xdg-open` / browser error, the federated credential step is not being used or the credential does not exist for this repo and branch.
+
+### "azd: command not found" or "az: command not found"
+Install the [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) and the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli).
 
 ### `/api/ping` returns HTML instead of JSON
 The API was not deployed, or the deploy targeted the wrong SWA environment. `swa-cli.config.json` must have `env: production` and `apiLocation: api/scripts`; re-run `azd deploy`.
@@ -326,6 +338,8 @@ Azure SQL Database, serverless free offer (centralus)       Azure Communication 
 - `scripts/ci-db.sh` - CI database steps called by the deploy workflow: `migrate` (temporary firewall rule + `scripts/db-migrate.sh`), `set-admin-emails`, `cleanup`
 - `swa-cli.config.json` - SWA CLI deploy settings used by `azd` (`env`, `apiLocation`, build commands)
 - `staticwebapp.config.json` - SWA routing, headers, `platform.apiRuntime`
+- `.github/workflows/azure-provision.yml` - Manual provision workflow (`azd provision` preview, applied on request)
+- `.github/workflows/pr-checks.yml`, `.github/workflows/secret-scan.yml` - Pull request checks and the gitleaks secret scan
 - `DEPLOYMENT.md` - This deployment guide
 
 ### Infrastructure as Code (Bicep)
