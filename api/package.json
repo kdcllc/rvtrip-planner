@@ -2,6 +2,7 @@
   "name": "trip-planner-api",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Trip Planner managed Azure Functions API (v4 Node programming model, HTTP triggers only)",
   "main": "dist/src/**/*.js",
   "engines": {

@@ -1,0 +1,14 @@
+# gitleaks configuration — used by .github/workflows/secret-scan.yml.
+# Extends the built-in ruleset; only paths holding documented fake values are allowlisted.
+title = "trip-planner gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Vendored agent skills, npm lockfiles (integrity hashes) and test files with documented fake values"
+paths = [
+  '''^(/repo/)?\.agents/''',
+  '''^(/repo/)?(api/)?package-lock\.json$''',
+  '''\.test\.tsx?$''',
+]
