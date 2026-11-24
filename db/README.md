@@ -14,11 +14,15 @@ with an id over 128 chars are skipped) and sets `users.current_trip_id` from the
 for rollback safety. Re-running is a no-op. **Run it against Azure SQL before deploying the new API**
 (Azure SQL serverless may need time to resume; retry if the first connection times out).
 
+This file is the database reference. The step-by-step local setup is in [QUICKSTART.md](../QUICKSTART.md); deployment is in [DEPLOYMENT.md](../DEPLOYMENT.md).
+
 ## Start the local database
 
 ```bash
-docker compose up -d        # returns immediately; check readiness with: docker compose ps
+npm run db:up               # docker compose up -d --wait sqlserver: returns when the container is healthy
 ```
+
+Plain `docker compose up -d` also works; it returns immediately, so check readiness with `docker compose ps`.
 
 The SA password comes from `MSSQL_SA_PASSWORD`. If unset, the compose file uses the
 **development-only** default `Local-Dev-Only-1` (throwaway local container; never reuse it).
@@ -28,7 +32,7 @@ Data persists in the `sqlserver-data` volume; `docker compose down -v` wipes it.
 
 ```bash
 export SQL_CONNECTION_STRING='Server=localhost,1433;Database=tripplanner;User Id=sa;Password=Local-Dev-Only-1;TrustServerCertificate=True'
-./scripts/db-migrate.sh
+./scripts/db-migrate.sh      # or: npm run db:migrate
 ```
 
 For `localhost` / `127.0.0.1` servers the runner waits up to ~60s for SQL Server to accept

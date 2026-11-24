@@ -1,5 +1,14 @@
 # Azure Preflight — Runbook
 
+> **Status: historical record.** These checks were run in November 2026, before the
+> backend was built, and their outcomes are in the [Results](#results) table. The "task"
+> numbers (02, 04c, 16 and so on) refer to the build plan of that time, summarised in
+> `PLAN.md`. You do not need this runbook to run or deploy the app: see
+> `QUICKSTART.md` and `DEPLOYMENT.md` in the repo root. It is kept because
+> `scripts/preflight-azure.sh` still works and the reasoning explains the architecture.
+> The `_memory/work/research/...` reports cited below were working notes; that folder is
+> git-ignored, so they are not in the repository.
+
 This runbook accompanies `scripts/preflight-azure.sh`. It converts **three
 load-bearing, currently-unverified assumptions** in the `azure-multi-user` architecture
 into facts, before the downstream implementation tasks are built on top of them.
@@ -237,7 +246,7 @@ row B is produced by task 04c.**
 
 | Check | Date run | Outcome (PASS/FAIL) | Notes |
 |---|---|---|---|
-| A — Azure SQL free-offer eligibility | 2026-11-03 | PASS (operator assertion — paid subscription; not portal-verified) | Hard verification happens in task 04c: `useFreeLimit` provisioning on KDCLLC-MPN / eastus2 fails loudly if the subscription is ineligible. Verified in 04c (2026-11-04): `az sql db show` reported `useFreeLimit` true and `freeLimitExhaustionBehavior` AutoPause. eastus2 returned `ProvisioningDisabled` for SQL servers, so the database lives in centralus (region now locked for free databases on this subscription). |
+| A — Azure SQL free-offer eligibility | 2026-11-03 | PASS (operator assertion — paid subscription; not portal-verified) | Hard verification happens in task 04c: `useFreeLimit` provisioning on the target subscription / eastus2 fails loudly if the subscription is ineligible. Verified in 04c (2026-11-04): `az sql db show` reported `useFreeLimit` true and `freeLimitExhaustionBehavior` AutoPause. eastus2 returned `ProvisioningDisabled` for SQL servers, so the database lives in centralus (region now locked for free databases on this subscription). |
 | B — SWA managed Functions → Azure SQL firewall reachability | 2026-11-05 | PASS (task 04c) | `GET /api/ping` on the deployed Static Web App returned HTTP 200, `content-type: application/json`, body `{"ok":true}` on the re-probe. The first request, against an auto-paused database, returned 500; the 503 + `Retry-After` handling was added afterwards (task 04e). Node runtime: no Azure-side source reports it; evidence is `staticwebapp.config.json` `platform.apiRuntime: node:22` plus the SWA CLI deploy log line, acknowledged by the operator. Deployed topology: Static Web App in eastus2, SQL in centralus. |
 | C — azurecomm.net email deliverability (Gmail + Outlook, inbox vs. spam) | 2026-11-04 | PASS (operator decision — delivered; Outlook to Junk) | Sends succeeded. Gmail landed in the main inbox; Outlook landed in the Junk folder. The runbook criterion (inbox at both providers) was not met at Outlook; the operator accepted delivery as success on 2026-11-04 and kept the `azurecomm.net` sender. One test message per provider; task 16 re-checks placement. History: attempt 1 (2026-11-03) aborted before sending (`LocationNotAvailableForResourceType`, ACS is global-only, no `--location` passed); fixed by passing `--location global`. |
 
