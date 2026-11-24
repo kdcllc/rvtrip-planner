@@ -183,11 +183,8 @@ export const geocodeAddress = async (address: string): Promise<GeocodingResult |
   const cacheKey = trimmed.toLowerCase()
   const cached = geocodingCache.get(cacheKey)
   if (cached) {
-    console.log('Geocoding cache hit for:', trimmed)
     return cached
   }
-
-  console.log('Geocoding cache miss, calling provider for:', trimmed)
 
   const provider = activeProvider ?? createOpenSourceGeocodingProvider()
 
@@ -201,9 +198,4 @@ export const geocodeAddress = async (address: string): Promise<GeocodingResult |
     console.error('Geocoding error:', error)
     return null
   }
-}
-
-export const clearGeocodingCache = () => {
-  geocodingCache.clear()
-  console.log('Geocoding cache cleared')
 }

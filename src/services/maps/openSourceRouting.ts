@@ -90,7 +90,6 @@ export const createOpenSourceRoutingProvider = (
             const data = await response.json()
             const parsed = parseOsrmRoute(data)
             if (parsed) {
-              console.log(`✓ Route fetched from OSRM: ${baseUrl} (${(parsed.distanceMeters / 1609.344).toFixed(1)} mi, ${parsed.duration})`)
               return parsed
             }
           } else {
@@ -148,7 +147,6 @@ export const createOpenSourceRoutingProvider = (
         throw new Error('OpenRouteService response missing route data')
       }
 
-      console.log(`✓ Route fetched from OpenRouteService (${(parsed.distanceMeters / 1609.344).toFixed(1)} mi, ${parsed.duration})`)
       return parsed
     },
   }

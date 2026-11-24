@@ -749,12 +749,9 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       const addressToGeocode = (drawerFormValues.address || '').trim()
       if (addressToGeocode) {
         try {
-          console.log('[saveDrawerChanges] Geocoding manual address:', addressToGeocode)
           const result = await geocodeAddress(addressToGeocode)
-          console.log('[saveDrawerChanges] Geocoding result:', result)
           if (result?.location) {
             finalLocation = result.location
-            console.log('[saveDrawerChanges] Set finalLocation to:', finalLocation)
             // Also update state for consistency and future reference
             setDrawerFormValues((prev) => ({
               ...prev,

@@ -175,6 +175,7 @@ function Planner({
   const currentStops = useMemo(() => currentTrip?.stops ?? [], [currentTrip])
   const preferredStopId = useMemo(
     () => getRelevantStopIdForDate(currentStops, new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- todayKey is intentional: the memo reads new Date(), so it must recompute when the day rolls over
     [currentStops, todayKey]
   )
   const stopDateSignature = useMemo(() => {

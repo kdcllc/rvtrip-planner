@@ -290,12 +290,10 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
       if (validStops.length < 2) return
       if (!routesEnabled) return
       if (routeCalculationInFlight.current) {
-        console.log('Route calculation already in progress, skipping')
         return
       }
 
       routeCalculationInFlight.current = true
-      console.log('Calculating routes between', validStops.length, 'stops')
 
       try {
         for (let i = 0; i < validStops.length - 1; i++) {
@@ -305,10 +303,6 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
           if (!origin || !destination) {
             continue
           }
-
-          console.log(
-            `Calculating route ${i + 1} from ${validStops[i].label} to ${validStops[i + 1].label}`
-          )
 
           try {
             const routeResponse = await computeRoute({

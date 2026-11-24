@@ -134,11 +134,8 @@ export const fetchAutocompleteSuggestions = async (query: string): Promise<Autoc
   const cacheKey = trimmed.toLowerCase()
   const cached = autocompleteCache.get(cacheKey)
   if (cached) {
-    console.log('Autocomplete cache hit for:', trimmed)
     return cached
   }
-
-  console.log('Autocomplete cache miss, calling provider for:', trimmed)
 
   const provider = activeProvider ?? createOpenSourceAutocompleteProvider()
 
@@ -154,5 +151,4 @@ export const fetchAutocompleteSuggestions = async (query: string): Promise<Autoc
 
 export const clearAutocompleteCache = () => {
   autocompleteCache.clear()
-  console.log('Autocomplete cache cleared')
 }
