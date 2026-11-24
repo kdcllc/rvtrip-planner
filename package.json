@@ -22,7 +22,7 @@
     "html2canvas": "^1.4.1",
     "ical-generator": "^10.0.0",
     "jspdf": "^4.2.0",
-    "maplibre-gl": "^4.7.1",
+    "maplibre-gl": "^6.4.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
