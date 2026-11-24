@@ -1,65 +1,66 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "accessibility": {
       "source": "addyosmani/web-quality-skills",
       "sourceType": "github",
       "skillPath": "skills/accessibility/SKILL.md",
-      "computedHash": "612f913bcb03f0787b103c848cd7664b676a9aaf31f25d3270cc69cf5caaab95"
+      "computedHash": "c668809f5df57feb87cc06f1bc37fb340d1d92e26bacb6edbeab9258d22e76a5"
     },
     "agent-kit": {
       "source": "kdcllc/skills",
+      "commit": "9c83939650a50ab3473c270cf1067ebcd161dc7e",
       "sourceType": "github",
       "skillPath": "skills/agent-kit/SKILL.md",
-      "computedHash": "0ea62844165cbe4cec63731b90b4ad1f9be35d99ebacc6c0e9d872b4bc6e388b"
+      "computedHash": "8d277ba1728573283bae7e410bce1fce3af0c5b98dd77adac0b694ada2844d53"
     },
     "azure-deploy": {
       "source": "microsoft/azure-skills",
       "sourceType": "github",
       "skillPath": "skills/azure-deploy/SKILL.md",
-      "computedHash": "b7de6dbbd1e95ceeca96f4937a3cae446d1a5f39dbb06ee5e0def30eb8bea15f"
+      "computedHash": "86de00fbc4bb1eb353f39f7592a2830f98969cd591cc5b8c193faba680ea7aec"
     },
     "azure-validate": {
       "source": "microsoft/azure-skills",
       "sourceType": "github",
       "skillPath": "skills/azure-validate/SKILL.md",
-      "computedHash": "c8b47ccbea6cd7de35e966f6f557799d0c68489b57bd0fe35ac17c0cb5da0097"
+      "computedHash": "4a57e68a1f6ed6cd6c5dced0dbf0a0a448cadf7a7249a998f8f2eae92399ea59"
     },
     "documentation-writer": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
       "skillPath": "skills/documentation-writer/SKILL.md",
-      "computedHash": "ee53d65b163cd7eb953a930c95841cfe398cc2c0bd24c06508bbaa07c432be35"
+      "computedHash": "b2de0a266264b7a994d9bf1b771d3b35ab3780d16ccd658ffceb2936d3df1db6"
     },
     "github-actions-templates": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/cicd-automation/skills/github-actions-templates/SKILL.md",
-      "computedHash": "93e92fd674dea084628e95f9c48af806f9672ac08f815c84f85adedb55742c59"
+      "computedHash": "a64693f40a4fbc1177efeb42b5f2a406c74d68bb40488a5bcaafd1537bbd0225"
     },
     "typescript-advanced-types": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md",
-      "computedHash": "8cbf2bf600f392d7260e476e3202932a876e2281cda3b15a8b6a5a43f383252d"
+      "computedHash": "34c5b3863fde1fc85981ac583ecaf0140471b374d0b7002ac5bc0bea2cf38b24"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/react-best-practices/SKILL.md",
-      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+      "computedHash": ""
     },
     "vitest": {
       "source": "antfu/skills",
       "sourceType": "github",
       "skillPath": "skills/vitest/SKILL.md",
-      "computedHash": "943d436114c677802426741980146c07560bf375297666b03062444f4b98a785"
+      "computedHash": "f9125ac2bc936894e78858037d05ba83d5b211dfa90a6717a3f710586d963a18"
     },
     "web-design-guidelines": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/web-design-guidelines/SKILL.md",
-      "computedHash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474"
+      "computedHash": ""
     }
   }
 }
