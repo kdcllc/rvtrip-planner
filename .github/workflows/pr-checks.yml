@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# A new push to the same PR cancels the run that is still in progress.
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -43,9 +48,36 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: API type check and build
+        run: npm run build
+        working-directory: api
+
       - name: API tests
         run: npm test
         working-directory: api
 
       - name: Build
         run: npm run build
+
+  # Applies the migrations and the local dev seed to a throwaway SQL Server, twice,
+  # so a migration or seed that fails or is not re-runnable is caught before merge.
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SQL Server
+        run: docker compose up -d --wait sqlserver
+
+      - name: Apply migrations and seed
+        run: docker compose run --rm db-init
+
+      - name: Apply again (must be re-runnable)
+        run: docker compose run --rm db-init
+
+      - name: Show SQL Server logs on failure
+        if: failure()
+        run: docker compose logs --tail 100 sqlserver
