@@ -1,6 +1,13 @@
 import * as maplibregl from 'maplibre-gl'
 import type { StyleSpecification } from 'maplibre-gl'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { TripStop } from '../../domain/trip/types'
+
+// MapLibre v6 loads its worker from a sibling file of its own module URL, which
+// does not exist once Vite bundles the library. Point it at the bundled worker.
+if (typeof maplibregl.setWorkerUrl === 'function') {
+  maplibregl.setWorkerUrl(maplibreWorkerUrl)
+}
 
 /**
  * OpenStreetMap style configuration for MapLibre

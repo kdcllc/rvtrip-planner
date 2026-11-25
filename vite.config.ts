@@ -45,6 +45,7 @@ function versionJsonPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), versionJsonPlugin()],
+  worker: { format: 'es' },
   define: {
     __APP_VERSION__: JSON.stringify(versionInfo.version),
     __APP_COMMIT__: JSON.stringify(versionInfo.commit),
