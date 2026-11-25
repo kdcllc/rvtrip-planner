@@ -89,24 +89,24 @@ export const injectMapStyles = (container: HTMLElement): HTMLStyleElement => {
       width: 26px;
       height: 26px;
       border-radius: 50%;
-      background: #f97316;
-      color: #fff;
+      background: var(--color-map-pin, #b8521f);
+      color: var(--color-on-map-pin, #fff);
       display: grid;
       place-items: center;
       font-size: 0.75rem;
       font-weight: 700;
-      border: 2px solid #fff;
+      border: 2px solid var(--color-on-map-pin, #fff);
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
     }
     
     .route-label {
       padding: 4px 8px;
       border-radius: 999px;
-      background: #fff;
-      color: #f59e0b;
+      background: var(--color-on-map-pin, #fff);
+      color: var(--color-map-pin, #b8521f);
       font-size: 0.7rem;
       font-weight: 700;
-      border: 2px solid #f59e0b;
+      border: 2px solid var(--color-map-pin, #b8521f);
       box-shadow: 0 6px 14px rgba(15, 23, 42, 0.2);
       white-space: nowrap;
     }

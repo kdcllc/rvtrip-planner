@@ -1,14 +1,10 @@
 .landing {
-  --auth-error: #b91c1c;
-  --auth-success: #166534;
+  --auth-error: var(--color-danger-text);
+  --auth-success: var(--color-success);
   min-height: 100vh;
-  color: var(--color-text, inherit);
+  color: var(--color-text);
 }
 
-:root[data-theme="dark"] .landing {
-  --auth-error: #fca5a5;
-  --auth-success: #86efac;
-}
 
 .landing-header,
 .landing-main,
@@ -30,7 +26,7 @@
 
 .landing-brand {
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: var(--text-lg);
   color: var(--color-accent-dark);
 }
 
@@ -43,7 +39,7 @@
 .landing-btn {
   display: inline-block;
   padding: 0.7rem 1.25rem;
-  border-radius: 0.75rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   font: inherit;
   font-weight: 600;
@@ -55,7 +51,7 @@
 .landing-btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #1f1300;
+  color: var(--color-on-accent);
 }
 
 .landing-btn-secondary {
@@ -65,7 +61,7 @@
 
 .landing-btn:focus-visible,
 .landing a:focus-visible {
-  outline: 3px solid var(--color-accent);
+  outline: 3px solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -83,7 +79,7 @@
 .landing-subhead {
   margin: 0 auto 1.5rem;
   max-width: 40rem;
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
   color: var(--color-text-muted);
 }
 
@@ -122,7 +118,7 @@
 .landing-request-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
   padding: 1.25rem;
 }
@@ -130,7 +126,7 @@
 .landing-feature h3,
 .landing-step h3 {
   margin: 0.25rem 0 0.5rem;
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
 }
 
 .landing-feature p,

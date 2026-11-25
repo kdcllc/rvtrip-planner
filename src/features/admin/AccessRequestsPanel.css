@@ -1,7 +1,7 @@
 .access-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--color-scrim);
   display: grid;
   place-items: center;
   z-index: 1002;
@@ -11,7 +11,7 @@
 .access-panel {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   padding: 20px;
   width: min(960px, 100%);
   max-height: 90vh;
@@ -63,7 +63,7 @@
 .access-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .access-table th,
@@ -86,8 +86,8 @@
 .access-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.8rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
   text-transform: capitalize;
   background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
@@ -112,13 +112,10 @@
 
 .access-row-error {
   margin: 6px 0 0;
-  color: #b91c1c;
-  font-size: 0.85rem;
+  color: var(--color-danger-text);
+  font-size: var(--text-sm);
 }
 
-:root[data-theme="dark"] .access-row-error {
-  color: #fca5a5;
-}
 
 .access-invite-form {
   display: flex;
@@ -144,7 +141,7 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--color-accent);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-accent-soft);
 }
 
@@ -167,7 +164,7 @@
 @media (max-width: 640px) {
   .access-panel {
     padding: 14px;
-    border-radius: 14px;
+    border-radius: var(--radius-md);
   }
 
   .access-table {
@@ -183,7 +180,7 @@
 
 .access-email-section h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .access-email-help,

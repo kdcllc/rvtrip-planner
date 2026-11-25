@@ -351,7 +351,7 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
                 'line-cap': 'round',
               },
               paint: {
-                'line-color': '#f59e0b',
+                'line-color': '#b8521f',
                 'line-width': 3,
                 'line-opacity': 0.8,
               },

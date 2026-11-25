@@ -26,7 +26,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--color-scrim-soft);
   z-index: 49;
   animation: fadeInBackdrop 300ms ease-out;
 }
@@ -40,7 +40,7 @@
   width: 100%;
   max-width: 450px;
   background: var(--color-surface);
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -62,7 +62,7 @@
 
 .stop-drawer-header h2 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: inherit;
 }
@@ -78,8 +78,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  transition: background-color 200ms ease;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-base) var(--ease-standard);
 }
 
 .stop-drawer-close:hover {
@@ -88,7 +88,7 @@
 }
 
 .stop-drawer-close:focus {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -111,7 +111,7 @@
 .stop-drawer-content .form-grid > label {
   display: grid;
   gap: 6px;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
@@ -127,7 +127,7 @@
   display: grid;
   gap: 12px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-surface-strong);
   border: 1px solid var(--color-border);
 }
@@ -147,14 +147,14 @@
 .stop-drawer-content select,
 .stop-drawer-content textarea {
   appearance: none;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   padding: 10px 12px;
-  font-size: 0.95rem;
+  font-size: var(--text-md);
   background: var(--color-surface-strong);
   color: inherit;
   font-family: inherit;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition: border-color var(--duration-base) var(--ease-standard), background-color var(--duration-base) var(--ease-standard);
 }
 
 .stop-drawer-content select {
@@ -167,7 +167,8 @@
 .stop-drawer-content input:not([type='checkbox']):not([type='radio']):focus,
 .stop-drawer-content select:focus,
 .stop-drawer-content textarea:focus {
-  outline: none;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
   border-color: var(--color-accent);
   background: var(--color-surface);
 }
@@ -184,7 +185,7 @@
 
 .manual-address-hint {
   margin: -2px 0 2px;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 /* Drawer Footer */
@@ -221,11 +222,11 @@
 
 .stop-drawer-content::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .stop-drawer-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+  background: var(--color-border-strong);
 }
 
 /* Responsive: Mobile */
@@ -239,7 +240,7 @@
   }
 
   .stop-drawer-header h2 {
-    font-size: 1.125rem;
+    font-size: var(--text-lg);
   }
 
   .stop-drawer-content {
@@ -275,7 +276,7 @@
   }
 
   .stop-drawer-header h2 {
-    font-size: 1rem;
+    font-size: var(--text-base);
   }
 }
 
