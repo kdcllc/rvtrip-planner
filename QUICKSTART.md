@@ -1,76 +1,112 @@
-# Quick Start Guide - Local Setup
+# Local Development Guide
 
-This guide gets the full app (SPA, API and database) running on your machine. To deploy to Azure, see [DEPLOYMENT.md](DEPLOYMENT.md).
+This guide takes a new developer from a fresh clone to a running, signed-in app (SPA, API and database) on their own machine. To deploy to Azure, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-## Prerequisites Check
+## How the local stack fits together
 
-Before starting, ensure you have:
+| Piece | What runs it | Port |
+|---|---|---|
+| SPA (React + Vite) | `npm run dev`, started for you by the SWA CLI | 5173 |
+| API (Azure Functions, `api/`) | Azure Functions Core Tools, started by the SWA CLI | 7071 |
+| SWA emulator: serves the SPA and proxies `/api/*` | `npm run dev:swa` | **4280** |
+| SQL Server | Docker (`docker-compose.yml`) | 1433 |
 
-- [ ] Node.js 22 and npm (`node --version`). `api/package.json` sets `engines.node` to `>=22 <23`, the runtime the deployed API uses.
-- [ ] Docker with Docker Compose (`docker compose version`), for the local SQL Server
-- [ ] `sqlcmd` (go-sqlcmd or `/opt/mssql-tools18/bin/sqlcmd`), used by `scripts/db-migrate.sh`
-- [ ] Bash, to run `scripts/db-migrate.sh`
+**Always browse the app at <http://localhost:4280>.** Port 5173 has no API behind it, so sign-in cannot work there (see [Troubleshooting](#troubleshooting)).
 
-No account or API key is needed for maps, routing, geocoding or weather.
+## Prerequisites
 
-## Setup
+- **Node.js 22** and npm. The Functions tools refuse to start on any other major version. With nvm, run `nvm use` in the repo root (`.nvmrc` pins 22); run `nvm install 22` first if you do not have it.
+- **Docker** with Docker Compose (`docker compose version`).
+- **Bash**.
+
+No account or API key is needed for maps, routing, geocoding or weather. You do not need `sqlcmd` on your machine for local work; it is only used by `npm run db:migrate` (see [db/README.md](db/README.md)).
+
+## First-time setup
 
 ### 1. Install dependencies
 
 ```bash
+nvm use
 npm install
 (cd api && npm install)
 ```
 
-The root install includes the SWA CLI and Azure Functions Core Tools used by `npm run dev:swa`.
+The root install includes the SWA CLI and Azure Functions Core Tools.
 
-### 2. Start the local database
+### 2. Start and seed the database
 
 ```bash
 npm run db:up
 ```
 
-This starts SQL Server in Docker (`docker-compose.yml`, service `sqlserver`, port 1433) and waits until it is healthy. The SA password comes from `MSSQL_SA_PASSWORD`; when unset, the compose file uses a development-only default. See [db/README.md](db/README.md) for the default, the data volume and how to connect.
+This starts SQL Server in Docker, waits until it is healthy, then runs the one-shot `db-init` service. `db-init` creates the `tripplanner` database, applies every file in `db/migrations/` and seeds a development account from `db/seed/dev-seed.sql`:
 
-### 3. Apply the schema
+| Email | Password |
+|---|---|
+| `admin@example.com` | `local-dev-password` |
 
-```bash
-export SQL_CONNECTION_STRING='Server=localhost,1433;Database=tripplanner;User Id=sa;Password=your-local-db-password;TrustServerCertificate=True'
-npm run db:migrate
-```
+It is safe to re-run: migrations are idempotent and the seed never overwrites an existing account. The seed is applied only to the local container, never by `npm run db:migrate` and never in Azure.
 
-Replace `your-local-db-password` with the SA password from step 2. The script creates the `tripplanner` database if it is missing and applies every file in `db/migrations/` in order. It is safe to re-run.
+The SA password comes from `MSSQL_SA_PASSWORD`; when unset, the compose file uses the development-only default `Local-Dev-Only-1`.
 
-### 4. Configure the API
+### 3. Configure the API
 
-The API reads its settings from `process.env`. For local runs, create `api/local.settings.json` (git-ignored):
+Create `api/local.settings.json` (git-ignored):
 
 ```json
 {
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "node",
-    "SQL_CONNECTION_STRING": "Server=localhost,1433;Database=tripplanner;User Id=sa;Password=your-local-db-password;TrustServerCertificate=True",
-    "SESSION_SECRET": "your-long-random-string",
+    "SQL_CONNECTION_STRING": "Server=localhost,1433;Database=tripplanner;User Id=sa;Password=Local-Dev-Only-1;TrustServerCertificate=True",
+    "SESSION_SECRET": "replace-with-a-long-random-string",
     "APP_BASE_URL": "http://localhost:4280",
-    "INVITE_CODE": "your-invite-code",
+    "INVITE_CODE": "local-invite",
     "ADMIN_EMAILS": "admin@example.com"
   }
 }
 ```
 
+Generate a session secret with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. If you set your own `MSSQL_SA_PASSWORD`, use it in the connection string.
+
 | Setting | Required locally | Purpose |
 |---|---|---|
-| `SQL_CONNECTION_STRING` | yes | Database connection (same value as step 3) |
+| `SQL_CONNECTION_STRING` | yes | Database connection |
 | `SESSION_SECRET` | yes | Server secret; use a long random string |
 | `APP_BASE_URL` | yes | Origin the API accepts changes from; also used in emailed links. Must match the URL you browse, `http://localhost:4280` |
-| `INVITE_CODE` | yes | Shared code you type when registering |
-| `ADMIN_EMAILS` | no | Comma-separated emails of accounts that see "Access requests" |
+| `INVITE_CODE` | yes | Shared code typed when registering an extra account |
+| `ADMIN_EMAILS` | no | Comma-separated emails of accounts that see "Access requests". Include `admin@example.com` to make the seeded account an admin |
 | `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS` | no | Azure Communication Services email. Without them no email is sent: password-reset mail does not arrive, and for invites the admin panel reports "Email not sent" and shows the link to copy |
 
 The same names, with a comment each, are in [.env.example](.env.example). The names come from `api/src/shared/config.ts`.
 
-### 5. (Optional) Routing fallback key
+### 4. Build the API and start the app
+
+```bash
+(cd api && npm run build)
+npm run dev:swa
+```
+
+`npm run dev:swa` starts the Vite dev server and the Functions API and serves both at <http://localhost:4280>.
+
+### 5. Sign in
+
+Open <http://localhost:4280>, choose Sign in and use `admin@example.com` / `local-dev-password`. To create another account, choose Sign up and enter the `INVITE_CODE` from step 3.
+
+## Day-to-day
+
+```bash
+nvm use                 # once per terminal
+npm run db:up           # if the database container is not running
+npm run dev:swa         # then open http://localhost:4280
+```
+
+- **SPA changes** hot-reload.
+- **API changes** need a rebuild, because the emulator runs the compiled output in `api/dist/`: run `(cd api && npm run build)` and restart `npm run dev:swa`.
+- **Schema changes** go in a new numbered file in `db/migrations/`; run `npm run db:up` again to apply it locally.
+- **UI-only work** can use `npm run dev` on <http://localhost:5173>. There is no API on that port: the app shows the signed-out landing page and sign-in, registration and trip storage do not work.
+
+### Optional: routing fallback key
 
 Create a `.env` file in the repo root (git-ignored) to add OpenRouteService as a third routing fallback:
 
@@ -79,25 +115,6 @@ VITE_OPENROUTE_API_KEY=your-api-key
 ```
 
 This is the only variable the browser build reads (`src/config/env.ts`).
-
-### 6. Build the API and start the app
-
-```bash
-(cd api && npm run build)
-npm run dev:swa
-```
-
-`npm run dev:swa` starts the SWA CLI, which runs the Vite dev server (`npm run dev`, port 5173) and the Functions API from `api/`, and serves both at <http://localhost:4280>. The API runs the compiled output in `api/dist/`, so run the API build again after changing API code.
-
-### 7. Register and sign in
-
-1. Open <http://localhost:4280>. Signed-out visitors see the landing page.
-2. Choose Sign up and register with the `INVITE_CODE` value from step 4.
-3. To see the admin "Access requests" panel, register with an address listed in `ADMIN_EMAILS`.
-
-## Frontend only
-
-`npm run dev` starts just the Vite dev server on <http://localhost:5173>. There is no API on that port, so sign-in, registration and trip storage do not work; use it for UI work that does not need an account.
 
 ## Checks
 
@@ -118,23 +135,37 @@ docker compose down        # stop the database, keep the data
 docker compose down -v     # stop it and delete the data volume
 ```
 
+After `down -v`, `npm run db:up` gives you a fresh, migrated and seeded database.
+
 ## Troubleshooting
 
-### `npm run db:migrate` cannot connect
+### "Missing CSRF token" when signing in
 
-For `localhost` the script waits up to about 60 seconds for SQL Server. Check the container with `docker compose ps`, and check that the password in `SQL_CONNECTION_STRING` matches `MSSQL_SA_PASSWORD`.
+No API answered `/api/ping`, so the CSRF cookie was never issued. Almost always you are on port 5173 or started only `npm run dev`. Run `npm run dev:swa` and browse <http://localhost:4280>. Safari does not accept the cookie on plain `http://localhost`; use Chrome or Firefox locally.
 
-### `sqlcmd: command not found`
+### Sign-in or registration is rejected (403)
 
-Install go-sqlcmd or the SQL Server command-line tools, or point the `SQLCMD` variable at the binary. See [db/README.md](db/README.md).
+The API accepts changes only from the `APP_BASE_URL` origin. Browse `http://localhost:4280`, and check that `APP_BASE_URL` in `api/local.settings.json` matches it exactly.
 
-### Sign-in or registration is rejected locally
+### "Azure Functions Core Tools v4 … incompatible with your current Node.js"
 
-The API accepts changes only from the `APP_BASE_URL` origin. Browse the app at `http://localhost:4280` (the SWA CLI port), not at the Vite port 5173.
+You are not on Node 22. Run `nvm use` in the terminal that starts `npm run dev:swa`.
+
+### `npm run db:up` fails with "container name … is already in use"
+
+A `trip-planner-sqlserver` container exists from another checkout or an older folder name; Compose names its project after the folder. To keep that container's data, start it with `docker start trip-planner-sqlserver` and seed it with `docker compose -p <old-folder-name> run --rm db-init`. To start clean instead, remove it with `docker rm trip-planner-sqlserver` (its data volume is kept until you delete it) and run `npm run db:up` again.
 
 ### The API fails with "Missing required environment variable"
 
 The message names the setting. Add it to `api/local.settings.json` and restart `npm run dev:swa`.
+
+### API changes have no effect
+
+The emulator runs `api/dist/`. Rebuild with `(cd api && npm run build)` and restart.
+
+### `npm run db:migrate` cannot connect, or `sqlcmd: command not found`
+
+You only need `db:migrate` for a database other than the local container. See [db/README.md](db/README.md).
 
 ## File Structure
 
@@ -142,11 +173,12 @@ The message names the setting. Add it to `api/local.settings.json` and restart `
 trip-planner/
 ├── src/                       # SPA source (React + TypeScript)
 ├── api/                       # Azure Functions API (bundled for deploy by api/scripts/build-deploy.mjs)
-├── db/                        # SQL migrations and local DB notes
+├── db/                        # SQL migrations, local dev seed and DB notes
 ├── scripts/
-│   ├── db-migrate.sh         # Apply db/migrations to a database
+│   ├── db-init.sh            # Runs in the db-init container: migrations + local seed
+│   ├── db-migrate.sh         # Apply db/migrations to a database (Azure SQL, or by hand)
 │   └── preflight-azure.sh    # Azure preflight checks (docs/AZURE-PREFLIGHT.md)
-├── docker-compose.yml         # Local SQL Server
+├── docker-compose.yml         # Local SQL Server and the one-shot db-init service
 ├── infra/                     # Bicep infrastructure templates (see DEPLOYMENT.md)
 ├── azure.yaml                 # azd configuration
 ├── swa-cli.config.json        # SWA CLI deploy settings used by azd

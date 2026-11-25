@@ -20,5 +20,20 @@ services:
       retries: 30
       start_period: 10s
 
+  # One-shot: applies migrations and the local dev seed (db/seed) once SQL Server is healthy.
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Local-Dev-Only-1}"
+      DB_NAME: "${DB_NAME:-tripplanner}"
+    volumes:
+      - ./db:/db:ro
+      - ./scripts/db-init.sh:/db-init.sh:ro
+    entrypoint: ["/bin/bash", "/db-init.sh"]
+    restart: "no"
+
 volumes:
   sqlserver-data:
