@@ -63,16 +63,6 @@ export type ApiUser = {
   isAdmin: boolean
 }
 
-/** Machine-readable error codes carried in ApiError.code. */
-export const API_ERROR_CODES = [
-  'VERSION_CONFLICT',
-  'RATE_LIMITED',
-  'EMAIL_FAILED',
-  'PAYLOAD_TOO_LARGE',
-  'DATABASE_UNAVAILABLE',
-] as const
-export type ApiErrorCode = (typeof API_ERROR_CODES)[number]
-
 /** Body of every error response. Never contains stack traces, SQL or connection details. */
 export type ApiError = {
   error: string
@@ -98,7 +88,6 @@ export type LoginRequest = {
 export type LoginResponse = { user: ApiUser }
 
 // ---- POST /api/logout ----
-export type LogoutRequest = Record<string, never>
 export type LogoutResponse = { ok: true }
 
 // ---- GET /api/me ----

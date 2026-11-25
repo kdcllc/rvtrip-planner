@@ -21,6 +21,7 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - Landing page for signed-out visitors with Sign up, Log in and Request an invite; admins review requests under "Access requests" and can send, resend or decline invites, or invite any email address directly with the Email/Name form at the top of the panel (Invite button); after inviting, sending or resending, the panel shows the invite link once to copy; an Email delivery section sends a test email to your own address to check delivery
 - Address autocomplete and validation via Photon/Nominatim
 - Print/PDF export of trip itinerary
+- Version label `v<version> (<commit>)` on the landing page footer and in the signed-in app; open tabs check for a newer deploy on load, every 5 minutes and when the tab regains focus, and show a "New version available" banner with a Reload button (no forced reload)
 
 ## Open-Source Stack
 
@@ -31,7 +32,8 @@ This application uses **free, open-source services** with no API keys required b
 - **Geocoding:** [Photon](https://photon.komoot.io/) (primary) and [Nominatim](https://nominatim.org/) (fallback)
 - **Autocomplete:** [Photon](https://photon.komoot.io/)
 - **Weather:** NOAA and Open-Meteo (free)
-- **Caching:** Routing, geocoding and autocomplete responses are cached in browser localStorage with intelligent TTLs (5min for autocomplete, 7 days for geocoding, 24hr for routes)
+- **Caching:** Routing, geocoding and autocomplete responses are cached in browser localStorage with intelligent TTLs (5min for autocomplete, 7 days for geocoding, 24hr for routes); they are cleared once when a new app version first loads (trips, vehicle settings and theme are kept)
+- **Fonts:** Fraunces and Nunito Sans are self-hosted through `@fontsource-variable/*` packages (no Google Fonts requests)
 
 ### Optional Enhancements
 
@@ -167,6 +169,7 @@ The repository variables and secrets these workflows need are listed in [DEPLOYM
 - **Geocoding:** Photon + Nominatim (free)
 - **Weather:** NOAA + Open-Meteo (free)
 - **State:** React Context; trips load and save per trip through `/api/trips` (`src/services/storage/tripStorage.ts`); routing/geocoding caches use localStorage
+- **Versioning:** The app version is the `package.json` `version` plus the short git commit and build time, injected at build by `vite.config.ts`. Every build emits `/version.json`, which the update check reads
 - **Cost Optimization:** Multi-server fallback, intelligent caching, request batching
 
 ## Notes

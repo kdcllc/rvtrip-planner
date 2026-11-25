@@ -12,7 +12,6 @@ import {
   generateInviteCode,
   hashInviteCode,
   issueInviteCode,
-  revokeInviteCode,
   revokeUnusedInviteCodes,
 } from './inviteCodes'
 
@@ -66,12 +65,6 @@ describe('issueInviteCode', () => {
 })
 
 describe('revoke helpers', () => {
-  it('revokeInviteCode targets only the hash of that code', async () => {
-    await revokeInviteCode('xyz')
-    const [text, params] = h.query.mock.calls[0]
-    expect(text).toContain('revoked = 1')
-    expect(params.codeHash.value).toBe(hashInviteCode('xyz'))
-  })
   it('revokeUnusedInviteCodes targets unused codes of the request', async () => {
     await revokeUnusedInviteCodes('r1')
     const [text, params] = h.query.mock.calls[0]

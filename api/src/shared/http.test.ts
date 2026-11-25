@@ -8,7 +8,6 @@ import {
   csrfGuard,
   databaseWaking,
   json,
-  serializeCookie,
   sessionCookie,
 } from './http'
 
@@ -31,21 +30,22 @@ beforeEach(() => {
 
 describe('cookies', () => {
   it('session cookie is HttpOnly, Secure, SameSite=Lax, Path=/ with Max-Age', () => {
-    const s = serializeCookie(sessionCookie('tok', 100))
-    expect(s).toContain('HttpOnly')
-    expect(s).toContain('Secure')
-    expect(s).toContain('SameSite=Lax')
-    expect(s).toContain('Path=/')
-    expect(s).toContain('Max-Age=100')
-    expect(serializeCookie(clearSessionCookie())).toContain('Max-Age=0')
+    expect(sessionCookie('tok', 100)).toMatchObject({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: 100,
+    })
+    expect(clearSessionCookie().maxAge).toBe(0)
   })
 
   it('csrf cookie is Secure, SameSite=Lax and not HttpOnly', () => {
-    const s = serializeCookie(csrfCookie())
-    expect(s).toMatch(/^csrf_token=/)
-    expect(s).toContain('Secure')
-    expect(s).toContain('SameSite=Lax')
-    expect(s).not.toContain('HttpOnly')
+    const c = csrfCookie()
+    expect(c.name).toBe('csrf_token')
+    expect(c.secure).toBe(true)
+    expect(c.sameSite).toBe('Lax')
+    expect(c.httpOnly).toBeFalsy()
   })
 
   it('csrf issuance needs no incoming token and mints random values (ping path)', () => {

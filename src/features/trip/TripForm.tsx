@@ -2,11 +2,6 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { formatDateRangeWithDays, formatTime } from '../../utils/date'
 import { createId } from '../../utils/id'
 import { formatDistance } from '../../utils/distance'
-import {
-  buildGoogleMapsDirectionsUrl,
-  openInGoogleMaps,
-  validateStopsForMaps,
-} from '../../services/maps/googleMaps'
 import { requiresCheckInOut } from '../../utils/siteType'
 import { StopWeatherForecast } from '../weather/StopWeatherForecast'
 import type { StopForecast } from '../../domain/weather/types'
@@ -426,46 +421,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }
   }
 
-  const handleOpenAllInMaps = () => {
-    const validation = validateStopsForMaps(stops)
-    if (!validation.valid) {
-      console.warn('Cannot open in Google Maps:', validation.error)
-      return
-    }
-
-    try {
-      const url = buildGoogleMapsDirectionsUrl(stops)
-      openInGoogleMaps(url)
-    } catch (err) {
-      console.error('Failed to open Google Maps:', err)
-    }
-  }
-
-  const handleOpenSelectedInMaps = () => {
-    const selectedStops = stops.filter((stop) => selectedStopIds.has(stop.id))
-
-    if (selectedStops.length === 0) {
-      console.warn('Please select at least one stop')
-      return
-    }
-
-    const validation = validateStopsForMaps(selectedStops)
-    if (!validation.valid) {
-      console.warn('Cannot open in Google Maps:', validation.error)
-      return
-    }
-
-    try {
-      const selectedIndices = stops
-        .map((stop, index) => (selectedStopIds.has(stop.id) ? index : -1))
-        .filter((index) => index !== -1)
-      const url = buildGoogleMapsDirectionsUrl(stops, selectedIndices)
-      openInGoogleMaps(url)
-    } catch (err) {
-      console.error('Failed to open Google Maps:', err)
-    }
-  }
-
   const openCoverageMap = async (addressText: string) => {
     const trimmedAddress = addressText.trim()
     if (!trimmedAddress) {
@@ -483,25 +438,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       '_blank',
       'noopener,noreferrer'
     )
-  }
-
-  const handleOpenStopInMaps = (stop: TripStop) => {
-    if (!stop.address) {
-      return
-    }
-
-    const validation = validateStopsForMaps([stop])
-    if (!validation.valid) {
-      console.warn('Cannot open in Google Maps:', validation.error)
-      return
-    }
-
-    try {
-      const url = buildGoogleMapsDirectionsUrl([stop])
-      openInGoogleMaps(url)
-    } catch (err) {
-      console.error('Failed to open Google Maps:', err)
-    }
   }
 
   // Timeline stop click handler - scrolls carousel to the selected stop
@@ -967,25 +903,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                 : `${stops.length} stop${stops.length === 1 ? '' : 's'}`}
             </span>
           </div>
-          <div className="maps-controls-right">
-            <button
-              className="ghost small"
-              type="button"
-              onClick={handleOpenAllInMaps}
-              title="Open all stops in Google Maps"
-            >
-              📍 Open All in Maps
-            </button>
-            <button
-              className="ghost small"
-              type="button"
-              onClick={handleOpenSelectedInMaps}
-              disabled={selectedStopIds.size === 0}
-              title="Open selected stops in Google Maps"
-            >
-              📍 Open Selected in Maps
-            </button>
-          </div>
         </div>
       )}
 
@@ -1065,14 +982,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                   <div>
                     <h3>{stop.label}</h3>
                     {stop.address ? (
-                      <button
-                        className="address-link"
-                        type="button"
-                        onClick={() => handleOpenStopInMaps(stop)}
-                        title="Click to open in Google Maps"
-                      >
-                        📍 {stop.address}
-                      </button>
+                      <span className="stop-address">📍 {stop.address}</span>
                     ) : (
                       <p className="muted">No address</p>
                     )}

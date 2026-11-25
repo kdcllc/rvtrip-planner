@@ -1,7 +1,7 @@
 {
   "name": "trip-planner",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "RV trip planner: route planning, weather, gas prices and campground stops for road trips",
   "license": "MIT",
   "repository": "github:kdcllc/rvtrip-planner",
@@ -18,6 +18,8 @@
     "dev:swa": "swa start http://localhost:5173 --run \"npm run dev\" --api-location api"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "5.3.0",
+    "@fontsource-variable/nunito-sans": "5.3.0",
     "@mapbox/polyline": "^1.2.1",
     "html2canvas": "^1.4.1",
     "ical-generator": "^10.0.0",

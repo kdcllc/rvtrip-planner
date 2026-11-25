@@ -35,13 +35,6 @@ export async function issueInviteCode(requestId: string): Promise<{ code: string
   return { code, expiresAt }
 }
 
-/** Revokes one specific (just-issued) code, e.g. when its email could not be sent. */
-export async function revokeInviteCode(code: string): Promise<void> {
-  await query('UPDATE dbo.invite_codes SET revoked = 1 WHERE code_hash = @codeHash AND used_at IS NULL', {
-    codeHash: { type: sql.Char(64), value: hashInviteCode(code) },
-  })
-}
-
 /** Revokes all unused codes of a request (decline). */
 export async function revokeUnusedInviteCodes(requestId: string): Promise<void> {
   await query('UPDATE dbo.invite_codes SET revoked = 1 WHERE request_id = @requestId AND used_at IS NULL', {

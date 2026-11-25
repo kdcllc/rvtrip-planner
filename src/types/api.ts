@@ -2,15 +2,6 @@
 // Redeclared structurally; keep in sync.
 import type { Trip } from '../domain/trip/types'
 
-export const API_ERROR_CODES = [
-  'VERSION_CONFLICT',
-  'RATE_LIMITED',
-  'EMAIL_FAILED',
-  'PAYLOAD_TOO_LARGE',
-  'DATABASE_UNAVAILABLE',
-] as const
-export type ApiErrorCode = (typeof API_ERROR_CODES)[number]
-
 /** Body of every API error response. */
 export type ApiError = {
   error: string
@@ -26,10 +17,6 @@ export type GetTripsResponse = { trips: VersionedTrip[]; currentTripId: string |
 // PUT /api/trips/{id} (baseVersion null = create)
 export type PutTripRequest = { trip: Trip; baseVersion: number | null }
 export type PutTripResponse = { version: number }
-export type TripConflictResponse = ApiError & {
-  code: 'VERSION_CONFLICT'
-  current: VersionedTrip | null
-}
 
 // DELETE /api/trips/{id}
 export type DeleteTripResponse = { ok: true }

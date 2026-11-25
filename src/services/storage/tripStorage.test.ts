@@ -19,7 +19,6 @@ import {
   readLegacyLocalTrips,
   saveTrip,
   saveTripSelection,
-  updateTripTimestamp,
 } from './tripStorage'
 import type { Trip } from '../../domain/trip/types'
 
@@ -216,9 +215,5 @@ describe('pure helpers stay synchronous', () => {
     expect(getCurrentTrip({ trips: [trip('a')], currentTripId: 'a' })?.id).toBe('a')
     expect(getCurrentTrip({ trips: [], currentTripId: null })).toBeNull()
     expect(getTripsSortedByRecent([trip('o', '2020-01-01'), trip('n', '2024-01-01')]).map((x) => x.id)).toEqual(['n', 'o'])
-    const old = trip('a')
-    const u = updateTripTimestamp(old)
-    expect(u.updatedAt).not.toBe(old.updatedAt)
-    expect(u.id).toBe('a')
   })
 })

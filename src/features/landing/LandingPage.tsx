@@ -1,4 +1,5 @@
 import { ThemeToggle } from '../../components/common/ThemeToggle'
+import { VersionLabel } from '../../components/common/VersionLabel'
 import { InviteRequestForm } from './InviteRequestForm'
 import './LandingPage.css'
 
@@ -77,6 +78,7 @@ export const LandingPage = ({ onSignUp, onLogIn }: LandingPageProps) => (
     </main>
     <footer className="landing-footer">
       <p>RV Trip Planner. Maps by OpenStreetMap contributors.</p>
+      <VersionLabel />
     </footer>
   </div>
 )

@@ -19,6 +19,13 @@ describe('LandingPage', () => {
     expect(screen.getByRole('link', { name: 'Request an invite' })).toHaveAttribute('href', '#request-invite')
   })
 
+  it('shows the app version in the footer', () => {
+    const { container } = render(<LandingPage onSignUp={vi.fn()} onLogIn={vi.fn()} />)
+    const label = container.querySelector('footer [data-testid="app-version"]')
+    expect(label).not.toBeNull()
+    expect(label).toHaveTextContent('v0.0.0-test (testsha)')
+  })
+
   it('calls onSignUp and onLogIn', async () => {
     const user = userEvent.setup()
     const onSignUp = vi.fn()

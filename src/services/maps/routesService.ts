@@ -1,10 +1,9 @@
 /**
- * Shared Routes API service with in-memory caching
+ * Shared routing service with in-memory caching
  * Prevents duplicate computeRoutes calls between map rendering and distance calculations
  */
 
 import { LruTtlCache } from '../network/cache'
-import { fetchWithBackoff } from '../network/request'
 import { createOpenSourceRoutingProvider } from './openSourceRouting'
 import { OPENROUTE_API_KEY } from '../../config/env'
 
@@ -45,85 +44,6 @@ export const setRoutingProvider = (provider: RoutingProvider) => {
   activeProvider = provider
 }
 
-export const createGoogleRoutesProvider = (
-  apiKey: string
-): RoutingProvider => ({
-  id: 'google-routes',
-  computeRoute: async (request: RouteRequest): Promise<RouteResponse> => {
-    const requestBody = {
-      origin: {
-        location: {
-          latLng: {
-            latitude: request.origin.lat,
-            longitude: request.origin.lng,
-          },
-        },
-      },
-      destination: {
-        location: {
-          latLng: {
-            latitude: request.destination.lat,
-            longitude: request.destination.lng,
-          },
-        },
-      },
-      routeModifiers: {
-        avoidTolls: request.avoidTolls ?? false,
-        avoidHighways: request.avoidHighways ?? false,
-        avoidFerries: request.avoidFerries ?? false,
-      },
-      travelMode: 'DRIVE',
-      computeAlternativeRoutes: false,
-      languageCode: 'en-US',
-    }
-
-    const response = await fetchWithBackoff(
-      'https://routes.googleapis.com/directions/v2:computeRoutes',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask':
-            'routes.polyline.encodedPolyline,routes.legs.duration,routes.legs.distanceMeters',
-        },
-        body: JSON.stringify(requestBody),
-      },
-      {
-        retries: 2,
-        baseDelayMs: 500,
-        maxDelayMs: 5000,
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Routes API error:', response.status, errorText)
-      throw new Error(`Routes API returned ${response.status}`)
-    }
-
-    const data = await response.json()
-
-    if (!data.routes?.length) {
-      throw new Error('No routes returned from API')
-    }
-
-    const route = data.routes[0]
-    const polylineData = route.polyline?.encodedPolyline
-    const leg = route.legs?.[0]
-
-    if (!polylineData || !leg) {
-      throw new Error('Incomplete route data from API')
-    }
-
-    return {
-      polyline: polylineData,
-      distanceMeters: leg.distanceMeters ?? 0,
-      duration: leg.duration ?? '0s',
-    }
-  },
-})
-
 /**
  * Generate cache key from route request parameters
  */
@@ -133,12 +53,11 @@ const getCacheKey = (request: RouteRequest): CacheKey => {
 }
 
 /**
- * Compute route using Google Routes API v2 with caching
+ * Compute route via the active or open-source routing provider with caching
  * Returns both polyline and distance/duration data for reuse across map + distance calculations
  */
 export const computeRoute = async (
-  request: RouteRequest,
-  apiKey?: string
+  request: RouteRequest
 ): Promise<RouteResponse> => {
   const cacheKey = getCacheKey(request)
 
@@ -151,7 +70,6 @@ export const computeRoute = async (
   try {
     const provider =
       activeProvider ??
-      (apiKey ? createGoogleRoutesProvider(apiKey) : null) ??
       createOpenSourceRoutingProvider({ openRouteServiceApiKey: OPENROUTE_API_KEY || undefined })
 
     const result = await provider.computeRoute(request)

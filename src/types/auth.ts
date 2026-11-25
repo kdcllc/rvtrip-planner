@@ -7,12 +7,6 @@ export type AuthUser = {
   isAdmin: boolean
 }
 
-export type AuthState =
-  | { status: 'loading' }
-  | { status: 'anonymous' }
-  | { status: 'authenticated'; user: AuthUser }
-  | { status: 'waking' }
-
 /** Body of every API error response. */
 export type ApiErrorBody = {
   error: string

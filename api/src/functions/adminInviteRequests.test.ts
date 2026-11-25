@@ -4,7 +4,6 @@ const h = vi.hoisted(() => ({
   query: vi.fn(),
   requireAdmin: vi.fn(),
   issue: vi.fn(),
-  revokeOne: vi.fn(),
   revokeAll: vi.fn(),
   sendInviteEmail: vi.fn(),
   registered: [] as Array<{ name: string; opts: Record<string, unknown> }>,
@@ -22,7 +21,6 @@ vi.mock('../shared/db', () => {
 vi.mock('../shared/admin', () => ({ requireAdmin: h.requireAdmin }))
 vi.mock('../shared/inviteCodes', () => ({
   issueInviteCode: h.issue,
-  revokeInviteCode: h.revokeOne,
   revokeUnusedInviteCodes: h.revokeAll,
 }))
 vi.mock('../shared/email', () => ({
@@ -64,7 +62,7 @@ function mkReq(opts: { id?: string; csrf?: boolean; body?: unknown; badJson?: bo
 }
 
 beforeEach(() => {
-  for (const f of [h.query, h.requireAdmin, h.issue, h.revokeOne, h.revokeAll, h.sendInviteEmail]) f.mockReset()
+  for (const f of [h.query, h.requireAdmin, h.issue, h.revokeAll, h.sendInviteEmail]) f.mockReset()
   h.requireAdmin.mockResolvedValue(ADMIN)
   h.issue.mockResolvedValue({ code: 'plain-code', expiresAt: new Date('2026-03-15T00:00:00Z') })
   h.sendInviteEmail.mockResolvedValue({ ok: true })
@@ -156,7 +154,6 @@ describe('POST invite', () => {
       inviteLink: 'https://app.example.com/?invite=plain-code',
       emailSent: false,
     })
-    expect(h.revokeOne).not.toHaveBeenCalled()
     expect(h.query).toHaveBeenCalledTimes(2)
   })
 
@@ -279,7 +276,6 @@ describe('POST create invite', () => {
     const res = await call({ email: 'new@x.y' })
     expect(res.status).toBe(200)
     expect(res.jsonBody).toMatchObject({ emailSent: false, inviteLink: 'https://app.example.com/?invite=plain-code' })
-    expect(h.revokeOne).not.toHaveBeenCalled()
   })
 })
 
