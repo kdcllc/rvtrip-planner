@@ -39,7 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (cancelled) return;
-      if (result.kind === 'success') {
+      // A 200 with no JSON body means the API is not running (the Vite dev
+      // server answers /api/* with index.html), so treat it as signed out.
+      if (result.kind === 'success' && !result.data?.user) {
+        setUnauthenticated();
+      } else if (result.kind === 'success') {
         setUser(result.data.user);
         setStatus('authenticated');
       } else if (result.kind === 'database-waking') {
