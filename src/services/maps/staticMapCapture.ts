@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import polyline from '@mapbox/polyline'
 import type { TripStop } from '../../domain/trip/types'
 import { computeRoute } from './routesService'
@@ -60,7 +60,7 @@ export const captureMapAsDataUrl = async (
       style: OSM_STYLE,
       center: [validStops[0].location!.lng, validStops[0].location!.lat],
       zoom: 5,
-      preserveDrawingBuffer: true, // Critical: allows canvas capture
+      canvasContextAttributes: { preserveDrawingBuffer: true }, // Critical: allows canvas capture
       interactive: false, // No user interaction for static capture
     })
 
@@ -75,7 +75,7 @@ export const captureMapAsDataUrl = async (
         resolve()
       })
 
-      map!.once('error', (error) => {
+      map!.once('error', (error: maplibregl.ErrorEvent) => {
         clearTimeout(timeout)
         reject(error)
       })

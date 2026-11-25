@@ -30,11 +30,15 @@ export function findForbiddenTrackedFiles(paths: string[]): string[] {
 // (or this suite's own scan) would match.
 const GOOGLE_KEY_PREFIX = ['AI', 'za'].join('')
 const OAUTH_HOST = ['apps', 'googleusercontent', 'com'].join('.')
+/** Escapes backslashes and dots so the text can sit literally inside a RegExp source. */
+export function escapeHost(host: string): string {
+  return host.replace(/[\\.]/g, '\\$&')
+}
 const IDENTIFIER_RULES: { name: string; pattern: RegExp }[] = [
   { name: 'google-api-key', pattern: new RegExp(`${GOOGLE_KEY_PREFIX}[0-9A-Za-z_-]{35}`) },
   {
     name: 'google-oauth-client-id',
-    pattern: new RegExp(`[0-9]+-[0-9A-Za-z_]+\\.${OAUTH_HOST.replace(/\./g, '\\.')}`),
+    pattern: new RegExp(`[0-9]+-[0-9A-Za-z_]+\\.${escapeHost(OAUTH_HOST)}`),
   },
 ]
 
@@ -145,6 +149,12 @@ describe('findForbiddenTrackedFiles', () => {
       'docs/pem-notes.md',
     ]
     expect(findForbiddenTrackedFiles(clean)).toEqual([])
+  })
+})
+
+describe('escapeHost', () => {
+  it('escapes backslashes and dots', () => {
+    expect(escapeHost('a\\b.c')).toBe('a\\\\b\\.c')
   })
 })
 
