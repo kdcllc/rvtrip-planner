@@ -19,8 +19,13 @@ This file is the database reference. The step-by-step local setup is in [QUICKST
 ## Start the local database
 
 ```bash
-npm run db:up               # docker compose up -d --wait sqlserver: returns when the container is healthy
+npm run db:up               # starts SQL Server, waits until healthy, then runs db-init
 ```
+
+`db-init` is a one-shot Compose service (`scripts/db-init.sh`) that creates the `tripplanner` database, applies
+`db/migrations/*.sql` and then `db/seed/*.sql`. The seed creates the local sign-in `admin@example.com` /
+`local-dev-password`; it is for the local container only and is never applied by `scripts/db-migrate.sh`.
+Re-run it on its own with `docker compose run --rm db-init`.
 
 Plain `docker compose up -d` also works; it returns immediately, so check readiness with `docker compose ps`.
 

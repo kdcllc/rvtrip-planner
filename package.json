@@ -13,7 +13,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "generate:icons": "node scripts/generate-icons.mjs",
-    "db:up": "docker compose up -d --wait sqlserver",
+    "db:up": "docker compose up -d --wait sqlserver && docker compose run --rm db-init",
     "db:migrate": "bash scripts/db-migrate.sh",
     "dev:swa": "swa start http://localhost:5173 --run \"npm run dev\" --api-location api"
   },
