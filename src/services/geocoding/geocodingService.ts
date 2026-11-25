@@ -21,12 +21,6 @@ const geocodingCache = new LruTtlCache<GeocodingResult>(
   GEOCODING_CACHE_STORAGE_KEY
 )
 
-let activeProvider: GeocodingProvider | null = null
-
-export const setGeocodingProvider = (provider: GeocodingProvider) => {
-  activeProvider = provider
-}
-
 const PHOTON_BASE_URL = 'https://photon.komoot.io/api'
 const NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org/search'
 
@@ -186,7 +180,7 @@ export const geocodeAddress = async (address: string): Promise<GeocodingResult |
     return cached
   }
 
-  const provider = activeProvider ?? createOpenSourceGeocodingProvider()
+  const provider = createOpenSourceGeocodingProvider()
 
   try {
     const result = await provider.geocode(trimmed)

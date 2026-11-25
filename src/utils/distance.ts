@@ -16,7 +16,7 @@ export const formatDistance = (meters?: number): string => {
 }
 
 /**
- * Format duration from Google Maps format (e.g., "3600s") to human-readable string
+ * Format duration from provider format (e.g., "3600s") to human-readable string
  */
 export const formatDuration = (duration?: string): string => {
   if (!duration) {
@@ -47,7 +47,7 @@ export type DistanceResult = {
 }
 
 /**
- * Calculate distance and duration between two locations using Google Maps Routes API
+ * Calculate distance and duration between two locations using the routing service
  * Uses the shared routes service with caching
  */
 export const fetchDistanceBetweenStops = async (

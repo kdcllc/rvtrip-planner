@@ -204,13 +204,3 @@ export function getTripsSortedByRecent(trips: Trip[]): Trip[] {
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   )
 }
-
-/**
- * Update the updatedAt timestamp for a trip
- */
-export function updateTripTimestamp(trip: Trip): Trip {
-  return {
-    ...trip,
-    updatedAt: new Date().toISOString(),
-  }
-}

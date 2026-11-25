@@ -1,14 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   calculateFuelCost,
-  calculateTripTotalFuelCost,
   calculateTripTotalAccommodationCost,
   calculateTripTotalActualGasCost,
   calculateTripTotalActualFoodCost,
   calculateTripTotalActualMiscCost,
   calculateTripTotalActualCost,
   calculateNights,
-  calculateTripTotalCost,
 } from './costCalculation'
 import type { TripStop } from '../domain/trip/types'
 
@@ -39,53 +37,6 @@ describe('costCalculation', () => {
     it('should round to 2 decimal places', () => {
       const cost = calculateFuelCost(16093.44, 10, 3.55) // 10 miles, 10 mpg, $3.55/gal
       expect(cost).toEqual(3.55)
-    })
-  })
-
-  describe('calculateTripTotalFuelCost', () => {
-    it('should sum all estimated fuel costs', () => {
-      const stops: TripStop[] = [
-        {
-          id: '1',
-          label: 'Stop 1',
-          address: 'Address 1',
-          startDate: '2024-01-01',
-          endDate: '2024-01-02',
-          estimatedFuelCost: 10.5,
-        },
-        {
-          id: '2',
-          label: 'Stop 2',
-          address: 'Address 2',
-          startDate: '2024-01-02',
-          endDate: '2024-01-03',
-          estimatedFuelCost: 15.75,
-        },
-      ]
-      const total = calculateTripTotalFuelCost(stops)
-      expect(total).toEqual(26.25)
-    })
-
-    it('should handle missing fuel costs as 0', () => {
-      const stops: TripStop[] = [
-        {
-          id: '1',
-          label: 'Stop 1',
-          address: 'Address 1',
-          startDate: '2024-01-01',
-          endDate: '2024-01-02',
-        },
-        {
-          id: '2',
-          label: 'Stop 2',
-          address: 'Address 2',
-          startDate: '2024-01-02',
-          endDate: '2024-01-03',
-          estimatedFuelCost: 10,
-        },
-      ]
-      const total = calculateTripTotalFuelCost(stops)
-      expect(total).toEqual(10)
     })
   })
 
@@ -169,44 +120,6 @@ describe('costCalculation', () => {
         },
       ]
       const total = calculateTripTotalAccommodationCost(stops)
-      expect(total).toEqual(0)
-    })
-  })
-
-  describe('calculateTripTotalCost', () => {
-    it('should sum fuel and accommodation costs', () => {
-      const stops: TripStop[] = [
-        {
-          id: '1',
-          label: 'Stop 1',
-          address: 'Address 1',
-          startDate: '2024-01-01',
-          endDate: '2024-01-03',
-          estimatedFuelCost: 20,
-          nightlyCost: 50,
-        },
-      ]
-      const total = calculateTripTotalCost(stops)
-      expect(total).toEqual(120) // 20 (fuel) + (50 * 2 nights)
-    })
-
-    it('should return only accommodation cost when fuel data missing', () => {
-      const stops: TripStop[] = [
-        {
-          id: '1',
-          label: 'Stop 1',
-          address: 'Address 1',
-          startDate: '2024-01-01',
-          endDate: '2024-01-03',
-          nightlyCost: 75,
-        },
-      ]
-      const total = calculateTripTotalCost(stops)
-      expect(total).toEqual(150) // only accommodation: 75 * 2 nights
-    })
-
-    it('should handle empty stops array', () => {
-      const total = calculateTripTotalCost([])
       expect(total).toEqual(0)
     })
   })

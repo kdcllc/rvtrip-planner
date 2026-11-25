@@ -20,15 +20,6 @@ export const calculateFuelCost = (
 }
 
 /**
- * Calculate total fuel cost for a trip
- */
-export const calculateTripTotalFuelCost = (stops: TripStop[]): number => {
-  return stops.reduce((total, stop) => {
-    return total + (stop.estimatedFuelCost ?? 0)
-  }, 0)
-}
-
-/**
  * Calculate total accommodation cost for a trip
  */
 export const calculateTripTotalAccommodationCost = (stops: TripStop[]): number => {
@@ -92,15 +83,6 @@ export const calculateNights = (startDate: string, endDate: string): number => {
   } catch {
     return 0
   }
-}
-
-/**
- * Calculate total trip cost (fuel + accommodation)
- */
-export const calculateTripTotalCost = (stops: TripStop[]): number => {
-  const fuelCost = calculateTripTotalFuelCost(stops)
-  const accommodationCost = calculateTripTotalAccommodationCost(stops)
-  return Math.round((fuelCost + accommodationCost) * 100) / 100
 }
 
 /**

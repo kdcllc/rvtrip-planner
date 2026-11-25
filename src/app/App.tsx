@@ -3,6 +3,7 @@ import { AuthScreen } from '../features/auth/AuthScreen'
 import { LandingPage } from '../features/landing/LandingPage'
 import { useAuth } from '../hooks/useAuth'
 import AuthenticatedApp from './AuthenticatedApp'
+import { UpdateBanner } from '../components/common/UpdateBanner'
 
 type AuthMode = 'login' | 'register'
 
@@ -15,7 +16,7 @@ const initialAuthMode = (): AuthMode | null => {
   return null
 }
 
-function App() {
+function AppContent() {
   const { status } = useAuth()
   const [authMode, setAuthMode] = useState<AuthMode | null>(initialAuthMode)
 
@@ -36,6 +37,15 @@ function App() {
           : 'Checking your session...'}
       </p>
     </div>
+  )
+}
+
+function App() {
+  return (
+    <>
+      <UpdateBanner />
+      <AppContent />
+    </>
   )
 }
 

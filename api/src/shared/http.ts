@@ -44,17 +44,6 @@ export function fromException(err: unknown): HttpResponseInit {
 
 // ---- Cookies ----
 
-/** Serialises a Functions Cookie object to a Set-Cookie header value. */
-export function serializeCookie(c: Cookie): string {
-  const parts = [`${c.name}=${c.value}`]
-  if (c.maxAge !== undefined) parts.push(`Max-Age=${c.maxAge}`)
-  parts.push(`Path=${c.path ?? '/'}`)
-  if (c.httpOnly) parts.push('HttpOnly')
-  if (c.secure) parts.push('Secure')
-  if (c.sameSite) parts.push(`SameSite=${c.sameSite}`)
-  return parts.join('; ')
-}
-
 export function sessionCookie(token: string, maxAgeSeconds: number): Cookie {
   return {
     name: SESSION_COOKIE,

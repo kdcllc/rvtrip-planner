@@ -249,6 +249,16 @@ After provisioning, `azd` stores the Bicep outputs here, including `AZURE_RESOUR
 azd deploy
 ```
 
+### Releasing a new version
+
+The app version is the `version` in `package.json` plus the short git commit (`GITHUB_SHA`, else `git rev-parse --short HEAD`). Every build writes `version.json` at the site root, and `staticwebapp.config.json` serves `/version.json` with `Cache-Control: no-store`.
+
+1. Bump `version` in `package.json`, then update the lockfile with `npm install --package-lock-only`.
+2. Deploy as usual (`azd deploy` or a push to `master`).
+3. Verify with `curl https://<host>/version.json` (it returns `version`, `commit` and `buildTime`).
+
+Each deploy has a unique commit, so open tabs show the "New version available" reload prompt even without a semver bump. Tabs check on load, every 5 minutes and when they regain focus.
+
 ### View Logs
 ```bash
 azd monitor --logs

@@ -147,7 +147,7 @@ describe('buildTruckMapPlaceUrl', () => {
   })
 
   describe('real-world address examples', () => {
-    it('handles typical Google Maps autocomplete format', () => {
+    it('handles typical autocomplete address format', () => {
       const result = buildTruckMapPlaceUrl('Asheville, NC, USA')
 
       expect(result).toBe('https://truckmap.com/place/asheville-nc-usa/')

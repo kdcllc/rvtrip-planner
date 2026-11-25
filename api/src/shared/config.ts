@@ -13,8 +13,6 @@ export const SETTING_NAMES = [
 
 export type SettingName = (typeof SETTING_NAMES)[number]
 
-export type AppConfig = Record<SettingName, string>
-
 /** Returns one required setting or throws an error naming the missing variable. */
 export function requireSetting(name: SettingName): string {
   const value = process.env[name]
@@ -22,13 +20,6 @@ export function requireSetting(name: SettingName): string {
     throw new Error(`Missing required environment variable: ${name}`)
   }
   return value
-}
-
-/** Returns all six settings; fails fast on the first missing one. */
-export function getConfig(): AppConfig {
-  const out = {} as AppConfig
-  for (const name of SETTING_NAMES) out[name] = requireSetting(name)
-  return out
 }
 
 /** Optional ADMIN_EMAILS (comma/semicolon separated): trimmed, lowercased, empties dropped; [] when unset. */

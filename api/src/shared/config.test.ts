@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { getAdminEmails, getConfig, SETTING_NAMES } from './config'
+import { getAdminEmails, SETTING_NAMES } from './config'
 
 describe('getAdminEmails', () => {
   const saved = { ...process.env }
@@ -24,9 +24,7 @@ describe('getAdminEmails', () => {
     expect(getAdminEmails()).toEqual(['a@x.com', 'b@x.com', 'c@x.com'])
   })
 
-  it('does not make getConfig throw when ADMIN_EMAILS is missing', () => {
-    for (const n of SETTING_NAMES) process.env[n] = 'v'
-    expect(() => getConfig()).not.toThrow()
+  it('does not list ADMIN_EMAILS among the required settings', () => {
     expect(SETTING_NAMES as readonly string[]).not.toContain('ADMIN_EMAILS')
   })
 })

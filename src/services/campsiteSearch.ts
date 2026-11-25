@@ -102,7 +102,7 @@ export const generateFreeCampsitesUrl = (address?: string): string => {
   }
 
   // Parse address and extract only city and state (skip street address, zip, and country)
-  // Address format from Google Maps: "Street Address, City, State ZipCode, Country"
+  // Address format from geocoder/autocomplete: "Street Address, City, State ZipCode, Country"
   const parts = address.split(',').map(part => part.trim())
   
   // Filter out USA and empty parts
@@ -232,7 +232,7 @@ export const generateCampendiumUrl = (address?: string): string => {
   }
 
   // Parse address and extract city and state
-  // Address format from Google Maps: "Street Address, City, State ZipCode, Country"
+  // Address format from geocoder/autocomplete: "Street Address, City, State ZipCode, Country"
   const parts = address.split(',').map(part => part.trim())
   
   // Filter out USA and empty parts

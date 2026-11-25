@@ -3,7 +3,8 @@
     "apiRuntime": "node:22"
   },
   "routes": [
-    { "route": "/api/*", "allowedRoles": ["anonymous"] }
+    { "route": "/api/*", "allowedRoles": ["anonymous"] },
+    { "route": "/version.json", "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "no-store" } }
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
@@ -35,6 +36,6 @@
     "X-Frame-Options": "DENY",
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self'; img-src 'self' data: https:; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; worker-src 'self' blob:; connect-src 'self' https://api.weather.gov https://climate-api.open-meteo.com https://www.fueleconomy.gov https://router.project-osrm.org https://routing.openstreetmap.de https://api.openrouteservice.org https://tile.openstreetmap.org https://a.tile.openstreetmap.fr https://b.tile.openstreetmap.fr https://c.tile.openstreetmap.fr https://photon.komoot.io https://nominatim.openstreetmap.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.weather.gov https://climate-api.open-meteo.com https://www.fueleconomy.gov https://router.project-osrm.org https://routing.openstreetmap.de https://api.openrouteservice.org https://tile.openstreetmap.org https://a.tile.openstreetmap.fr https://b.tile.openstreetmap.fr https://c.tile.openstreetmap.fr https://photon.komoot.io https://nominatim.openstreetmap.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
   }
 }

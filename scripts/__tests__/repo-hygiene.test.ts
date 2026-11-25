@@ -196,14 +196,14 @@ describe('isScanExcluded', () => {
       'package-lock.json',
       'api/package-lock.json',
       'scripts/__tests__/repo-hygiene.test.ts',
-      'src/services/maps/googleMaps.test.ts',
+      'src/utils/truckMapUrl.test.ts',
       'src/features/trip/TripForm.test.tsx',
     ]
     expect(excluded.filter((p) => !isScanExcluded(p))).toEqual([])
   })
 
   it('keeps source, config and docs in scope', () => {
-    const inScope = ['src/services/maps/googleMaps.ts', '.env.example', 'README.md', 'package.json', 'api/src/index.ts']
+    const inScope = ['src/services/maps/routesService.ts', '.env.example', 'README.md', 'package.json', 'api/src/index.ts']
     expect(inScope.filter((p) => isScanExcluded(p))).toEqual([])
   })
 })

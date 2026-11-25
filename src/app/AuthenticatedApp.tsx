@@ -50,6 +50,7 @@ import {
 } from '../services/tripFile/tripFile'
 import { geocodeAddress } from '../services/geocoding/geocodingService'
 import { ImportTripModal } from '../components/common/ImportTripModal'
+import { VersionLabel } from '../components/common/VersionLabel'
 import { FloatingActionButtons } from '../components/common/FloatingActionButtons'
 import { DeleteTripModal } from '../components/common/DeleteTripModal'
 import { ThemeToggle } from '../components/common/ThemeToggle'
@@ -1688,6 +1689,7 @@ function Planner({
           />
         </section>
       </main>
+      <VersionLabel />
 
       <VehicleSettingsModal
         isOpen={showVehicleSettings}
