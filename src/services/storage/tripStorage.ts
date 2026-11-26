@@ -12,6 +12,7 @@ import type {
   VersionedTrip,
 } from '../../types/api'
 import { apiDelete, apiGet, apiPost, apiPut } from '../auth/apiClient'
+import { foldLegacyStopFields, type LegacyTripStop } from '../../domain/trip/stopFields'
 import { createId } from '../../utils/id'
 
 const LEGACY_TRIPS_KEY = 'trip-planner-trips'
@@ -58,6 +59,13 @@ const toCommonFailure = (result: Failure): CommonFailure | null => {
 const toMessage = (result: Failure): string =>
   result.kind === 'database-waking' ? 'Database is waking up' : result.error
 
+const foldTripStops = (trip: Trip): Trip => ({
+  ...trip,
+  stops: Array.isArray(trip.stops)
+    ? trip.stops.map((stop) => foldLegacyStopFields(stop as LegacyTripStop))
+    : trip.stops,
+})
+
 /** Load all trips for the signed-in user (GET /api/trips). */
 export async function loadTrips(): Promise<LoadTripsResult> {
   const result = await apiGet<GetTripsResponse>('/api/trips')
@@ -68,7 +76,7 @@ export async function loadTrips(): Promise<LoadTripsResult> {
   if (!data || !Array.isArray(data.trips)) {
     return { kind: 'error', message: 'Invalid trips response' }
   }
-  return { kind: 'loaded', trips: data.trips, currentTripId: data.currentTripId ?? null }
+  return { kind: 'loaded', trips: data.trips.map((entry) => ({ ...entry, trip: foldTripStops(entry.trip) })), currentTripId: data.currentTripId ?? null }
 }
 
 const isConflictCurrent = (value: unknown): VersionedTrip | null =>
@@ -84,7 +92,11 @@ export async function saveTrip(trip: Trip, baseVersion: number | null): Promise<
     if (result.kind === 'success') return { kind: 'saved', version: result.data.version }
     if (result.kind === 'validation-failure' && result.status === 409) {
       const current = (result as { current?: unknown }).current
-      return { kind: 'conflict', current: isConflictCurrent(current) }
+      const parsed = isConflictCurrent(current)
+      return {
+        kind: 'conflict',
+        current: parsed ? { ...parsed, trip: foldTripStops(parsed.trip) } : null,
+      }
     }
     const common = toCommonFailure(result)
     if (common) return common
@@ -141,7 +153,7 @@ export function readLegacyLocalTrips(): TripsState | null {
       if (!state.currentTripId && state.trips.length > 0) {
         state.currentTripId = state.trips[0].id
       }
-      return state
+      return { ...state, trips: state.trips.map(foldTripStops) }
     }
     const legacy = window.localStorage.getItem(LEGACY_EXPORT_KEY)
     if (legacy) {
@@ -151,7 +163,7 @@ export function readLegacyLocalTrips(): TripsState | null {
         const newTrip: Trip = {
           id: createId(),
           name: 'Imported Trip',
-          stops: parsed.trips,
+          stops: parsed.trips.map((stop) => foldLegacyStopFields(stop as LegacyTripStop)),
           createdAt: now,
           updatedAt: now,
         }

@@ -1,8 +1,9 @@
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { requiresCheckInOut } from '../../utils/siteType'
 import { formatDistance } from '../../utils/distance'
 import { CampsiteSearch } from './CampsiteSearch'
 import type { TripStopSourceName } from '../../domain/trip/types'
+import { STOP_NOTE_MAX_LENGTH } from '../../domain/trip/stopFields'
 import type { MapBounds } from '../../services/campsiteSearch'
 
 export type SuggestionItem = {
@@ -120,8 +121,6 @@ export type StopFormValues = {
   sourceName: TripStopSourceName | ''
   sourceUrl: string
   sourceSiteType: string
-  sourceFees: string
-  sourceAmenities: string
   location: { lat: number; lng: number } | null
   // Reservation fields
   reservationStatus: string
@@ -132,7 +131,6 @@ export type StopFormValues = {
   actualGasCost: string
   actualFoodCost: string
   actualMiscCost: string
-  reservationNote: string
 }
 
 export type StopFormValidationState = {
@@ -141,6 +139,9 @@ export type StopFormValidationState = {
   lastValidatedAddress: string
   predictionStatus: 'idle' | 'loading' | 'empty' | 'blocked'
 }
+
+/** The field a save error belongs to; drives inline message, aria wiring and focus. */
+export type StopFormErrorField = 'address' | 'dates' | 'checkOutTime'
 
 type StopFormFieldValue = string | boolean | { lat: number; lng: number }
 
@@ -151,6 +152,9 @@ type StopFormFieldsProps = {
   mapBounds?: MapBounds
   validationState?: StopFormValidationState
   error?: string
+  errorField?: StopFormErrorField | null
+  /** Changes on every failed save so focus moves even when the same error repeats. */
+  errorKey?: number
   onFieldChange: (field: keyof StopFormValues, value: StopFormFieldValue) => void
   onSelectPrediction: (item: SuggestionItem) => void
   onGenerateSourceUrl: () => void
@@ -162,6 +166,75 @@ type StopFormFieldsProps = {
   children?: ReactNode
 }
 
+const NOTE_WARN_THRESHOLD = 50
+
+const hasText = (value: string | undefined) => (value || '').trim() !== ''
+
+const formatMoney = (value: string | undefined) => {
+  const parsed = Number.parseFloat(value || '')
+  if (!Number.isFinite(parsed)) {
+    return ''
+  }
+  return `$${Number.isInteger(parsed) ? parsed : parsed.toFixed(2)}`
+}
+
+const staySummary = (values: Partial<StopFormValues>) => {
+  const parts: string[] = []
+  if (values.reservationStatus === 'reserved') {
+    parts.push('Reserved')
+  }
+  const nightly = formatMoney(values.nightlyCost)
+  if (nightly) {
+    parts.push(`${nightly}/night`)
+  }
+  if (parts.length === 0) {
+    const fallback = values.sourceName || values.sourceSiteType
+    if (fallback) {
+      parts.push(fallback)
+    }
+  }
+  return parts.join(' · ')
+}
+
+const hasStayData = (values: Partial<StopFormValues>) =>
+  Boolean(values.sourceName) ||
+  hasText(values.sourceUrl) ||
+  hasText(values.sourceSiteType) ||
+  hasText(values.nightlyCost) ||
+  hasText(values.confirmationNumber) ||
+  hasText(values.siteNumber) ||
+  hasText(values.contactPhone) ||
+  values.reservationStatus === 'reserved'
+
+const hasActualCosts = (values: Partial<StopFormValues>) =>
+  hasText(values.actualGasCost) ||
+  hasText(values.actualFoodCost) ||
+  hasText(values.actualMiscCost)
+
+type SectionProps = {
+  id: string
+  title: string
+  summary?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+}
+
+const FormSection = ({ id, title, summary, open, onOpenChange, children }: SectionProps) => (
+  <details
+    className="form-section"
+    id={id}
+    open={open}
+    onToggle={(event) => onOpenChange(event.currentTarget.open)}
+  >
+    <summary>
+      <span className="form-section-title">{title}</span>
+      {summary ? <span className="form-section-summary">{summary}</span> : null}
+    </summary>
+    <div className="form-section-body">{children}</div>
+  </details>
+)
+
 export const StopFormFields = ({
   isEditing = false,
   values,
@@ -169,6 +242,8 @@ export const StopFormFields = ({
   mapBounds,
   validationState,
   error,
+  errorField = null,
+  errorKey = 0,
   onFieldChange,
   onSelectPrediction,
   onGenerateSourceUrl,
@@ -181,105 +256,103 @@ export const StopFormFields = ({
 }: StopFormFieldsProps) => {
   const internalAddressRef = useRef<HTMLInputElement | null>(null)
   const ref = addressInputRef || internalAddressRef
+  const uid = useId()
+  const ids = {
+    address: `${uid}-address`,
+    addressError: `${uid}-address-error`,
+    manualHint: `${uid}-manual-hint`,
+    title: `${uid}-title`,
+    titleHint: `${uid}-title-hint`,
+    startPoint: `${uid}-start-point`,
+    startDate: `${uid}-start-date`,
+    endDate: `${uid}-end-date`,
+    dateError: `${uid}-date-error`,
+    checkOut: `${uid}-check-out`,
+    checkOutError: `${uid}-check-out-error`,
+  }
+
+  // Sections open by default only when editing a stop that already holds data.
+  // Initial state only: typing never re-collapses or re-opens a section.
+  const [stayOpen, setStayOpen] = useState(() => isEditing && hasStayData(values))
+  const [notesOpen, setNotesOpen] = useState(() => isEditing && hasText(values.note))
+  const [costsOpen, setCostsOpen] = useState(() => isEditing && hasActualCosts(values))
+
+  // Move focus to the field a failed save concerns, opening its section first.
+  useEffect(() => {
+    if (!errorKey || !errorField) {
+      return
+    }
+    if (errorField === 'checkOutTime') {
+      setStayOpen(true)
+    }
+    const targetId =
+      errorField === 'address'
+        ? ids.address
+        : errorField === 'dates'
+          ? ids.startDate
+          : ids.checkOut
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.focus()
+    })
+    return () => window.cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errorKey])
+
   const actualGasCost = Number.parseFloat(values.actualGasCost || '0') || 0
   const actualFoodCost = Number.parseFloat(values.actualFoodCost || '0') || 0
   const actualMiscCost = Number.parseFloat(values.actualMiscCost || '0') || 0
   const actualStopTotal = actualGasCost + actualFoodCost + actualMiscCost
 
-  // Map error messages to fields
-  const errorMap = {
-    titleError: error?.toLowerCase().includes('title') || error?.toLowerCase().includes('label'),
-    addressError: error?.toLowerCase().includes('address'),
-    dateError: error?.toLowerCase().includes('date') || error?.toLowerCase().includes('arrival') || error?.toLowerCase().includes('departure'),
-    timeError: error?.toLowerCase().includes('check-in') || error?.toLowerCase().includes('check-out'),
-  }
+  const addressError = errorField === 'address' && error ? error : ''
+  const dateError = errorField === 'dates' && error ? error : ''
+  const checkOutError = errorField === 'checkOutTime' && error ? error : ''
+  const noteLength = (values.note || '').length
+  const noteRemaining = STOP_NOTE_MAX_LENGTH - noteLength
+  const noteSummary = hasText(values.note) ? '1 note' : ''
+  const isReserved = values.reservationStatus === 'reserved'
+  const siteTypeOptions =
+    values.sourceName && SITE_TYPES_BY_SOURCE[values.sourceName as TripStopSourceName]
+      ? SITE_TYPES_BY_SOURCE[values.sourceName as TripStopSourceName]
+      : !values.sourceName
+        ? ALL_SITE_TYPES
+        : []
 
   return (
     <div className="form-grid">
-      {!isEditing && (
-        <label>
-          Stop title
-          <input
-            value={values.label || ''}
-            onChange={(event) => onFieldChange('label', event.target.value)}
-            placeholder="Grand Canyon Village"
-            disabled={values.isStartPoint}
-          />
-          {errorMap.titleError && <p className="field-error">{error}</p>}
+      <div className="field">
+        <label htmlFor={ids.address}>
+          Address <span className="required-mark" aria-hidden="true">*</span>
         </label>
-      )}
-      {!isEditing && (
-        <label>
-          Starting point
-          <input
-            type="checkbox"
-            checked={values.isStartPoint || false}
-            onChange={(event) => {
-              const checked = event.target.checked
-              onFieldChange('isStartPoint', checked)
-              if (checked && values.endDate) {
-                onFieldChange('startDate', values.endDate)
-              }
-            }}
-          />
-        </label>
-      )}
-      {isEditing && (
-        <label>
-          Stop title
-          <input
-            value={values.label || ''}
-            onChange={(event) => onFieldChange('label', event.target.value)}
-            placeholder="Grand Canyon Village"
-          />
-        </label>
-      )}
-      <label>
-        <span className="label-row">
-          Address
-          {!values.manualAddress && values.address && predictions.length === 0 && onValidateCurrentAddress && (
-            <button
-              className="ghost-compact"
-              type="button"
-              onClick={onValidateCurrentAddress}
-              disabled={isValidatingAddress}
-              title="Validate this address without selecting from suggestions"
-            >
-              {isValidatingAddress ? 'Validating...' : 'Validate'}
-            </button>
-          )}
-        </span>
         <div className="address-field">
           <input
+            id={ids.address}
+            name="address"
+            spellCheck={false}
+            autoComplete="off"
             ref={ref}
             value={values.address || ''}
-            onChange={(event) => {
-              onFieldChange('address', event.target.value)
-            }}
-            onBlur={() => {
-              window.setTimeout(() => {
-                if (predictions.length === 0) {
-                  // Trigger validation through parent callback if needed
-                }
-              }, 150)
-            }}
-            placeholder="Grand Canyon Village, AZ"
+            onChange={(event) => onFieldChange('address', event.target.value)}
+            placeholder="Grand Canyon Village, AZ…"
+            aria-required="true"
+            aria-invalid={addressError ? 'true' : undefined}
+            aria-describedby={addressError ? ids.addressError : undefined}
           />
+          {addressError && (
+            <p id={ids.addressError} className="field-error" role="alert">
+              {addressError}
+            </p>
+          )}
           {isValidatingAddress && (
-            <p className="address-validation-message validating">
-              Validating address...
+            <p className="address-validation-message validating" role="status">
+              Validating address…
             </p>
           )}
           {!isValidatingAddress && validationState?.message && validationState.lastValidatedAddress === values.address && (
             <p
               className={`address-validation-message ${validationState.status === 'invalid' ? 'invalid' : 'valid'}`}
+              role="status"
             >
               {validationState.message}
-            </p>
-          )}
-          {!isValidatingAddress && !validationState?.message && errorMap.addressError && (
-            <p className="address-validation-message invalid">
-              {error}
             </p>
           )}
           {predictions.length > 0 && !values.manualAddress ? (
@@ -305,105 +378,131 @@ export const StopFormFields = ({
             </div>
           ) : null}
         </div>
-      </label>
-      <label>
-        Manual address entry
+        <div className="address-actions">
+          <button
+            className="text-button"
+            type="button"
+            aria-describedby={values.manualAddress ? ids.manualHint : undefined}
+            onClick={() => onFieldChange('manualAddress', !values.manualAddress)}
+          >
+            {values.manualAddress ? 'Use address search instead' : "Can't find it? Enter manually"}
+          </button>
+          {!values.manualAddress && values.address && predictions.length === 0 && onValidateCurrentAddress && (
+            <button
+              className="text-button"
+              type="button"
+              onClick={onValidateCurrentAddress}
+              disabled={isValidatingAddress}
+              title="Validate this address without selecting from suggestions"
+            >
+              {isValidatingAddress ? 'Validating…' : 'Validate'}
+            </button>
+          )}
+        </div>
+        {values.manualAddress && (
+          <p id={ids.manualHint} className="manual-address-hint muted" role="status">
+            Manual entry: address validation is skipped.
+          </p>
+        )}
+      </div>
+
+      <div className="field">
+        <label htmlFor={ids.title}>Stop title</label>
         <input
-          type="checkbox"
-          checked={values.manualAddress || false}
-          onChange={(event) => {
-            const checked = event.target.checked
-            onFieldChange('manualAddress', checked)
-          }}
-        />
-      </label>
-      <p className="manual-address-hint muted" role="status" aria-live="polite">
-        {values.manualAddress
-          ? 'Manual entry is ON. Suggestions and required address validation are bypassed for this stop.'
-          : 'Manual entry is OFF. Type an address and pick a suggestion to validate before saving.'}
-      </p>
-      <label>
-        Arrival
-        <input
-          type="date"
-          value={values.startDate || ''}
-          onChange={(event) => onFieldChange('startDate', event.target.value)}
+          id={ids.title}
+          name="label"
+          autoComplete="off"
+          value={values.label || ''}
+          onChange={(event) => onFieldChange('label', event.target.value)}
+          placeholder="Grand Canyon Village…"
           disabled={values.isStartPoint}
+          aria-describedby={values.isStartPoint ? undefined : ids.titleHint}
         />
-        {errorMap.dateError && <p className="field-error">{error}</p>}
-      </label>
-      <label>
-        {values.isStartPoint ? 'Departure (used for weather)' : 'Departure'}
-        <input
-          type="date"
-          value={values.endDate || ''}
-          onChange={(event) => {
-            const nextDate = event.target.value
-            onFieldChange('endDate', nextDate)
-            if (values.isStartPoint) {
-              onFieldChange('startDate', nextDate)
-            }
-          }}
-        />
-      </label>
-      {requiresCheckInOut(values.sourceSiteType) && (
-        <>
-          <label>
-            Check-in time
+        {!values.isStartPoint && (
+          <p id={ids.titleHint} className="muted">
+            Optional. Filled in from the address if left blank.
+          </p>
+        )}
+        <label className="checkbox-row" htmlFor={ids.startPoint}>
+          <input
+            id={ids.startPoint}
+            name="isStartPoint"
+            type="checkbox"
+            checked={values.isStartPoint || false}
+            onChange={(event) => {
+              const checked = event.target.checked
+              onFieldChange('isStartPoint', checked)
+              if (checked && values.endDate) {
+                onFieldChange('startDate', values.endDate)
+              }
+            }}
+          />
+          <span>Starting point</span>
+        </label>
+      </div>
+
+      <div className="field-group">
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor={ids.startDate}>Arrival</label>
             <input
-              type="time"
-              value={values.checkInTime || ''}
-              onChange={(event) => onFieldChange('checkInTime', event.target.value)}
-              placeholder="2:00 PM"
+              id={ids.startDate}
+              name="startDate"
+              type="date"
+              value={values.startDate || ''}
+              onChange={(event) => onFieldChange('startDate', event.target.value)}
               disabled={values.isStartPoint}
+              aria-invalid={dateError ? 'true' : undefined}
+              aria-describedby={dateError ? ids.dateError : undefined}
             />
-          </label>
-          <label>
-            Check-out time
+          </div>
+          <div className="field">
+            <label htmlFor={ids.endDate}>
+              {values.isStartPoint ? 'Departure (used for weather)' : 'Departure'}
+            </label>
             <input
-              type="time"
-              value={values.checkOutTime || ''}
-              onChange={(event) => onFieldChange('checkOutTime', event.target.value)}
-              placeholder="11:00 AM"
+              id={ids.endDate}
+              name="endDate"
+              type="date"
+              value={values.endDate || ''}
+              onChange={(event) => {
+                const nextDate = event.target.value
+                onFieldChange('endDate', nextDate)
+                if (values.isStartPoint) {
+                  onFieldChange('startDate', nextDate)
+                }
+              }}
+              aria-invalid={dateError ? 'true' : undefined}
+              aria-describedby={dateError ? ids.dateError : undefined}
             />
-            {errorMap.timeError && <p className="field-error">{error}</p>}
-          </label>
-        </>
-      )}
-      <label>
-        <span className="label-row">
-          Note (optional)
-          <span className="note-count">{(values.note || '').length}/500</span>
-        </span>
-        <textarea
-          value={values.note || ''}
-          onChange={(event) =>
-            onFieldChange('note', event.target.value.slice(0, 500))
-          }
-          maxLength={500}
-          rows={3}
-          placeholder="Add parking details, check-in info, or reminders."
-        />
-      </label>
-      {!isEditing && mapBounds && (
-        <CampsiteSearch
-          address={values.address || ''}
-          mapBounds={mapBounds}
-          location={values.location}
-        />
-      )}
-      <div className="source-section">
-        <div className="source-header">
-          <div>
-            <p className="source-title">Campground source</p>
-            <p className="muted">
-              Open official sites, then paste key details for this stop.
-            </p>
           </div>
         </div>
-        <label>
-          Source name
+        {dateError && (
+          <p id={ids.dateError} className="field-error" role="alert">
+            {dateError}
+          </p>
+        )}
+      </div>
+
+      <FormSection
+        id={`${uid}-stay`}
+        title="Stay"
+        summary={staySummary(values)}
+        open={stayOpen}
+        onOpenChange={setStayOpen}
+      >
+        {!isEditing && mapBounds && (
+          <CampsiteSearch
+            address={values.address || ''}
+            mapBounds={mapBounds}
+            location={values.location}
+          />
+        )}
+        <div className="field">
+          <label htmlFor={`${uid}-source-name`}>Source name</label>
           <select
+            id={`${uid}-source-name`}
+            name="sourceName"
             value={values.sourceName || ''}
             onChange={(event) => {
               const newSourceName = event.target.value as TripStopSourceName
@@ -421,14 +520,20 @@ export const StopFormFields = ({
             <option value="RV Parky">RV Parky</option>
             <option value="Other">Other</option>
           </select>
-        </label>
-        <label>
-          Listing URL
+        </div>
+        <div className="field">
+          <label htmlFor={`${uid}-source-url`}>Listing URL</label>
           <div className="listing-url-row">
             <input
+              id={`${uid}-source-url`}
+              name="sourceUrl"
+              spellCheck={false}
+              type="url"
+              inputMode="url"
+              autoComplete="url"
               value={values.sourceUrl || ''}
               onChange={(event) => onFieldChange('sourceUrl', event.target.value)}
-              placeholder="https://..."
+              placeholder="https://…"
             />
             <button
               className="ghost small"
@@ -438,10 +543,12 @@ export const StopFormFields = ({
               Generate TruckMap URL
             </button>
           </div>
-        </label>
-        <label>
-          Site type
+        </div>
+        <div className="field">
+          <label htmlFor={`${uid}-site-type`}>Site type</label>
           <select
+            id={`${uid}-site-type`}
+            name="sourceSiteType"
             value={values.sourceSiteType || ''}
             onChange={(event) => {
               const nextSiteType = event.target.value
@@ -458,213 +565,241 @@ export const StopFormFields = ({
           >
             <option value="">
               {values.sourceName
-                ? 'Select a site type...'
-                : 'Select source first or choose type...'}
+                ? 'Select a site type…'
+                : 'Select source first or choose type…'}
             </option>
-            {values.sourceName &&
-            SITE_TYPES_BY_SOURCE[values.sourceName as TripStopSourceName]
-              ? SITE_TYPES_BY_SOURCE[
-                  values.sourceName as TripStopSourceName
-                ].map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))
-              : !values.sourceName
-                ? ALL_SITE_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))
-                : null}
+            {siteTypeOptions.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
           </select>
-        </label>
-        <label>
-          Fees / requirements
-          <input
-            value={values.sourceFees || ''}
-            onChange={(event) => onFieldChange('sourceFees', event.target.value)}
-            placeholder="$35/night, membership required"
-          />
-        </label>
-        <label>
-          Amenities / notes
-          <input
-            value={values.sourceAmenities || ''}
-            onChange={(event) =>
-              onFieldChange('sourceAmenities', event.target.value)
-            }
-            placeholder="Water, 30A, pets allowed"
-          />
-        </label>
-      </div>
-
-      <div className="cost-section">
-        <div className="cost-header">
-          <p className="source-title">Travel Distance & Cost</p>
         </div>
-        <label>
-          Distance to this stop
-          <div
-            style={{
-              padding: '10px 12px',
-              backgroundColor: 'var(--color-surface-strong)',
-              borderRadius: '12px',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <p style={{ margin: 0, color: 'inherit' }}>
-              {distanceFromPreviousMeters
-                ? formatDistance(distanceFromPreviousMeters)
-                : 'Data not available'}
-            </p>
+        {requiresCheckInOut(values.sourceSiteType) && (
+          <div className="field-group">
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor={`${uid}-check-in`}>Check-in time</label>
+                <input
+                  id={`${uid}-check-in`}
+                  name="checkInTime"
+                  type="time"
+                  value={values.checkInTime || ''}
+                  onChange={(event) => onFieldChange('checkInTime', event.target.value)}
+                  disabled={values.isStartPoint}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor={ids.checkOut}>Check-out time</label>
+                <input
+                  id={ids.checkOut}
+                  name="checkOutTime"
+                  type="time"
+                  value={values.checkOutTime || ''}
+                  onChange={(event) => onFieldChange('checkOutTime', event.target.value)}
+                  aria-invalid={checkOutError ? 'true' : undefined}
+                  aria-describedby={checkOutError ? ids.checkOutError : undefined}
+                />
+              </div>
+            </div>
+            {checkOutError && (
+              <p id={ids.checkOutError} className="field-error" role="alert">
+                {checkOutError}
+              </p>
+            )}
           </div>
-        </label>
-        <label>
-          Estimated fuel cost
-          <div
-            style={{
-              padding: '10px 12px',
-              backgroundColor: 'var(--color-surface-strong)',
-              borderRadius: '12px',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <p style={{ margin: 0, color: 'inherit' }}>
-              {estimatedFuelCost !== undefined && estimatedFuelCost > 0
-                ? `$${estimatedFuelCost.toFixed(2)}`
-                : 'Data not available'}
-            </p>
-          </div>
-        </label>
-        <label>
-          Actual gas cost
+        )}
+        <div className="field">
+          <label htmlFor={`${uid}-nightly`}>Nightly cost</label>
           <input
+            id={`${uid}-nightly`}
+            name="nightlyCost"
+            spellCheck={false}
+            autoComplete="off"
             type="number"
-            step="0.01"
-            min="0"
-            value={values.actualGasCost || ''}
-            onChange={(event) => onFieldChange('actualGasCost', event.target.value)}
-            placeholder="e.g., 62.50"
-          />
-        </label>
-        <label>
-          Actual food cost
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={values.actualFoodCost || ''}
-            onChange={(event) => onFieldChange('actualFoodCost', event.target.value)}
-            placeholder="e.g., 48.25"
-          />
-        </label>
-        <label>
-          Actual misc cost
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={values.actualMiscCost || ''}
-            onChange={(event) => onFieldChange('actualMiscCost', event.target.value)}
-            placeholder="e.g., 15.00"
-          />
-        </label>
-        <label>
-          Actual stop total
-          <div
-            style={{
-              padding: '10px 12px',
-              backgroundColor: 'var(--color-surface-strong)',
-              borderRadius: '12px',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <p style={{ margin: 0, color: 'inherit' }}>${actualStopTotal.toFixed(2)}</p>
-          </div>
-        </label>
-      </div>
-
-      <div className="reservation-section">
-        <div className="reservation-header">
-          <p className="source-title">Reservation Details (optional)</p>
-        </div>
-        <label>
-          Reservation status
-          <select
-            value={values.reservationStatus || ''}
-            onChange={(event) =>
-              onFieldChange('reservationStatus', event.target.value)
-            }
-          >
-            <option value="">Unreserved</option>
-            <option value="reserved">Reserved</option>
-            <option value="unreserved">Unreserved</option>
-          </select>
-        </label>
-        <label>
-          Confirmation number
-          <input
-            type="text"
-            value={values.confirmationNumber || ''}
-            onChange={(event) =>
-              onFieldChange('confirmationNumber', event.target.value)
-            }
-            placeholder="e.g., RES-12345"
-          />
-        </label>
-        <label>
-          Site number
-          <input
-            type="text"
-            value={values.siteNumber || ''}
-            onChange={(event) => onFieldChange('siteNumber', event.target.value)}
-            placeholder="e.g., A-42"
-          />
-        </label>
-        <label>
-          Contact phone
-          <input
-            type="tel"
-            value={values.contactPhone || ''}
-            onChange={(event) =>
-              onFieldChange('contactPhone', event.target.value)
-            }
-            placeholder="e.g., (555) 123-4567"
-          />
-        </label>
-        <label>
-          Nightly cost
-          <input
-            type="number"
+            inputMode="decimal"
             step="0.01"
             min="0"
             value={values.nightlyCost || ''}
             onChange={(event) => onFieldChange('nightlyCost', event.target.value)}
-            placeholder="e.g., 35.00"
+            placeholder="35.00…"
           />
-        </label>
-        <label>
-          <span className="label-row">
-            Reservation note (optional)
+        </div>
+        <div className="field">
+          <label htmlFor={`${uid}-reservation-status`}>Reservation status</label>
+          <select
+            id={`${uid}-reservation-status`}
+            name="reservationStatus"
+            value={values.reservationStatus || 'unreserved'}
+            onChange={(event) => onFieldChange('reservationStatus', event.target.value)}
+          >
+            <option value="unreserved">Unreserved</option>
+            <option value="reserved">Reserved</option>
+          </select>
+        </div>
+        {isReserved && (
+          <>
+            <div className="field">
+              <label htmlFor={`${uid}-confirmation`}>Confirmation number</label>
+              <input
+                id={`${uid}-confirmation`}
+                name="confirmationNumber"
+                spellCheck={false}
+                type="text"
+                autoComplete="off"
+                value={values.confirmationNumber || ''}
+                onChange={(event) => onFieldChange('confirmationNumber', event.target.value)}
+                placeholder="RES-12345…"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`${uid}-site-number`}>Site number</label>
+              <input
+                id={`${uid}-site-number`}
+                name="siteNumber"
+                spellCheck={false}
+                type="text"
+                autoComplete="off"
+                value={values.siteNumber || ''}
+                onChange={(event) => onFieldChange('siteNumber', event.target.value)}
+                placeholder="A-42…"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`${uid}-phone`}>Contact phone</label>
+              <input
+                id={`${uid}-phone`}
+                name="contactPhone"
+                spellCheck={false}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={values.contactPhone || ''}
+                onChange={(event) => onFieldChange('contactPhone', event.target.value)}
+                placeholder="(555) 123-4567…"
+              />
+            </div>
+          </>
+        )}
+      </FormSection>
+
+      <FormSection
+        id={`${uid}-notes`}
+        title="Notes"
+        summary={noteSummary}
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+      >
+        <div className="field">
+          <div className="label-row">
+            <label htmlFor={`${uid}-note`}>Note</label>
             <span className="note-count">
-              {(values.reservationNote || '').length}/200
+              {noteLength}/{STOP_NOTE_MAX_LENGTH}
             </span>
-          </span>
+          </div>
+          <p className="visually-hidden" role="status">
+            {noteRemaining <= NOTE_WARN_THRESHOLD
+              ? noteRemaining === 0
+                ? 'Character limit reached.'
+                : `${noteRemaining} characters left.`
+              : ''}
+          </p>
           <textarea
-            value={values.reservationNote || ''}
+            id={`${uid}-note`}
+            name="note"
+            autoComplete="off"
+            value={values.note || ''}
             onChange={(event) =>
-              onFieldChange(
-                'reservationNote',
-                event.target.value.slice(0, 200),
-              )
+              onFieldChange('note', event.target.value.slice(0, STOP_NOTE_MAX_LENGTH))
             }
-            maxLength={200}
-            rows={2}
-            placeholder="Add any reservation-specific details or special instructions."
+            maxLength={STOP_NOTE_MAX_LENGTH}
+            rows={4}
+            placeholder="Parking details, check-in info, reminders…"
           />
-        </label>
-      </div>
+        </div>
+      </FormSection>
+
+      {isEditing && (
+        <FormSection
+          id={`${uid}-costs`}
+          title="Travel & costs"
+          open={costsOpen}
+          onOpenChange={setCostsOpen}
+        >
+          <dl className="readonly-list">
+            <div className="readonly-item">
+              <dt>Distance to this stop</dt>
+              <dd>
+                {distanceFromPreviousMeters
+                  ? formatDistance(distanceFromPreviousMeters)
+                  : 'Data not available'}
+              </dd>
+            </div>
+            <div className="readonly-item">
+              <dt>Estimated fuel cost</dt>
+              <dd>
+                {estimatedFuelCost !== undefined && estimatedFuelCost > 0
+                  ? `$${estimatedFuelCost.toFixed(2)}`
+                  : 'Data not available'}
+              </dd>
+            </div>
+          </dl>
+          <div className="field">
+            <label htmlFor={`${uid}-gas`}>Actual gas cost</label>
+            <input
+              id={`${uid}-gas`}
+              name="actualGasCost"
+              spellCheck={false}
+              autoComplete="off"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={values.actualGasCost || ''}
+              onChange={(event) => onFieldChange('actualGasCost', event.target.value)}
+              placeholder="62.50…"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${uid}-food`}>Actual food cost</label>
+            <input
+              id={`${uid}-food`}
+              name="actualFoodCost"
+              spellCheck={false}
+              autoComplete="off"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={values.actualFoodCost || ''}
+              onChange={(event) => onFieldChange('actualFoodCost', event.target.value)}
+              placeholder="48.25…"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${uid}-misc`}>Actual misc cost</label>
+            <input
+              id={`${uid}-misc`}
+              name="actualMiscCost"
+              spellCheck={false}
+              autoComplete="off"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={values.actualMiscCost || ''}
+              onChange={(event) => onFieldChange('actualMiscCost', event.target.value)}
+              placeholder="15.00…"
+            />
+          </div>
+          <dl className="readonly-list">
+            <div className="readonly-item">
+              <dt>Actual stop total</dt>
+              <dd>${actualStopTotal.toFixed(2)}</dd>
+            </div>
+          </dl>
+        </FormSection>
+      )}
 
       {children}
     </div>

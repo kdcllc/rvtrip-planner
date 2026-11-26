@@ -12,8 +12,6 @@ export type TripStopSource = {
   name: TripStopSourceName
   url?: string
   siteType?: string
-  fees?: string
-  amenities?: string
 }
 
 export type ReservationStatus = 'reserved' | 'unreserved'
@@ -45,7 +43,6 @@ export type TripStop = {
   actualGasCost?: number
   actualFoodCost?: number
   actualMiscCost?: number
-  reservationNote?: string
 }
 
 export type Trip = {

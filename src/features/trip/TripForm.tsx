@@ -6,8 +6,14 @@ import { requiresCheckInOut } from '../../utils/siteType'
 import { StopWeatherForecast } from '../weather/StopWeatherForecast'
 import type { StopForecast } from '../../domain/weather/types'
 import type { TripStop, TripStopSourceName } from '../../domain/trip/types'
+import {
+  STOP_NOTE_MAX_LENGTH,
+  deriveStopLabel,
+  hasStopDates,
+} from '../../domain/trip/stopFields'
 import { StopDrawer } from './StopDrawer'
 import {
+  type StopFormErrorField,
   type StopFormValues,
   type StopFormValidationState,
   type SuggestionItem,
@@ -89,8 +95,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     sourceName: '',
     sourceUrl: '',
     sourceSiteType: '',
-    sourceFees: '',
-    sourceAmenities: '',
     location: null,
   })
 
@@ -103,6 +107,10 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
   const [drawerPredictions, setDrawerPredictions] = useState<SuggestionItem[]>([])
   const [drawerError, setDrawerError] = useState('')
+  const [drawerErrorField, setDrawerErrorField] = useState<StopFormErrorField | null>(null)
+  const [drawerErrorKey, setDrawerErrorKey] = useState(0)
+  // Last title filled from an address; only that value may be replaced automatically.
+  const autoTitleRef = useRef('')
   const [isValidatingAddress, setIsValidatingAddress] = useState(false)
   const drawerDebounceRef = useRef<number | null>(null)
   const drawerValidationStateRef = useRef<StopFormValidationState>(drawerValidationState)
@@ -277,6 +285,17 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }
   }, [drawerFormValues.address, drawerFormValues.manualAddress, drawerState.isOpen])
 
+  const raiseDrawerError = (message: string, field: StopFormErrorField) => {
+    setDrawerError(message)
+    setDrawerErrorField(field)
+    setDrawerErrorKey((key) => key + 1)
+  }
+
+  const clearDrawerError = () => {
+    setDrawerError('')
+    setDrawerErrorField(null)
+  }
+
   // Drawer prediction selection
   const selectDrawerPrediction = async (item: SuggestionItem) => {
     // Combine mainText and secondaryText to form complete address
@@ -284,11 +303,22 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       ? `${item.mainText}, ${item.secondaryText}`
       : item.mainText
     
-    setDrawerFormValues((prev) => ({
-      ...prev,
-      address: fullAddress,
-      location: null,
-    }))
+    setDrawerFormValues((prev) => {
+      const currentTitle = (prev.label || '').trim()
+      const canAutoFill =
+        !prev.isStartPoint &&
+        (currentTitle === '' || currentTitle === autoTitleRef.current)
+      const nextTitle = canAutoFill ? deriveStopLabel(fullAddress) : prev.label
+      if (canAutoFill) {
+        autoTitleRef.current = nextTitle || ''
+      }
+      return {
+        ...prev,
+        label: nextTitle,
+        address: fullAddress,
+        location: null,
+      }
+    })
     setDrawerPredictions([])
     // Mark as valid immediately to prevent autocomplete effect from re-fetching
     setDrawerValidationState((prev) => ({
@@ -452,6 +482,18 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
 
   // Drawer form field change handler
   const handleDrawerFieldChange = (field: keyof StopFormValues, value: string | boolean | { lat: number; lng: number } | null) => {
+    // Editing the field an error belongs to clears that error.
+    const fieldErrorOwner: Partial<Record<keyof StopFormValues, StopFormErrorField>> = {
+      address: 'address',
+      startDate: 'dates',
+      endDate: 'dates',
+      checkInTime: 'checkOutTime',
+      checkOutTime: 'checkOutTime',
+    }
+    if (drawerErrorField && fieldErrorOwner[field] === drawerErrorField) {
+      clearDrawerError()
+    }
+
     setDrawerFormValues((prev) => {
       const updated = {
         ...prev,
@@ -508,8 +550,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       sourceName: '',
       sourceUrl: '',
       sourceSiteType: '',
-      sourceFees: '',
-      sourceAmenities: '',
       location: null,
       reservationStatus: '',
       confirmationNumber: '',
@@ -519,7 +559,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       actualGasCost: '',
       actualFoodCost: '',
       actualMiscCost: '',
-      reservationNote: '',
     })
     setDrawerValidationState({
       status: 'idle',
@@ -528,7 +567,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       predictionStatus: 'idle',
     })
     setDrawerPredictions([])
-    setDrawerError('')
+    clearDrawerError()
+    autoTitleRef.current = ''
     setDrawerState({
       isOpen: true,
       mode: 'add',
@@ -555,8 +595,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       sourceName: stop.source?.name || '',
       sourceUrl: stop.source?.url || '',
       sourceSiteType: stop.source?.siteType || '',
-      sourceFees: stop.source?.fees || '',
-      sourceAmenities: stop.source?.amenities || '',
       location: stop.location || null,
       reservationStatus: stop.reservationStatus || '',
       confirmationNumber: stop.confirmationNumber || '',
@@ -566,7 +604,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       actualGasCost: stop.actualGasCost ? String(stop.actualGasCost) : '',
       actualFoodCost: stop.actualFoodCost ? String(stop.actualFoodCost) : '',
       actualMiscCost: stop.actualMiscCost ? String(stop.actualMiscCost) : '',
-      reservationNote: stop.reservationNote || '',
     })
     setDrawerValidationState({
       status: stop.location ? 'valid' : 'idle',
@@ -575,7 +612,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       predictionStatus: 'idle',
     })
     setDrawerPredictions([])
-    setDrawerError('')
+    clearDrawerError()
+    autoTitleRef.current = ''
     setDrawerState({
       isOpen: true,
       mode: 'edit',
@@ -598,8 +636,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       sourceName: '',
       sourceUrl: '',
       sourceSiteType: '',
-      sourceFees: '',
-      sourceAmenities: '',
       location: null,
       reservationStatus: '',
       confirmationNumber: '',
@@ -609,7 +645,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       actualGasCost: '',
       actualFoodCost: '',
       actualMiscCost: '',
-      reservationNote: '',
     })
     setDrawerValidationState({
       status: 'idle',
@@ -618,32 +653,18 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       predictionStatus: 'idle',
     })
     setDrawerPredictions([])
-    setDrawerError('')
+    clearDrawerError()
+    autoTitleRef.current = ''
   }
 
   // Save drawer changes (for both add and edit modes)
   const saveDrawerChanges = async () => {
-    setDrawerError('')
+    clearDrawerError()
 
     const isStartingPoint = drawerFormValues.isStartPoint === true
 
     if (!(drawerFormValues.address || '').trim()) {
-      setDrawerError('Add an address for this stop.')
-      return
-    }
-
-    if (!isStartingPoint && !(drawerFormValues.label || '').trim()) {
-      setDrawerError('Add a title for each stop.')
-      return
-    }
-
-    if (!isStartingPoint && (!drawerFormValues.startDate || !drawerFormValues.endDate)) {
-      setDrawerError('Add arrival and departure dates for each stop.')
-      return
-    }
-
-    if (isStartingPoint && !drawerFormValues.endDate) {
-      setDrawerError('Add a departure date for the starting point.')
+      raiseDrawerError('Add an address for this stop.', 'address')
       return
     }
 
@@ -652,7 +673,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       drawerFormValues.endDate &&
       drawerFormValues.startDate > drawerFormValues.endDate
     ) {
-      setDrawerError('Arrival date must be on or before the departure date.')
+      raiseDrawerError('Arrival date must be on or before the departure date.', 'dates')
       return
     }
 
@@ -660,11 +681,12 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     if (
       drawerFormValues.checkInTime &&
       drawerFormValues.checkOutTime &&
+      drawerFormValues.startDate &&
       drawerFormValues.startDate === drawerFormValues.endDate &&
       requiresCheckInOut(drawerFormValues.sourceSiteType)
     ) {
       if (drawerFormValues.checkOutTime <= drawerFormValues.checkInTime) {
-        setDrawerError('Check-out time must be after check-in time.')
+        raiseDrawerError('Check-out time must be after check-in time.', 'checkOutTime')
         return
       }
     }
@@ -676,7 +698,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     if (!drawerFormValues.manualAddress) {
       const isValidated = await validateAddress(drawerFormValues.address || '')
       if (!isValidated) {
-        setDrawerError('Please choose a validated address before saving.')
+        raiseDrawerError('Please choose a validated address before saving.', 'address')
         return
       }
     } else {
@@ -706,25 +728,24 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       }
     }
 
+    const typedLabel = (drawerFormValues.label || '').trim()
     const resolvedLabel = isStartingPoint
       ? STARTING_POINT_LABEL
-      : (drawerFormValues.label || '').trim()
+      : typedLabel === '' || typedLabel === autoTitleRef.current
+        ? deriveStopLabel(drawerFormValues.address || '')
+        : typedLabel
     const resolvedStartDate = isStartingPoint
       ? drawerFormValues.endDate || ''
       : drawerFormValues.startDate || ''
-    const resolvedNote = (drawerFormValues.note || '').trim().slice(0, 500)
+    const resolvedNote = (drawerFormValues.note || '').trim().slice(0, STOP_NOTE_MAX_LENGTH)
     const trimmedSourceUrl = (drawerFormValues.sourceUrl || '').trim()
     const trimmedSiteType = (drawerFormValues.sourceSiteType || '').trim()
-    const trimmedFees = (drawerFormValues.sourceFees || '').trim()
-    const trimmedAmenities = (drawerFormValues.sourceAmenities || '').trim()
     const trimmedCheckInTime = (drawerFormValues.checkInTime || '').trim()
     const trimmedCheckOutTime = (drawerFormValues.checkOutTime || '').trim()
     const hasSourceDetails =
       Boolean(drawerFormValues.sourceName) ||
       Boolean(trimmedSourceUrl) ||
-      Boolean(trimmedSiteType) ||
-      Boolean(trimmedFees) ||
-      Boolean(trimmedAmenities)
+      Boolean(trimmedSiteType)
     const resolvedSourceName =
       drawerFormValues.sourceName || (hasSourceDetails ? 'Other' : '')
     const parseOptionalNumber = (value?: string): number | undefined => {
@@ -762,8 +783,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
               name: resolvedSourceName as TripStopSourceName,
               url: trimmedSourceUrl || undefined,
               siteType: trimmedSiteType || undefined,
-              fees: trimmedFees || undefined,
-              amenities: trimmedAmenities || undefined,
             }
           : undefined,
         location: finalLocation ?? undefined,
@@ -776,7 +795,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         actualGasCost: parseOptionalNumber(drawerFormValues.actualGasCost),
         actualFoodCost: parseOptionalNumber(drawerFormValues.actualFoodCost),
         actualMiscCost: parseOptionalNumber(drawerFormValues.actualMiscCost),
-        reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onUpdateStop(drawerState.stopId, updates)
     } else {
@@ -802,8 +820,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
               name: resolvedSourceName as TripStopSourceName,
               url: trimmedSourceUrl || undefined,
               siteType: trimmedSiteType || undefined,
-              fees: trimmedFees || undefined,
-              amenities: trimmedAmenities || undefined,
             }
           : undefined,
         status: finalLocation ? 'ready' : 'idle',
@@ -816,7 +832,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         actualGasCost: parseOptionalNumber(drawerFormValues.actualGasCost),
         actualFoodCost: parseOptionalNumber(drawerFormValues.actualFoodCost),
         actualMiscCost: parseOptionalNumber(drawerFormValues.actualMiscCost),
-        reservationNote: (drawerFormValues.reservationNote || '').trim() || undefined,
       }
       onAddStop(newStop)
     }
@@ -845,7 +860,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return
     }
 
-    setDrawerError('')
+    clearDrawerError()
     setDrawerFormValues((prev) => ({
       ...prev,
       sourceUrl: generatedUrl,
@@ -986,7 +1001,14 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                     ) : (
                       <p className="muted">No address</p>
                     )}
-                    <p className="dates">{formatDateRangeWithDays(stop.startDate, stop.endDate)}</p>
+                    <p className="dates">{hasStopDates(stop)
+                      ? formatDateRangeWithDays(stop.startDate, stop.endDate)
+                      : stop.startDate || stop.endDate
+                        ? formatDateRangeWithDays(
+                            stop.startDate || stop.endDate,
+                            stop.startDate || stop.endDate,
+                          )
+                        : 'Dates not set'}</p>
                     {(stop.checkInTime || stop.checkOutTime) && (
                       <p className="times">
                         {stop.checkInTime && `Check-in: ${formatTime(stop.checkInTime)}`}
@@ -1053,12 +1075,6 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
                         </div>
                         {stop.source?.siteType ? (
                           <p className="source-detail">Type: {stop.source.siteType}</p>
-                        ) : null}
-                        {stop.source?.fees ? (
-                          <p className="source-detail">Fees: {stop.source.fees}</p>
-                        ) : null}
-                        {stop.source?.amenities ? (
-                          <p className="source-detail">Amenities: {stop.source.amenities}</p>
                         ) : null}
                       </div>
                     )}
@@ -1127,6 +1143,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         predictions={drawerPredictions}
         validationState={drawerValidationState}
         error={drawerError}
+        errorField={drawerErrorField}
+        errorKey={drawerErrorKey}
         formValues={drawerFormValues}
         mapBounds={mapBounds}
         isValidatingAddress={isValidatingAddress}

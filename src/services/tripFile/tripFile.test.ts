@@ -54,7 +54,58 @@ describe('tripFile', () => {
     expect(payload.trip.id).toBe(legacyFixture.trip.id)
     expect(payload.trip.stops[0].confirmationNumber).toBe('ABC123')
     expect(payload.checksum).toBe(createStopsChecksum(payload.trip.stops))
-    expect(payload.checksum).toBe(legacyFixture.checksum)
+    for (const stop of payload.trip.stops) {
+      expect(stop).not.toHaveProperty('reservationNote')
+      expect(stop.source ?? {}).not.toHaveProperty('fees')
+      expect(stop.source ?? {}).not.toHaveProperty('amenities')
+    }
+    const first = payload.trip.stops[0]
+    expect(first.nightlyCost).toBe(45)
+    expect(first.note).toContain('Amenities: Wifi')
+    expect(first.note).toContain('Reservation: Pull-through')
+  })
+
+  it('exports no legacy keys and round-trips merged stops', () => {
+    const legacyTrip = {
+      ...trip,
+      stops: [
+        {
+          ...trip.stops[0],
+          reservationNote: 'Late arrival',
+          source: { name: 'Hipcamp', fees: 'Dog fee $10', amenities: 'Pool' },
+        },
+        trip.stops[1],
+      ],
+    } as Trip
+    const json = JSON.stringify(buildTripFilePayload(legacyTrip))
+    expect(json).not.toMatch(/"(fees|amenities|reservationNote)"/)
+    const merged = buildTripFilePayload(trip)
+    const parsed = parseTripFilePayload(JSON.parse(JSON.stringify(merged)))
+    expect(parsed.payload.trip.stops).toEqual(
+      merged.trip.stops.map((stop) => ({ ...stop, status: stop.status ?? 'idle' })),
+    )
+    expect(parsed.payload.checksum).toBe(merged.checksum)
+  })
+
+  it('imports a legacy file whose stored checksum differs', () => {
+    const raw = JSON.parse(JSON.stringify(legacyFixture))
+    raw.checksum = 'stale'
+    expect(() => parseTripFilePayload(raw)).not.toThrow()
+  })
+
+  it('keeps long notes up to the shared limit and accepts undated stops', () => {
+    const raw = {
+      version: 1,
+      trip: {
+        id: 't',
+        name: 'n',
+        stops: [{ id: 'u', label: 'U', address: 'X', startDate: '', endDate: '', note: 'a'.repeat(1500) }],
+      },
+    }
+    const { payload, skippedStops } = parseTripFilePayload(raw)
+    expect(skippedStops).toBe(0)
+    expect(payload.trip.stops[0].note).toHaveLength(1500)
+    expect(payload.trip.stops[0].startDate).toBe('')
   })
 
   it('builds a stable file name', () => {

@@ -1,5 +1,6 @@
 import './TripPrintLayout.css'
 import type { TripPrintData, TripWeatherSummary } from '../../domain/trip/print'
+import { hasStopDates } from '../../domain/trip/stopFields'
 import { formatDateRangeWithDays, formatTime } from '../../utils/date'
 import { formatDistance } from '../../utils/distance'
 
@@ -162,7 +163,11 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                 <div>
                   <h3>{stop.label}</h3>
                   <p className="muted">{stop.address}</p>
-                  <p className="dates">{formatDateRangeWithDays(stop.startDate, stop.endDate)}</p>
+                  <p className="dates">
+                    {hasStopDates(stop)
+                      ? formatDateRangeWithDays(stop.startDate, stop.endDate)
+                      : 'Dates not set'}
+                  </p>
                   {(stop.checkInTime || stop.checkOutTime) && (
                     <p className="times">
                       {stop.checkInTime && `Check-in: ${formatTime(stop.checkInTime)}`}
@@ -186,7 +191,7 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                     <strong>Estimated fuel cost:</strong> ${stop.estimatedFuelCost.toFixed(2)}
                   </p>
                 ) : null}
-                {stop.nightlyCost ? (
+                {stop.nightlyCost !== undefined ? (
                   <p>
                     <strong>Nightly cost:</strong> ${stop.nightlyCost.toFixed(2)}
                   </p>
@@ -213,14 +218,17 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                   <p>
                     <strong>Source:</strong> {stop.source.name}
                     {stop.source.siteType ? ` | ${stop.source.siteType}` : ''}
-                    {stop.source.fees ? ` | Fees: ${stop.source.fees}` : ''}
                   </p>
                 ) : null}
                 {stop.reservationStatus === 'reserved' ? (
                   <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(0, 0, 0, 0.1)' }}>
-                    <p style={{ marginBottom: '4px' }}>
-                      <strong>Reservation Details</strong>
-                    </p>
+                    {stop.confirmationNumber || stop.siteNumber || stop.contactPhone ? (
+                      <p style={{ marginBottom: '4px' }}>
+                        <strong>Reservation Details</strong>
+                      </p>
+                    ) : (
+                      <p style={{ margin: '2px 0' }}>Reserved</p>
+                    )}
                     {stop.confirmationNumber && (
                       <p style={{ margin: '2px 0' }}>
                         Confirmation #: {stop.confirmationNumber}
@@ -236,15 +244,10 @@ export const TripPrintLayout = ({ data, mapImageUrl }: TripPrintLayoutProps) => 
                         Contact: {stop.contactPhone}
                       </p>
                     )}
-                    {stop.reservationNote && (
-                      <p style={{ margin: '2px 0' }}>
-                        {stop.reservationNote}
-                      </p>
-                    )}
                   </div>
                 ) : null}
                 {stop.note ? (
-                  <p>
+                  <p style={{ whiteSpace: 'pre-line' }}>
                     <strong>Notes:</strong> {stop.note}
                   </p>
                 ) : null}

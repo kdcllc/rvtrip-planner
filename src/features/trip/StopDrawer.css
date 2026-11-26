@@ -87,7 +87,7 @@
   color: var(--color-accent-dark);
 }
 
-.stop-drawer-close:focus {
+.stop-drawer-close:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
@@ -100,6 +100,11 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overscroll-behavior: contain;
+}
+
+.stop-drawer-content button {
+  touch-action: manipulation;
 }
 
 .stop-drawer-content .form-grid {
@@ -108,38 +113,205 @@
   gap: 12px;
 }
 
-.stop-drawer-content .form-grid > label {
+.stop-drawer-content .field {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.stop-drawer-content .field > label,
+.stop-drawer-content .label-row label {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
+}
+
+.stop-drawer-content .label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stop-drawer-content .note-count {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.stop-drawer-content .required-mark {
+  color: var(--color-danger-text);
+}
+
+.stop-drawer-content .field-group {
+  display: grid;
+  gap: 6px;
+}
+
+.stop-drawer-content .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .stop-drawer-content .form-grid input:not([type='checkbox']):not([type='radio']),
 .stop-drawer-content .form-grid select,
 .stop-drawer-content .form-grid textarea {
   width: 100%;
+  box-sizing: border-box;
 }
 
-.stop-drawer-content .source-section,
-.stop-drawer-content .cost-section,
-.stop-drawer-content .reservation-section {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-strong);
-  border: 1px solid var(--color-border);
+.stop-drawer-content .field-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-danger-text);
 }
 
-.stop-drawer-content .source-header,
-.stop-drawer-content .cost-header,
-.stop-drawer-content .reservation-header {
+.stop-drawer-content [aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+/* Inline checkbox row: checkbox and clickable text on one line */
+.stop-drawer-content .field > label.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: var(--text-sm);
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Small text buttons under the address */
+.stop-drawer-content .address-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.stop-drawer-content .text-button {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-accent-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.stop-drawer-content .text-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.stop-drawer-content .text-button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Touch-friendly control height inside the drawer only */
+.stop-drawer-content .form-grid input:not([type='checkbox']):not([type='radio']),
+.stop-drawer-content .form-grid select {
+  min-height: 44px;
+}
+
+.stop-drawer-content .form-grid textarea {
+  min-height: 88px;
+}
+
+.stop-drawer-content .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Collapsible sections */
+.stop-drawer-content .form-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-strong);
+}
+
+.stop-drawer-content .form-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  border-radius: var(--radius-lg);
+}
+
+.stop-drawer-content .form-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.stop-drawer-content .form-section > summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+
+.stop-drawer-content .form-section[open] > summary::after {
+  transform: rotate(-135deg);
+}
+
+.stop-drawer-content .form-section > summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.stop-drawer-content .form-section-summary {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.stop-drawer-content .form-section-body {
+  display: grid;
   gap: 12px;
-  justify-content: space-between;
-  align-items: flex-start;
+  padding: 4px 14px 14px;
+}
+
+.stop-drawer-content .readonly-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.stop-drawer-content .readonly-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.stop-drawer-content .readonly-item dt {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.stop-drawer-content .readonly-item dd {
+  margin: 0;
 }
 
 /* Form controls inside drawer */
@@ -164,9 +336,9 @@
   padding-right: 32px;
 }
 
-.stop-drawer-content input:not([type='checkbox']):not([type='radio']):focus,
-.stop-drawer-content select:focus,
-.stop-drawer-content textarea:focus {
+.stop-drawer-content input:not([type='checkbox']):not([type='radio']):focus-visible,
+.stop-drawer-content select:focus-visible,
+.stop-drawer-content textarea:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
   border-color: var(--color-accent);
@@ -184,7 +356,7 @@
 }
 
 .manual-address-hint {
-  margin: -2px 0 2px;
+  margin: 0;
   font-size: var(--text-sm);
 }
 
@@ -227,6 +399,15 @@
 
 .stop-drawer-content::-webkit-scrollbar-thumb:hover {
   background: var(--color-border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stop-drawer,
+  .stop-drawer-backdrop,
+  .stop-drawer-content .form-section > summary::after {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* Responsive: Mobile */
@@ -277,6 +458,10 @@
 
   .stop-drawer-header h2 {
     font-size: var(--text-base);
+  }
+
+  .stop-drawer-content .field-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -3,6 +3,7 @@ import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import polyline from '@mapbox/polyline'
 import type { TripStop } from '../../domain/trip/types'
+import { hasStopDates } from '../../domain/trip/stopFields'
 import type { MapBounds } from '../../services/campsiteSearch'
 import { formatDistance, formatDuration } from '../../utils/distance'
 import { computeRoute } from '../../services/maps/routesService'
@@ -24,7 +25,9 @@ type TripMapProps = {
 const DEFAULT_CENTER: [number, number] = [-115.1398, 36.1699]
 
 const formatStopInfoContent = (stop: TripStop): string => {
-  const dateRange = `${new Date(stop.startDate).toLocaleDateString()} – ${new Date(stop.endDate).toLocaleDateString()}`
+  const dateRange = hasStopDates(stop)
+    ? `${new Date(stop.startDate).toLocaleDateString()} – ${new Date(stop.endDate).toLocaleDateString()}`
+    : 'Dates not set'
 
   let timeRange = ''
   if (stop.checkInTime || stop.checkOutTime) {
@@ -45,7 +48,6 @@ const formatStopInfoContent = (stop: TripStop): string => {
     ? `<div style="font-size: 0.9em; color: #666; margin-top: 8px;">
         <strong>${stop.source.name}</strong>
         ${stop.source.siteType ? `<br>Type: ${stop.source.siteType}` : ''}
-        ${stop.source.fees ? `<br>Fees: ${stop.source.fees}` : ''}
       </div>`
     : ''
 

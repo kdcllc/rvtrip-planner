@@ -67,12 +67,6 @@ export function generateICalendar(stops: TripStop[], tripName: string): string {
       if (stop.source.siteType) {
         descriptionParts.push(`Site Type: ${stop.source.siteType}`)
       }
-      if (stop.source.fees) {
-        descriptionParts.push(`Fees: ${stop.source.fees}`)
-      }
-      if (stop.source.amenities) {
-        descriptionParts.push(`Amenities: ${stop.source.amenities}`)
-      }
     }
 
     const description = descriptionParts.join('\n')
