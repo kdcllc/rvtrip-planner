@@ -2,7 +2,7 @@
 
 Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
-**Live Demo:** https://red-rock-016ee8c0f.4.azurestaticapps.net (sign-in required; signed-out visitors see a landing page where you can request an invite; registration needs an invite code)
+**Live Demo:** https://trip.moedim.dev (sign-in required; signed-out visitors see a landing page where you can request an invite; registration needs an invite code)
 
 ## Features
 
