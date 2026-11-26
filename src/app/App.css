@@ -150,14 +150,9 @@
   gap: 6px;
 }
 
-.stop-flow-controls {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .stop-carousel-controls .ghost.small {
-  min-width: 40px;
-  height: 36px;
+  min-width: 44px;
+  height: 44px;
   padding: 6px 12px;
   font-size: var(--text-lg);
   font-weight: 600;
@@ -165,7 +160,10 @@
   background: var(--color-accent-soft);
   color: var(--color-accent-dark);
   cursor: pointer;
-  transition: all var(--duration-base) var(--ease-standard);
+  transition:
+    background-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
 }
 
 .stop-carousel-controls .ghost.small:hover {
@@ -1281,10 +1279,6 @@
 @media (max-width: 600px) {
   .map-wrap {
     gap: 12px;
-  }
-
-  .stop-flow-controls {
-    justify-content: flex-start;
   }
 
   .stop-header-actions {

@@ -921,41 +921,39 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
         </div>
       )}
 
-      {stops.length > 0 ? (
-        <div className="stop-flow-controls">
-          <div
-            className="stop-carousel-controls"
-            role="group"
-            aria-label="Scroll trip stops"
-          >
-            <button
-              className="ghost small"
-              type="button"
-              onClick={() => scrollStopsCarousel('left')}
-              aria-label="Scroll stops left"
-              title="Scroll stops left"
-            >
-              ←
-            </button>
-            <button
-              className="ghost small"
-              type="button"
-              onClick={() => scrollStopsCarousel('right')}
-              aria-label="Scroll stops right"
-              title="Scroll stops right"
-            >
-              →
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {/* Timeline - shows visual overview of trip dates */}
       <TripTimeline
         stops={stops}
         onStopClick={handleTimelineStopClick}
         currentStopId={currentStopId ?? null}
-        carouselRef={carouselRef}
+        actions={
+          stops.length > 0 ? (
+            <div
+              className="stop-carousel-controls"
+              role="group"
+              aria-label="Scroll trip stops"
+            >
+              <button
+                className="ghost small"
+                type="button"
+                onClick={() => scrollStopsCarousel('left')}
+                aria-label="Scroll stops left"
+                title="Scroll stops left"
+              >
+                ←
+              </button>
+              <button
+                className="ghost small"
+                type="button"
+                onClick={() => scrollStopsCarousel('right')}
+                aria-label="Scroll stops right"
+                title="Scroll stops right"
+              >
+                →
+              </button>
+            </div>
+          ) : undefined
+        }
       />
 
       <div
