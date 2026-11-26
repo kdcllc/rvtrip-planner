@@ -3,6 +3,7 @@ import {
   StopFormFields,
   type StopFormValues,
   type StopFormValidationState,
+  type StopFormErrorField,
 } from './StopFormFields'
 import type { SuggestionItem } from './StopFormFields'
 import type { TripStop } from '../../domain/trip/types'
@@ -18,6 +19,8 @@ type StopDrawerProps = {
   predictions: SuggestionItem[]
   validationState: StopFormValidationState
   error: string
+  errorField?: StopFormErrorField | null
+  errorKey?: number
   formValues: Partial<StopFormValues>
   mapBounds?: MapBounds
   isValidatingAddress?: boolean
@@ -37,6 +40,8 @@ export const StopDrawer = ({
   predictions,
   validationState,
   error,
+  errorField,
+  errorKey,
   formValues,
   mapBounds,
   isValidatingAddress,
@@ -129,6 +134,8 @@ export const StopDrawer = ({
             mapBounds={mapBounds}
             validationState={validationState}
             error={error}
+            errorField={errorField}
+            errorKey={errorKey}
             onFieldChange={onFieldChange}
             onSelectPrediction={onSelectPrediction}
             onGenerateSourceUrl={onGenerateSourceUrl}

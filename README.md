@@ -2,15 +2,15 @@
 
 Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 
-**Live Demo:** https://red-rock-016ee8c0f.4.azurestaticapps.net (sign-in required; signed-out visitors see a landing page where you can request an invite; registration needs an invite code)
+**Live Demo:** https://trip.moedim.dev (sign-in required; signed-out visitors see a landing page where you can request an invite; registration needs an invite code)
 
 ## Features
 
-- Manual stop list with arrival and departure dates
-- Optional starting point that does not require dates
+- Manual stop list: only an address is required; arrival and departure dates are optional for every stop, including the starting point, and the title is filled from the address when left blank
+- Stop drawer: address, title, starting point and dates come first; a collapsible `Stay` section holds campground source, site type, check-in/out, nightly cost and reservation details (confirmation number, site number and contact phone show only when the status is Reserved); one `Notes` field (up to 2000 characters); `Travel & costs` appears when editing a stop. Older trips and export files with separate fees, amenities and reservation-note fields load with that text merged into Notes
 - **Free Open-Source Mapping:** Uses OpenStreetMap, MapLibre GL JS, and free routing APIs (no API keys required by default)
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
-- Daily weather forecasts per stop (NOAA + historical climate data)
+- Daily weather forecasts per stop (NOAA + historical climate data); stops without dates show "Dates not set" and get no forecast, timeline position or calendar event
 - Fuel cost estimation based on vehicle MPG and gas prices
 - Multi-user accounts: register (shared invite code or a single-use invite code, emailed or sent as a link by an admin), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
@@ -154,7 +154,7 @@ The repository variables and secrets these workflows need are listed in [DEPLOYM
 ## Using the app
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
-- **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future).
+- **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future). Stops without dates get no forecast.
 - **Fuel Costs:** Estimated based on your vehicle's MPG (configurable in settings) and current gas prices.
 - **Data Persistence:** Each trip is saved to your account on the server as its own row. Saves retry automatically while the serverless database wakes, and the browser warns before you close the tab with unsaved changes. Use "Download all trips" for a backup.
 
@@ -175,7 +175,7 @@ The repository variables and secrets these workflows need are listed in [DEPLOYM
 ## Notes
 
 - **No third-party API keys required by default** for mapping, routing, geocoding and weather
-- Weather is pulled for the exact date range you provide per stop
+- Weather is pulled for the exact date range you provide per stop; stops without dates get no forecast
 - Route requests are batched and cached to respect free public APIs
 - Trip data persists server-side per account (one row per trip) - use "Download all trips" or a per-trip download for backup
 

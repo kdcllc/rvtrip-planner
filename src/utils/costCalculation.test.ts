@@ -56,6 +56,12 @@ describe('costCalculation', () => {
       expect(nights).toEqual(1)
     })
 
+    it('should return 0 when either date is empty', () => {
+      expect(calculateNights('', '')).toEqual(0)
+      expect(calculateNights('2024-01-01', '')).toEqual(0)
+      expect(calculateNights('', '2024-01-02')).toEqual(0)
+    })
+
     it('should handle invalid dates', () => {
       const nights = calculateNights('invalid', '2024-01-03')
       expect(nights).toEqual(0)
@@ -63,6 +69,16 @@ describe('costCalculation', () => {
   })
 
   describe('calculateTripTotalAccommodationCost', () => {
+    it('should stay finite with an undated stop that has a nightly cost', () => {
+      const stops = [
+        { id: '1', label: 'A', address: 'A', startDate: '', endDate: '', nightlyCost: 50 },
+        { id: '2', label: 'B', address: 'B', startDate: '2024-01-01', endDate: '2024-01-03', nightlyCost: 10 },
+      ] as TripStop[]
+      const total = calculateTripTotalAccommodationCost(stops)
+      expect(Number.isFinite(total)).toBe(true)
+      expect(total).toEqual(20)
+    })
+
     it('should calculate total accommodation cost with nightly rates', () => {
       const stops: TripStop[] = [
         {

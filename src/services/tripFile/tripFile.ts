@@ -4,6 +4,11 @@ import type {
   TripStopSourceName,
   TripStopStatus,
 } from '../../domain/trip/types'
+import {
+  STOP_NOTE_MAX_LENGTH,
+  foldLegacyStopFields,
+  type LegacyTripStop,
+} from '../../domain/trip/stopFields'
 import { hashStringFNV1a } from '../../utils/hash'
 
 export const TRIP_FILE_VERSION = 1
@@ -47,8 +52,6 @@ export function createStopsChecksum(stops: TripStop[]): string {
           name: stop.source.name,
           url: stop.source.url ?? '',
           siteType: stop.source.siteType ?? '',
-          fees: stop.source.fees ?? '',
-          amenities: stop.source.amenities ?? '',
         }
       : null,
     location: stop.location
@@ -66,17 +69,17 @@ export function createStopsChecksum(stops: TripStop[]): string {
     actualGasCost: stop.actualGasCost ?? null,
     actualFoodCost: stop.actualFoodCost ?? null,
     actualMiscCost: stop.actualMiscCost ?? null,
-    reservationNote: stop.reservationNote ?? '',
   }))
 
   return hashStringFNV1a(JSON.stringify(normalizedStops))
 }
 
 export function buildTripFilePayload(trip: Trip): TripFilePayload {
-  const checksum = createStopsChecksum(trip.stops)
+  const foldedTrip: Trip = { ...trip, stops: trip.stops.map(foldLegacyStopFields) }
+  const checksum = createStopsChecksum(foldedTrip.stops)
   return {
     version: TRIP_FILE_VERSION,
-    trip,
+    trip: foldedTrip,
     checksum,
     updatedAt: trip.updatedAt,
   }
@@ -115,7 +118,7 @@ export function parseTripFilePayload(
   for (const stop of rawStops) {
     const sanitized = sanitizeStop(stop, allowedSourceNames)
     if (sanitized) {
-      sanitizedStops.push(sanitized)
+      sanitizedStops.push(foldLegacyStopFields(sanitized))
     } else {
       skippedStops += 1
     }
@@ -224,7 +227,7 @@ function sanitizeFileName(value: string): string {
 function sanitizeStop(
   stop: unknown,
   allowedSourceNames?: Set<TripStopSourceName>,
-): TripStop | null {
+): LegacyTripStop | null {
   if (!stop || typeof stop !== 'object') {
     return null
   }
@@ -245,7 +248,7 @@ function sanitizeStop(
   const lat = location && typeof location.lat === 'number' ? location.lat : undefined
   const lng = location && typeof location.lng === 'number' ? location.lng : undefined
   const hasLocation = typeof lat === 'number' && typeof lng === 'number'
-  const note = typeof stopData.note === 'string' ? stopData.note.trim().slice(0, 500) : ''
+  const note = typeof stopData.note === 'string' ? stopData.note.trim().slice(0, STOP_NOTE_MAX_LENGTH) : ''
   const checkInTime =
     typeof stopData.checkInTime === 'string' ? stopData.checkInTime.trim() : ''
   const checkOutTime =

@@ -57,6 +57,22 @@ describe('loadTrips', () => {
     expect(await loadTrips()).toEqual({ kind: 'loaded', trips: [], currentTripId: null })
   })
 
+  it('folds legacy stop fields into the merged shape', async () => {
+    const legacy = {
+      ...trip('a'),
+      stops: [{ id: 's', label: 'S', address: 'X', startDate: '', endDate: '', reservationNote: 'Call ahead', source: { name: 'Other', fees: '$30', amenities: 'Wifi' } }],
+    }
+    get.mockResolvedValue(ok({ trips: [{ trip: legacy, version: 3 }], currentTripId: 'a' }))
+    const r = await loadTrips()
+    if (r.kind !== 'loaded') throw new Error('expected loaded')
+    const stop = r.trips[0].trip.stops[0]
+    expect(r.trips[0].version).toBe(3)
+    expect(stop).not.toHaveProperty('reservationNote')
+    expect(stop.source).toEqual({ name: 'Other' })
+    expect(stop.nightlyCost).toBe(30)
+    expect(stop.note).toBe('Amenities: Wifi\nReservation: Call ahead')
+  })
+
   it('maps 503, 401, errors and malformed bodies', async () => {
     get.mockResolvedValue(waking)
     expect(await loadTrips()).toEqual({ kind: 'database-waking', retryAfterSeconds: 4 })
@@ -87,6 +103,22 @@ describe('saveTrip', () => {
     const current = { trip: trip('a'), version: 5 }
     put.mockResolvedValue({ kind: 'validation-failure', status: 409, error: 'x', code: 'VERSION_CONFLICT', current } as never)
     expect(await saveTrip(trip('a'), 2)).toEqual({ kind: 'conflict', current })
+  })
+
+  it('folds legacy stop fields in the conflict current trip', async () => {
+    const legacy = {
+      ...trip('a'),
+      stops: [{ id: 's', label: 'S', address: 'X', startDate: '', endDate: '', reservationNote: 'Call ahead', source: { name: 'Other', fees: '$30', amenities: 'Wifi' } }],
+    }
+    put.mockResolvedValue({ kind: 'validation-failure', status: 409, error: 'x', current: { trip: legacy, version: 5 } } as never)
+    const r = await saveTrip(trip('a'), 2)
+    if (r.kind !== 'conflict' || !r.current) throw new Error('expected conflict')
+    const stop = r.current.trip.stops[0]
+    expect(r.current.version).toBe(5)
+    expect(stop).not.toHaveProperty('reservationNote')
+    expect(stop.source).toEqual({ name: 'Other' })
+    expect(stop.nightlyCost).toBe(30)
+    expect(stop.note).toBe('Amenities: Wifi\nReservation: Call ahead')
   })
 
   it('returns conflict with null current when the server omits it', async () => {
@@ -188,6 +220,20 @@ describe('legacy helpers', () => {
   it('reads the trip-planner-trips key', () => {
     window.localStorage.setItem('trip-planner-trips', JSON.stringify({ trips: [trip('a')], currentTripId: null }))
     expect(readLegacyLocalTrips()).toEqual({ trips: [trip('a')], currentTripId: 'a' })
+  })
+
+  it('folds legacy stop fields from both legacy keys', () => {
+    const stop = { id: 's', reservationNote: 'Gate code 1', source: { name: 'Other', fees: '$20' } }
+    window.localStorage.setItem('trip-planner-trips', JSON.stringify({ trips: [{ ...trip('a'), stops: [stop] }], currentTripId: 'a' }))
+    const a = readLegacyLocalTrips()?.trips[0].stops[0]
+    expect(a).not.toHaveProperty('reservationNote')
+    expect(a?.nightlyCost).toBe(20)
+    expect(a?.note).toBe('Reservation: Gate code 1')
+    window.localStorage.clear()
+    window.localStorage.setItem('exported-trips', JSON.stringify({ version: '1', trips: [stop] }))
+    const b = readLegacyLocalTrips()?.trips[0].stops[0]
+    expect(b).not.toHaveProperty('reservationNote')
+    expect(b?.nightlyCost).toBe(20)
   })
 
   it('migrates the exported-trips format', () => {

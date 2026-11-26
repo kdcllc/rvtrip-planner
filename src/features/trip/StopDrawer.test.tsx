@@ -59,14 +59,6 @@ describe('StopDrawer Form Layout & Styling', () => {
       expect(typeof values.nightlyCost).toBe('string')
     })
 
-    it('StopFormValues includes reservationNote field', () => {
-      const values: Partial<StopFormValues> = {
-        reservationNote: 'Check-in after 3pm',
-      }
-      expect(values.reservationNote).toBeDefined()
-      expect(typeof values.reservationNote).toBe('string')
-    })
-
     it('StopFormValues includes actualGasCost field', () => {
       const values: Partial<StopFormValues> = {
         actualGasCost: '62.50',
@@ -101,7 +93,6 @@ describe('StopDrawer Form Layout & Styling', () => {
         actualGasCost: '',
         actualFoodCost: '',
         actualMiscCost: '',
-        reservationNote: '',
       }
       Object.values(values).forEach((value) => {
         expect(value).toBe('')
@@ -142,7 +133,7 @@ describe('StopDrawer Form Layout & Styling', () => {
   })
 
   describe('Form Fields Organization', () => {
-    it('reservation section contains 6 input fields', () => {
+    it('reservation fields are documented', () => {
       // Documentation of reservation section structure from StopFormFields.tsx
       const reservationFields = [
         'reservationStatus',
@@ -153,9 +144,8 @@ describe('StopDrawer Form Layout & Styling', () => {
         'actualGasCost',
         'actualFoodCost',
         'actualMiscCost',
-        'reservationNote',
       ]
-      expect(reservationFields).toHaveLength(9)
+      expect(reservationFields).toHaveLength(8)
     })
 
     it('reservation fields are part of StopFormValues interface', () => {
@@ -168,9 +158,8 @@ describe('StopDrawer Form Layout & Styling', () => {
         'actualGasCost',
         'actualFoodCost',
         'actualMiscCost',
-        'reservationNote',
       ]
-      expect(fields.length).toBe(9)
+      expect(fields.length).toBe(8)
     })
 
     it('source section contains URL and site info fields', () => {
@@ -178,15 +167,11 @@ describe('StopDrawer Form Layout & Styling', () => {
         'sourceName',
         'sourceUrl',
         'sourceSiteType',
-        'sourceFees',
-        'sourceAmenities',
       ]
       const values: Partial<StopFormValues> = {
         sourceName: 'RV Life' as const,
         sourceUrl: 'https://example.com',
         sourceSiteType: 'RV Park',
-        sourceFees: '$25/night',
-        sourceAmenities: 'Water, 30A',
       }
       sourceFields.forEach((field) => {
         expect(Object.keys(values)).toContain(field)
@@ -260,9 +245,8 @@ describe('StopDrawer Form Layout & Styling', () => {
         actualGasCost: { label: 'Actual gas cost', type: 'input', required: false },
         actualFoodCost: { label: 'Actual food cost', type: 'input', required: false },
         actualMiscCost: { label: 'Actual misc cost', type: 'input', required: false },
-        reservationNote: { label: 'Reservation note (optional)', type: 'textarea', required: false },
       }
-      expect(Object.entries(fieldStructure)).toHaveLength(9)
+      expect(Object.entries(fieldStructure)).toHaveLength(8)
       Object.entries(fieldStructure).forEach(([, config]) => {
         expect(config).toHaveProperty('label')
         expect(config).toHaveProperty('type')
@@ -343,7 +327,6 @@ describe('StopDrawer Form Layout & Styling', () => {
         actualGasCost: 62.5,
         actualFoodCost: 48.25,
         actualMiscCost: 15,
-        reservationNote: 'Early check-in arranged',
       }
       expect(stop.confirmationNumber).toBe('RES-98765')
       expect(stop.siteNumber).toBe('Loop-A-12')

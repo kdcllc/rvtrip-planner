@@ -17,8 +17,6 @@ export type TripStopSource = {
   name: TripStopSourceName
   url?: string
   siteType?: string
-  fees?: string
-  amenities?: string
 }
 
 export type TripStop = {
@@ -44,7 +42,6 @@ export type TripStop = {
   actualGasCost?: number
   actualFoodCost?: number
   actualMiscCost?: number
-  reservationNote?: string
 }
 
 export type Trip = {
