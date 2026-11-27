@@ -573,7 +573,10 @@
   gap: 0;
   scroll-snap-align: start;
   scroll-margin-left: 12px;
-  overflow: visible;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-strong);
+  overflow: hidden;
 }
 
 .stop-card {
@@ -583,9 +586,7 @@
   gap: 16px;
   padding: 16px;
   background: var(--color-surface-strong);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  border: 1px solid var(--color-border);
-  border-bottom: none;
+  flex: 1 1 auto;
   overflow: hidden;
 }
 
@@ -668,6 +669,9 @@
 
 .stop-card--hovered {
   background: var(--color-accent-soft);
+}
+
+.stop-item:has(> .stop-card--hovered) {
   border-color: var(--color-accent-glow);
   box-shadow: 0 0 0 2px var(--color-accent-ring);
 }
@@ -740,12 +744,6 @@
 
 .stop-weather {
   padding: 12px 16px 16px;
-  background: var(--color-surface-strong);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  border: 1px solid var(--color-border);
-  border-top: none;
-  border-left: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
 }
 
 .stop-card h3 {
@@ -931,8 +929,8 @@
 }
 
 .stop-weather-container {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: auto;
+  padding-top: 0;
   border-top: 1px solid var(--color-border);
 }
 
@@ -1119,19 +1117,6 @@
   color: var(--color-warning);
 }
 
-.forecast-list {
-  display: grid;
-  gap: 8px;
-}
-
-.forecast-row {
-  display: grid;
-  grid-template-columns: auto 1.2fr 1fr 1fr;
-  gap: 12px;
-  font-size: var(--text-md);
-  align-items: center;
-}
-
 .weather-icon {
   display: inline-flex;
   align-items: center;
@@ -1149,29 +1134,6 @@
 
 .weather-icon--lg {
   font-size: var(--text-2xl);
-}
-
-.temp-range {
-  font-weight: 600;
-}
-
-.unit {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-
-.precip {
-  color: var(--color-text-muted);
-}
-
-.historical-badge {
-  font-size: var(--text-xs);
-  background: var(--color-pending-soft);
-  color: var(--color-pending);
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  font-weight: 600;
-  text-align: center;
 }
 
 .empty-state {
