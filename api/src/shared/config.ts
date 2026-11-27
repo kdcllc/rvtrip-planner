@@ -1,4 +1,4 @@
-// Application settings, read from process.env (the six app settings provisioned by infra).
+// Application settings, read from process.env (the six required app settings provisioned by infra, plus optional ADMIN_EMAILS and EIA_API_KEY).
 // Values are secrets in several cases: this module never logs, echoes or serialises them,
 // and error messages name only the missing VARIABLE, never a value.
 
@@ -30,4 +30,10 @@ export function getAdminEmails(): string[] {
     .split(/[,;]/)
     .map((e) => e.trim().toLowerCase())
     .filter((e) => e !== '')
+}
+
+/** Optional EIA_API_KEY: trimmed; null when unset or blank. The value is never logged or returned. */
+export function getEiaApiKey(): string | null {
+  const raw = process.env.EIA_API_KEY?.trim()
+  return raw ? raw : null
 }

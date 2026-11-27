@@ -32,7 +32,7 @@ import {
 import { gasPriceService } from '../services/gas/gasPriceService'
 import { calculateTripDistances, formatDistance } from '../utils/distance'
 import {
-  calculateStopCosts,
+  calculateStopCostsWithPrices,
   calculateTripTotalAccommodationCost,
   calculateTripTotalActualCost,
   calculateTripTotalActualGasCost,
@@ -63,6 +63,14 @@ import { setRoutingProvider } from '../services/maps/routesService'
 import { getRelevantStopIdForDate } from '../utils/date'
 import { mergeServerTrips } from '../domain/trip/syncMerge'
 import { getTripStartState } from '../domain/trip/stateCode'
+import { useVehicleProfileSync } from '../hooks/useVehicleProfileSync'
+import { loadFuelPrices } from '../services/gas/fuelPriceClient'
+import {
+  buildStopPrices,
+  planFuelPriceRequests,
+  summariseBasis,
+  type FuelPriceResponse,
+} from '../domain/gas/travelPrices'
 
 const getTodayKey = () => {
   const now = new Date()
@@ -159,8 +167,13 @@ function Planner({
   const distanceCalculationInFlight = useRef(false)
   const lastAutoFocusSignatureRef = useRef('')
   const previousLocationsRef = useRef<string>('')
-  const previousMpgRef = useRef<number | null>(null)
-  const { debouncedMpg } = useVehicleSettingsContext()
+  const fuelPriceInFlight = useRef<Set<string>>(new Set())
+  const [fuelPriceResults, setFuelPriceResults] = useState<
+    Record<string, Pick<FuelPriceResponse, 'points' | 'latest'>>
+  >({})
+  const { debouncedMpg, debouncedProfile } = useVehicleSettingsContext()
+  useVehicleProfileSync()
+  const fuelType = debouncedProfile.fuelType
   const [routesEnabled] = useRoutesEnabled()
 
   useEffect(() => {
@@ -1335,18 +1348,6 @@ function Planner({
     void calculateDistancesAsync()
   }, [currentTrip, currentStops, routesEnabled])
 
-  // Create a stable key for cost calculation trigger
-  // Only changes when stops with distances change or MPG changes
-  const costCalculationKey = useMemo(() => {
-    return {
-      tripId: currentTrip?.id,
-      stopDistances: currentStops
-        .map((stop) => stop.distanceFromPreviousMeters ?? 'none')
-        .join('|'),
-      mpg: debouncedMpg,
-    }
-  }, [currentTrip?.id, currentStops, debouncedMpg])
-
   // Extract start state for gas price lookup
   const startState = useMemo(() => {
     return getTripStartState(currentStops)
@@ -1387,40 +1388,73 @@ function Planner({
       })
   }, [startState])
 
-  // Calculate fuel costs when we have all required data
+  const fallbackGasPrice = startState ? gasPriceByState[startState]?.pricePerGallon : undefined
+
+  const plannedFuelRequests = useMemo(
+    () => planFuelPriceRequests(currentStops, startState, fuelType),
+    [currentStops, startState, fuelType]
+  )
+
+  // Load EIA weekly prices for each planned request not already loaded
   useEffect(() => {
-    if (!currentTrip || !startState) {
-      return
+    for (const request of plannedFuelRequests) {
+      const key = `${request.area}|${request.product}|${request.from}|${request.to}`
+      if (fuelPriceInFlight.current.has(key)) continue
+      fuelPriceInFlight.current.add(key)
+
+      const store = (value: Pick<FuelPriceResponse, 'points' | 'latest'>) =>
+        setFuelPriceResults((prev) => ({ ...prev, [key]: value }))
+
+      loadFuelPrices(request.area, request.product, request.from, request.to)
+        .then((result) => {
+          if (result.kind === 'success') {
+            store({ points: result.data.points, latest: result.data.latest })
+          } else {
+            store({ points: [], latest: null })
+          }
+        })
+        .catch(() => store({ points: [], latest: null }))
     }
+  }, [plannedFuelRequests])
 
-    const gasPrice = gasPriceByState[startState]
-    if (!gasPrice || !gasPrice.pricePerGallon || gasPrice.pricePerGallon <= 0) {
-      return
+  const fuelPriceResponses = useMemo(() => {
+    const responses: FuelPriceResponse[] = []
+    for (const request of plannedFuelRequests) {
+      const loaded = fuelPriceResults[`${request.area}|${request.product}|${request.from}|${request.to}`]
+      if (loaded) responses.push({ area: request.area, product: request.product, ...loaded })
     }
+    return responses
+  }, [plannedFuelRequests, fuelPriceResults])
 
-    // Check if any stop actually has a distance that needs cost calculation
-    const hasUncalculatedCosts = currentTrip.stops.some(
-      (stop) =>
-        stop.distanceFromPreviousMeters &&
-        stop.estimatedFuelCost === undefined
-    )
+  const stopPrices = useMemo(
+    () => buildStopPrices(currentStops, startState, fuelType, fuelPriceResponses, fallbackGasPrice),
+    [currentStops, startState, fuelType, fuelPriceResponses, fallbackGasPrice]
+  )
 
-    // Check if MPG has changed
-    const mpgChanged = previousMpgRef.current !== debouncedMpg
-    if (mpgChanged) {
-      previousMpgRef.current = debouncedMpg
-    }
+  const fuelPriceBasis = useMemo(() => summariseBasis(stopPrices), [stopPrices])
+  const fuelPriceBasisLabel = useMemo(() => {
+    if (!fuelPriceBasis) return ''
+    const hasFallback = [...stopPrices.values()].some((entry) => entry.basis === 'fallback')
+    let label: string
+    if (fuelPriceBasis === 'travel-week') label = 'Travel-week prices (EIA)'
+    else if (fuelPriceBasis === 'latest') label = 'Latest weekly prices (EIA)'
+    else if (fuelPriceBasis === 'fallback') {
+      label = fuelType === 'diesel' ? "Today's national average (gasoline)" : "Today's national average"
+    } else label = hasFallback ? 'Mixed: weekly and national prices' : 'Weekly prices (EIA)'
+    return fuelType === 'diesel' ? `${label} · diesel` : label
+  }, [fuelPriceBasis, stopPrices, fuelType])
 
-    // Skip if no uncalculated costs AND MPG didn't change
-    if (!hasUncalculatedCosts && !mpgChanged) {
+  // Recalculate fuel costs when stops, MPG, fuel type or prices change
+  useEffect(() => {
+    if (!currentTrip || stopPrices.size === 0) {
       return
     }
 
     // Calculate costs for all stops
-    const updatedStops = calculateStopCosts(
+    const updatedStops = calculateStopCostsWithPrices(
       currentTrip.stops,
       debouncedMpg,
-      gasPrice.pricePerGallon
+      stopPrices
     )
 
     // Only update if costs actually changed
@@ -1452,7 +1486,7 @@ function Planner({
         trips: updatedTrips,
       }
     })
-  }, [costCalculationKey, startState, gasPriceByState, currentTrip, debouncedMpg])
+  }, [stopPrices, currentTrip, debouncedMpg])
 
   return (
     <div className="app-shell">
@@ -1633,6 +1667,12 @@ function Planner({
               {tripTotalFuelCost > 0 ? `$${tripTotalFuelCost.toFixed(2)}` : 'Data not available'}
             </strong>
           </div>
+          {tripTotalFuelCost > 0 && fuelPriceBasisLabel && (
+            <div className="hero-card-row">
+              <span>Fuel price basis</span>
+              <strong>{fuelPriceBasisLabel}</strong>
+            </div>
+          )}
           <div className="hero-card-row">
             <span>Actual Stop Expenses</span>
             <strong>

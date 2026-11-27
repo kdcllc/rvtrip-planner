@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   VehicleSettingsContext,
+  type ProfileSyncStatus,
   useVehicleSettings,
 } from './useVehicleSettings'
 
@@ -31,12 +32,37 @@ export const VehicleSettingsProvider = ({
   initialMpg,
   debounceMs = 300,
 }: VehicleSettingsProviderProps) => {
-  const { mpg, setMpg, resetToDefault } = useVehicleSettings(initialMpg)
+  const { mpg, setMpg, resetToDefault, profile, setProfile, replaceProfile } =
+    useVehicleSettings(initialMpg)
   const debouncedMpg = useDebouncedValue(mpg, debounceMs)
+  const debouncedProfile = useDebouncedValue(profile, debounceMs)
+  const [profileSyncStatus, setProfileSyncStatus] =
+    useState<ProfileSyncStatus>('local')
 
   const value = useMemo(
-    () => ({ mpg, debouncedMpg, setMpg, resetToDefault }),
-    [mpg, debouncedMpg, setMpg, resetToDefault]
+    () => ({
+      mpg,
+      debouncedMpg,
+      setMpg,
+      resetToDefault,
+      profile,
+      debouncedProfile,
+      setProfile,
+      replaceProfile,
+      profileSyncStatus,
+      setProfileSyncStatus,
+    }),
+    [
+      mpg,
+      debouncedMpg,
+      setMpg,
+      resetToDefault,
+      profile,
+      debouncedProfile,
+      setProfile,
+      replaceProfile,
+      profileSyncStatus,
+    ]
   )
 
   return (

@@ -1,7 +1,22 @@
 import { useEffect, type ChangeEvent } from 'react'
 import { useVehicleSettingsContext } from '../../hooks/useVehicleSettings'
+import {
+  MPG_MAX,
+  MPG_MIN,
+  TANK_GALLONS_MAX,
+  TANK_GALLONS_MIN,
+  VEHICLE_NAME_MAX_LENGTH,
+  type FuelType,
+} from '../../types/api'
 import type { GasPriceLookupResult } from '../../domain/gas/types'
 import './StopDrawer.css'
+
+const SYNC_STATUS_TEXT = {
+  synced: 'Saved to your account',
+  loading: 'Saving…',
+  error: 'Saved on this device only — could not reach the server',
+  local: 'Saved on this device',
+} as const
 
 type VehicleSettingsModalProps = {
   isOpen: boolean
@@ -14,7 +29,8 @@ export const VehicleSettingsModal = ({
   gasPrice,
   onClose,
 }: VehicleSettingsModalProps) => {
-  const { mpg, setMpg } = useVehicleSettingsContext()
+  const { mpg, setMpg, profile, setProfile, profileSyncStatus } =
+    useVehicleSettingsContext()
 
   // Handle ESC key to close modal
   useEffect(() => {
@@ -61,6 +77,11 @@ export const VehicleSettingsModal = ({
     }
   }
 
+  const handleTankChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value)
+    setProfile({ tankGallons: isNaN(value) ? null : value })
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -91,13 +112,42 @@ export const VehicleSettingsModal = ({
 
         <div className="vehicle-settings-modal-content stop-drawer-content">
           <div className="form-group">
+            <label htmlFor="rv-name-input">
+              RV name
+              <input
+                id="rv-name-input"
+                type="text"
+                maxLength={VEHICLE_NAME_MAX_LENGTH}
+                value={profile.name}
+                onChange={(e) => setProfile({ name: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="fuel-type-select">
+              Fuel type
+              <select
+                id="fuel-type-select"
+                value={profile.fuelType}
+                onChange={(e) =>
+                  setProfile({ fuelType: e.target.value as FuelType })
+                }
+              >
+                <option value="gasoline">Gasoline</option>
+                <option value="diesel">Diesel</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="form-group">
             <label htmlFor="mpg-input">
               Miles Per Gallon (MPG)
               <input
                 id="mpg-input"
                 type="number"
-                min="5"
-                max="100"
+                min={MPG_MIN}
+                max={MPG_MAX}
                 step="0.5"
                 value={mpg}
                 onChange={handleMpgChange}
@@ -108,6 +158,29 @@ export const VehicleSettingsModal = ({
               Used to calculate estimated fuel costs for your trip.
             </p>
           </div>
+
+          <div className="form-group">
+            <label htmlFor="tank-gallons-input">
+              Fuel tank (gallons)
+              <input
+                id="tank-gallons-input"
+                type="number"
+                min={TANK_GALLONS_MIN}
+                max={TANK_GALLONS_MAX}
+                step="1"
+                value={profile.tankGallons ?? ''}
+                onChange={handleTankChange}
+              />
+            </label>
+          </div>
+
+          <p
+            role="status"
+            className="muted"
+            style={{ fontSize: '0.9rem', marginTop: '4px' }}
+          >
+            {SYNC_STATUS_TEXT[profileSyncStatus]}
+          </p>
 
           {gasPrice && (
             <div className="form-group">

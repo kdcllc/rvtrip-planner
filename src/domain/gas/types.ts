@@ -16,3 +16,5 @@ export interface IGasPriceAdapter {
   name: string
   getPriceForState(state: string): Promise<GasPriceLookupResult>
 }
+
+export type { FuelType } from '../../types/api'

@@ -63,3 +63,28 @@ export type InviteSentResponse = { request: AdminInviteRequest; inviteLink: stri
 export type TestEmailResponse = { sentTo: string; sender: string }
 /** Minimum seconds between test emails per admin (429 RATE_LIMITED inside the window). */
 export const TEST_EMAIL_COOLDOWN_SECONDS = 60
+
+// ---- Vehicle profile and fuel price history ----
+export type FuelType = 'gasoline' | 'diesel'
+export type VehicleProfile = { name: string; fuelType: FuelType; mpg: number; tankGallons: number | null }
+// GET /api/vehicle-profile
+export type GetVehicleProfileResponse = { profile: VehicleProfile | null }
+// PUT /api/vehicle-profile
+export type PutVehicleProfileRequest = { profile: VehicleProfile }
+export type PutVehicleProfileResponse = { profile: VehicleProfile }
+/** One weekly price: week is YYYY-MM-DD, price is USD per gallon. */
+export type FuelPricePoint = { week: string; price: number }
+// GET /api/fuel-prices
+export type GetFuelPricesResponse = {
+  area: string
+  product: string
+  configured: boolean
+  points: FuelPricePoint[]
+  latest: FuelPricePoint | null
+}
+export const VEHICLE_NAME_MAX_LENGTH = 80
+export const MPG_MIN = 5
+export const MPG_MAX = 100
+export const TANK_GALLONS_MIN = 1
+export const TANK_GALLONS_MAX = 300
+export const FUEL_PRICE_MAX_RANGE_DAYS = 400

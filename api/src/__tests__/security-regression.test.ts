@@ -61,6 +61,8 @@ import { resetPassword } from '../functions/resetPassword'
 import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
 import { createInvite, declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
 import { inviteRequests } from '../functions/inviteRequests'
+import { getVehicleProfile, putVehicleProfile } from '../functions/vehicleProfile'
+import { getFuelPrices } from '../functions/fuelPrices'
 import '../functions/adminTestEmail'
 import { app } from '@azure/functions'
 
@@ -714,5 +716,23 @@ describe('invite requests do not enumerate or accept bot input', () => {
     await inviteRequests(req)
     expect(h.reqs.every((r) => /^[0-9a-f]{64}$/.test(r.ipHash))).toBe(true)
     expect(JSON.stringify(h.queryFn.mock.calls)).not.toContain('203.0.113.9')
+  })
+})
+
+describe('vehicle profile and fuel prices require a session', () => {
+  it('anonymous and bogus-session callers get 401 and no profile or price query runs', async () => {
+    const fuelReq = (jar: Cookies) => {
+      const req = mkReq('GET', jar) as unknown as { query: URLSearchParams }
+      req.query = new URLSearchParams({ area: 'NUS', product: 'EPMR', from: '2026-01-12', to: '2026-03-02' })
+      return req as never
+    }
+    for (const jar of [{ csrf_token: 'seed-csrf' }, { csrf_token: 'seed-csrf', session: 'bogus-token' }] as Cookies[]) {
+      expect((await getVehicleProfile(mkReq('GET', jar))).status).toBe(401)
+      const profile = { name: 'Rig', fuelType: 'diesel', mpg: 10, tankGallons: null }
+      expect((await putVehicleProfile(mkReq('PUT', jar, { profile }))).status).toBe(401)
+      expect((await getFuelPrices(fuelReq(jar))).status).toBe(401)
+    }
+    const texts = h.queryFn.mock.calls.map((c) => String(c[0]))
+    expect(texts.some((t) => /vehicle_profiles|fuel_price_weekly/.test(t))).toBe(false)
   })
 })

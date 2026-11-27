@@ -103,3 +103,22 @@ export const calculateStopCosts = (
     ),
   }))
 }
+
+/**
+ * Update stops with estimated fuel costs using a per-stop price
+ * (stops without a price get no estimate)
+ */
+export const calculateStopCostsWithPrices = (
+  stops: TripStop[],
+  mpg: number,
+  pricesByStopId: ReadonlyMap<string, { price: number }>
+): TripStop[] => {
+  return stops.map((stop) => ({
+    ...stop,
+    estimatedFuelCost: calculateFuelCost(
+      stop.distanceFromPreviousMeters,
+      mpg,
+      pricesByStopId.get(stop.id)?.price
+    ),
+  }))
+}

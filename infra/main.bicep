@@ -42,6 +42,10 @@ param inviteCode string
 @description('Comma-separated admin email addresses (also the access-request notification recipients)')
 param adminEmails string = 'travel@kingdavidconsulting.com'
 
+@description('Optional EIA API key for the fuel-price history; the EIA_API_KEY app setting is set only when non-empty')
+@secure()
+param eiaApiKey string = ''
+
 @description('Custom email sending domain (e.g. example.com). Empty = no custom domain; the Azure-managed domain is used.')
 param customEmailDomain string = ''
 
@@ -159,6 +163,7 @@ module appSettings 'core/host/staticwebapp-appsettings.bicep' = {
     sessionSecret: sessionSecret
     inviteCode: inviteCode
     adminEmails: adminEmails
+    eiaApiKey: eiaApiKey
   }
 }
 

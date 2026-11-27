@@ -20,7 +20,15 @@ vi.mock('../features/trip/TripSelector', () => ({ TripSelector: () => null }))
 vi.mock('../features/trip/VehicleSettingsModal', () => ({ VehicleSettingsModal: () => null }))
 vi.mock('../components/common/FloatingActionButtons', () => ({ FloatingActionButtons: () => null }))
 vi.mock('../hooks/useVehicleSettings', () => ({
-  useVehicleSettingsContext: () => ({ debouncedMpg: 10 }),
+  useVehicleSettingsContext: () => ({
+    debouncedMpg: 10,
+    profile: { name: '', fuelType: 'gasoline', mpg: 10, tankGallons: null },
+    debouncedProfile: { name: '', fuelType: 'gasoline', mpg: 10, tankGallons: null },
+  }),
+}))
+vi.mock('../hooks/useVehicleProfileSync', () => ({ useVehicleProfileSync: () => undefined }))
+vi.mock('../services/gas/fuelPriceClient', () => ({
+  loadFuelPrices: vi.fn().mockResolvedValue({ kind: 'error', status: 0, error: 'mocked' }),
 }))
 vi.mock('../hooks/useRoutesEnabled', () => ({ useRoutesEnabled: () => [false] }))
 vi.mock('../services/print/printTripPdf', () => ({ downloadTripPdf: vi.fn() }))

@@ -25,6 +25,9 @@
     "adminEmails": {
       "value": "${ADMIN_EMAILS=travel@kingdavidconsulting.com}"
     },
+    "eiaApiKey": {
+      "value": "${EIA_API_KEY=}"
+    },
     "customEmailDomain": {
       "value": "${CUSTOM_EMAIL_DOMAIN=moedim.dev}"
     },

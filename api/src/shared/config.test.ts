@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { getAdminEmails, SETTING_NAMES } from './config'
+import { getAdminEmails, getEiaApiKey, SETTING_NAMES } from './config'
 
 describe('getAdminEmails', () => {
   const saved = { ...process.env }
@@ -26,5 +26,33 @@ describe('getAdminEmails', () => {
 
   it('does not list ADMIN_EMAILS among the required settings', () => {
     expect(SETTING_NAMES as readonly string[]).not.toContain('ADMIN_EMAILS')
+  })
+})
+
+describe('getEiaApiKey', () => {
+  const saved = { ...process.env }
+  beforeEach(() => {
+    delete process.env.EIA_API_KEY
+  })
+  afterEach(() => {
+    process.env = { ...saved }
+  })
+
+  it('returns null when unset', () => {
+    expect(getEiaApiKey()).toBeNull()
+  })
+
+  it('returns null when blank', () => {
+    process.env.EIA_API_KEY = '   '
+    expect(getEiaApiKey()).toBeNull()
+  })
+
+  it('returns the trimmed key', () => {
+    process.env.EIA_API_KEY = ' key '
+    expect(getEiaApiKey()).toBe('key')
+  })
+
+  it('does not list EIA_API_KEY among the required settings', () => {
+    expect(SETTING_NAMES as readonly string[]).not.toContain('EIA_API_KEY')
   })
 })
