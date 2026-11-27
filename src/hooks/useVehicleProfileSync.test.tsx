@@ -4,27 +4,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { VehicleSettingsProvider } from './VehicleSettingsProvider'
 import { useVehicleSettingsContext } from './useVehicleSettings'
 import { useVehicleProfileSync } from './useVehicleProfileSync'
-import type { VehicleProfile } from '../types/api'
+import type { VehicleGarage } from '../types/api'
 
-const loadVehicleProfile = vi.hoisted(() => vi.fn())
-const saveVehicleProfile = vi.hoisted(() => vi.fn())
+const loadVehicleGarage = vi.hoisted(() => vi.fn())
+const saveVehicleGarage = vi.hoisted(() => vi.fn())
 
-vi.mock('../services/vehicle/vehicleProfileClient', () => ({
-  loadVehicleProfile,
-  saveVehicleProfile,
+vi.mock('../services/vehicle/vehiclesClient', () => ({
+  loadVehicleGarage,
+  saveVehicleGarage,
 }))
 
-const server: VehicleProfile = {
+const serverVehicle = {
+  id: 'srv-1',
   name: 'Server RV',
-  fuelType: 'diesel',
+  fuelType: 'diesel' as const,
   mpg: 12,
   tankGallons: 90,
 }
+const server: VehicleGarage = {
+  vehicles: [serverVehicle],
+  defaultVehicleId: 'srv-1',
+}
 
-const ok = (profile: VehicleProfile | null) => ({
+const ok = (garage: VehicleGarage | null) => ({
   kind: 'success' as const,
   status: 200,
-  data: { profile },
+  data: { garage },
 })
 const fail = { kind: 'error' as const, status: 500, error: 'boom' }
 
@@ -44,75 +49,80 @@ const setup = () =>
 describe('useVehicleProfileSync', () => {
   beforeEach(() => {
     localStorage.clear()
-    loadVehicleProfile.mockReset()
-    saveVehicleProfile.mockReset()
-    saveVehicleProfile.mockImplementation(async (p: VehicleProfile) => ok(p))
+    loadVehicleGarage.mockReset()
+    saveVehicleGarage.mockReset()
+    saveVehicleGarage.mockImplementation(async (g: VehicleGarage) => ok(g))
   })
 
-  it('replaces the local profile with the server profile and does not re-save it', async () => {
-    loadVehicleProfile.mockResolvedValue(ok(server))
+  it('replaces the local garage with the server profile and does not re-save it', async () => {
+    loadVehicleGarage.mockResolvedValue(ok(server))
     const { result } = setup()
     expect(result.current.profileSyncStatus).toBe('loading')
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
-    expect(result.current.profile).toEqual(server)
-    await waitFor(() => expect(result.current.debouncedProfile).toEqual(server))
+    expect(result.current.garage).toEqual(server)
+    await waitFor(() => expect(result.current.debouncedGarage).toEqual(server))
     await new Promise((r) => setTimeout(r, 30))
-    expect(saveVehicleProfile).not.toHaveBeenCalled()
+    expect(saveVehicleGarage).not.toHaveBeenCalled()
   })
 
-  it('saves the local profile once when the server has none', async () => {
+  it('saves the local garage once when the server has none', async () => {
     localStorage.setItem('trip-planner:vehicleSettings', JSON.stringify({ mpg: 18 }))
-    loadVehicleProfile.mockResolvedValue(ok(null))
+    loadVehicleGarage.mockResolvedValue(ok(null))
     const { result } = setup()
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
-    expect(saveVehicleProfile).toHaveBeenCalledTimes(1)
-    expect(saveVehicleProfile).toHaveBeenCalledWith(
-      expect.objectContaining({ mpg: 18, fuelType: 'gasoline' })
+    expect(saveVehicleGarage).toHaveBeenCalledTimes(1)
+    expect(saveVehicleGarage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vehicles: [expect.objectContaining({ mpg: 18, fuelType: 'gasoline' })],
+      })
     )
     await new Promise((r) => setTimeout(r, 30))
-    expect(saveVehicleProfile).toHaveBeenCalledTimes(1)
+    expect(saveVehicleGarage).toHaveBeenCalledTimes(1)
   })
 
   it('sets error when the load fails and keeps local values', async () => {
-    loadVehicleProfile.mockResolvedValue(fail)
+    loadVehicleGarage.mockResolvedValue(fail)
     const { result } = setup()
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('error'))
     expect(result.current.mpg).toBe(25)
-    expect(saveVehicleProfile).not.toHaveBeenCalled()
+    expect(saveVehicleGarage).not.toHaveBeenCalled()
   })
 
-  it('saves a later profile change once after the debounce', async () => {
-    loadVehicleProfile.mockResolvedValue(ok(server))
+  it('saves a later garage change once after the debounce', async () => {
+    loadVehicleGarage.mockResolvedValue(ok(server))
     const { result } = setup()
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
     act(() => result.current.setProfile({ name: 'Renamed' }))
-    await waitFor(() => expect(saveVehicleProfile).toHaveBeenCalledTimes(1))
-    expect(saveVehicleProfile).toHaveBeenCalledWith({ ...server, name: 'Renamed' })
+    await waitFor(() => expect(saveVehicleGarage).toHaveBeenCalledTimes(1))
+    expect(saveVehicleGarage).toHaveBeenCalledWith({
+      ...server,
+      vehicles: [{ ...serverVehicle, name: 'Renamed' }],
+    })
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
     await new Promise((r) => setTimeout(r, 30))
-    expect(saveVehicleProfile).toHaveBeenCalledTimes(1)
+    expect(saveVehicleGarage).toHaveBeenCalledTimes(1)
   })
 
   it('retries the load (not the save) after a failed load, and server wins', async () => {
-    loadVehicleProfile.mockResolvedValueOnce(fail).mockResolvedValueOnce(ok(server))
+    loadVehicleGarage.mockResolvedValueOnce(fail).mockResolvedValueOnce(ok(server))
     const { result } = setup()
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('error'))
     act(() => result.current.setProfile({ name: 'Local edit' }))
-    await waitFor(() => expect(loadVehicleProfile).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(loadVehicleGarage).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
-    expect(result.current.profile).toEqual(server)
-    expect(saveVehicleProfile).not.toHaveBeenCalled()
+    expect(result.current.garage).toEqual(server)
+    expect(saveVehicleGarage).not.toHaveBeenCalled()
   })
 
   it('sets error when a save fails and retries on the next change', async () => {
-    loadVehicleProfile.mockResolvedValue(ok(server))
-    saveVehicleProfile.mockResolvedValueOnce(fail)
+    loadVehicleGarage.mockResolvedValue(ok(server))
+    saveVehicleGarage.mockResolvedValueOnce(fail)
     const { result } = setup()
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
     act(() => result.current.setProfile({ mpg: 14 }))
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('error'))
     act(() => result.current.setProfile({ mpg: 15 }))
     await waitFor(() => expect(result.current.profileSyncStatus).toBe('synced'))
-    expect(saveVehicleProfile).toHaveBeenCalledTimes(2)
+    expect(saveVehicleGarage).toHaveBeenCalledTimes(2)
   })
 })

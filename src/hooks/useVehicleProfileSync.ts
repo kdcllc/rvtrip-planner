@@ -1,43 +1,43 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useVehicleSettingsContext } from './useVehicleSettings'
 import {
-  loadVehicleProfile,
-  saveVehicleProfile,
-} from '../services/vehicle/vehicleProfileClient'
-import type { VehicleProfile } from '../types/api'
+  loadVehicleGarage,
+  saveVehicleGarage,
+} from '../services/vehicle/vehiclesClient'
+import type { VehicleGarage } from '../types/api'
 
 type LoadState = 'idle' | 'inflight' | 'ok' | 'failed'
 
-const profileKey = (profile: VehicleProfile) => JSON.stringify(profile)
+const garageKey = (garage: VehicleGarage) => JSON.stringify(garage)
 
 /**
- * Syncs the RV profile with /api/vehicle-profile. Call once from inside the
+ * Syncs the vehicle garage with /api/vehicles. Call once from inside the
  * signed-in app. Loads on mount, copies the browser value to the server when
  * the server has none, then saves every debounced change.
  */
 export const useVehicleProfileSync = () => {
   const {
-    profile,
-    debouncedProfile,
-    replaceProfile,
+    garage,
+    debouncedGarage,
+    replaceGarage,
     setProfileSyncStatus,
   } = useVehicleSettingsContext()
 
-  const profileRef = useRef(profile)
+  const garageRef = useRef(garage)
   const loadStateRef = useRef<LoadState>('idle')
   const lastSavedRef = useRef<string | null>(null)
   const generationRef = useRef(0)
 
   useEffect(() => {
-    profileRef.current = profile
-  }, [profile])
+    garageRef.current = garage
+  }, [garage])
 
   const save = useCallback(
-    async (value: VehicleProfile, generation: number) => {
-      const result = await saveVehicleProfile(value)
+    async (value: VehicleGarage, generation: number) => {
+      const result = await saveVehicleGarage(value)
       if (generation !== generationRef.current) return false
       if (result.kind === 'success') {
-        lastSavedRef.current = profileKey(value)
+        lastSavedRef.current = garageKey(value)
         setProfileSyncStatus('synced')
         return true
       }
@@ -51,26 +51,26 @@ export const useVehicleProfileSync = () => {
     const generation = generationRef.current
     loadStateRef.current = 'inflight'
     setProfileSyncStatus('loading')
-    const result = await loadVehicleProfile()
+    const result = await loadVehicleGarage()
     if (generation !== generationRef.current) return
     if (result.kind !== 'success') {
       loadStateRef.current = 'failed'
       setProfileSyncStatus('error')
       return
     }
-    const server = result.data.profile
+    const server = result.data.garage
     if (server) {
-      lastSavedRef.current = profileKey(server)
+      lastSavedRef.current = garageKey(server)
       loadStateRef.current = 'ok'
-      replaceProfile(server)
+      replaceGarage(server)
       setProfileSyncStatus('synced')
       return
     }
-    const local = profileRef.current
+    const local = garageRef.current
     const saved = await save(local, generation)
     if (generation !== generationRef.current) return
     loadStateRef.current = saved ? 'ok' : 'failed'
-  }, [replaceProfile, save, setProfileSyncStatus])
+  }, [replaceGarage, save, setProfileSyncStatus])
 
   // Initial load on mount; unmount cancels pending work.
   useEffect(() => {
@@ -90,8 +90,8 @@ export const useVehicleProfileSync = () => {
       void initialLoad()
       return
     }
-    if (profileKey(debouncedProfile) === lastSavedRef.current) return
+    if (garageKey(debouncedGarage) === lastSavedRef.current) return
     setProfileSyncStatus('loading')
-    void save(debouncedProfile, generationRef.current)
-  }, [debouncedProfile, initialLoad, save, setProfileSyncStatus])
+    void save(debouncedGarage, generationRef.current)
+  }, [debouncedGarage, initialLoad, save, setProfileSyncStatus])
 }

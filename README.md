@@ -11,7 +11,7 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - **Free Open-Source Mapping:** Uses OpenStreetMap, MapLibre GL JS, and free routing APIs (no API keys required by default)
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data); stops without dates show "Dates not set" and get no forecast, timeline position or calendar event
-- Fuel cost estimation based on vehicle MPG and gas prices; the RV profile (name, fuel type, MPG, optional tank size) is saved to your account, and each stop's cost uses the weekly U.S. EIA price for its area and arrival week
+- Fuel cost estimation based on vehicle MPG and gas prices; your account keeps a garage of up to 10 vehicles (name, fuel type, MPG, optional tank size) with one default, each trip picks its vehicle, and each stop's cost uses the weekly U.S. EIA price for its area and arrival week
 - Multi-user accounts: register (shared invite code or a single-use invite code, emailed or sent as a link by an admin), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
 - Each trip is saved separately; saves retry automatically while the serverless database wakes, with a "Retry now" banner and a prompt to keep your version or load the saved one on a conflict
@@ -155,7 +155,7 @@ The repository variables and secrets these workflows need are listed in [DEPLOYM
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future). Stops without dates get no forecast.
-- **Fuel Costs:** Estimated from your RV profile (fuel type and MPG, configurable in settings and saved to your account; the settings dialog shows whether it is saved) and weekly U.S. EIA fuel prices for each stop's area and arrival week. Dates after the newest published week use the latest week, and the summary shows the "Fuel price basis". Historical fuel prices need a free EIA API key from eia.gov/opendata (the optional `EIA_API_KEY` server setting); without it fuel costs use today's national average as before.
+- **Fuel Costs:** Estimated from the trip's vehicle (fuel type and MPG; pick it with the Vehicle select in the trip summary, and use Manage to open the Vehicles dialog, where each vehicle is saved to your account and the dialog shows whether it is saved; trips without a choice use your default vehicle) and weekly U.S. EIA fuel prices for each stop's area and arrival week. Dates after the newest published week use the latest week, and the summary shows the "Fuel price basis". Historical fuel prices need a free EIA API key from eia.gov/opendata (the optional `EIA_API_KEY` server setting); without it fuel costs use today's national average as before.
 - **Data Persistence:** Each trip is saved to your account on the server as its own row. Saves retry automatically while the serverless database wakes, and the browser warns before you close the tab with unsaved changes. Use "Download all trips" for a backup.
 
 ## Architecture

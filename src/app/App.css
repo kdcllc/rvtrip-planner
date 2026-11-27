@@ -1695,3 +1695,24 @@
   border-color: var(--color-danger-hover);
 }
 
+
+.hero-card-vehicle-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-card-vehicle-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hero-card-vehicle-controls select,
+.hero-card-vehicle-controls button {
+  min-height: 44px;
+  max-width: 100%;
+  font: inherit;
+}

@@ -54,6 +54,8 @@ export type Trip = {
   vehicleSettings?: {
     mpg: number
   }
+  // The garage vehicle this trip uses; unset or unknown means the default vehicle.
+  vehicleId?: string
 }
 
 export type TripsState = {

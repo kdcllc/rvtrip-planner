@@ -45,6 +45,23 @@ describe('tripFile', () => {
     expect(result.payload.trip.vehicleSettings).toEqual({ mpg: 10 })
   })
 
+  it('keeps a valid vehicleId through export and import', () => {
+    const payload = buildTripFilePayload({ ...trip, vehicleId: 'veh-1' })
+    expect(payload.trip.vehicleId).toBe('veh-1')
+    const result = parseTripFilePayload(JSON.parse(JSON.stringify(payload)))
+    expect(result.payload.trip.vehicleId).toBe('veh-1')
+  })
+
+  it('drops an invalid or non-string vehicleId on import', () => {
+    for (const bad of ['has space!', '', 'x'.repeat(65), 42, null]) {
+      const raw = JSON.parse(JSON.stringify(buildTripFilePayload(trip)))
+      raw.trip.vehicleId = bad
+      const result = parseTripFilePayload(raw)
+      expect(result.payload.trip).not.toHaveProperty('vehicleId')
+    }
+    expect(parseTripFilePayload(legacyFixture).payload.trip).not.toHaveProperty('vehicleId')
+  })
+
   it('parses the legacy v1 fixture', () => {
     const { payload, skippedStops, totalStops } = parseTripFilePayload(legacyFixture)
     expect(payload.version).toBe(1)

@@ -4,6 +4,7 @@ import type {
   TripStopSourceName,
   TripStopStatus,
 } from '../../domain/trip/types'
+import { VEHICLE_ID_PATTERN } from '../../types/api'
 import {
   STOP_NOTE_MAX_LENGTH,
   foldLegacyStopFields,
@@ -136,6 +137,10 @@ export function parseTripFilePayload(
     createdAt,
     updatedAt,
     vehicleSettings,
+    ...(typeof tripData.vehicleId === 'string' &&
+    VEHICLE_ID_PATTERN.test(tripData.vehicleId)
+      ? { vehicleId: tripData.vehicleId }
+      : {}),
   }
 
   const checksum = createStopsChecksum(sanitizedStops)

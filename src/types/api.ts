@@ -67,11 +67,17 @@ export const TEST_EMAIL_COOLDOWN_SECONDS = 60
 // ---- Vehicle profile and fuel price history ----
 export type FuelType = 'gasoline' | 'diesel'
 export type VehicleProfile = { name: string; fuelType: FuelType; mpg: number; tankGallons: number | null }
-// GET /api/vehicle-profile
-export type GetVehicleProfileResponse = { profile: VehicleProfile | null }
-// PUT /api/vehicle-profile
-export type PutVehicleProfileRequest = { profile: VehicleProfile }
-export type PutVehicleProfileResponse = { profile: VehicleProfile }
+export type Vehicle = VehicleProfile & { id: string }
+export type VehicleGarage = { vehicles: Vehicle[]; defaultVehicleId: string }
+// GET /api/vehicles
+export type GetVehiclesResponse = { garage: VehicleGarage | null }
+// PUT /api/vehicles
+export type PutVehiclesRequest = { garage: VehicleGarage }
+export type PutVehiclesResponse = { garage: VehicleGarage }
+export const VEHICLES_MAX = 10
+export const VEHICLE_ID_MAX_LENGTH = 64
+export const VEHICLE_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/
+export const VEHICLES_BODY_MAX_BYTES = 16384
 /** One weekly price: week is YYYY-MM-DD, price is USD per gallon. */
 export type FuelPricePoint = { week: string; price: number }
 // GET /api/fuel-prices

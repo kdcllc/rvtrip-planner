@@ -61,7 +61,7 @@ import { resetPassword } from '../functions/resetPassword'
 import { deleteTrip, getTrips, importTrips, putTrip, putTripSelection } from '../functions/trips'
 import { createInvite, declineInvite, listInviteRequests, sendInvite } from '../functions/adminInviteRequests'
 import { inviteRequests } from '../functions/inviteRequests'
-import { getVehicleProfile, putVehicleProfile } from '../functions/vehicleProfile'
+import { getVehicles, putVehicles } from '../functions/vehicles'
 import { getFuelPrices } from '../functions/fuelPrices'
 import '../functions/adminTestEmail'
 import { app } from '@azure/functions'
@@ -727,9 +727,12 @@ describe('vehicle profile and fuel prices require a session', () => {
       return req as never
     }
     for (const jar of [{ csrf_token: 'seed-csrf' }, { csrf_token: 'seed-csrf', session: 'bogus-token' }] as Cookies[]) {
-      expect((await getVehicleProfile(mkReq('GET', jar))).status).toBe(401)
-      const profile = { name: 'Rig', fuelType: 'diesel', mpg: 10, tankGallons: null }
-      expect((await putVehicleProfile(mkReq('PUT', jar, { profile }))).status).toBe(401)
+      expect((await getVehicles(mkReq('GET', jar))).status).toBe(401)
+      const garage = {
+        vehicles: [{ id: 'v1', name: 'Rig', fuelType: 'diesel', mpg: 10, tankGallons: null }],
+        defaultVehicleId: 'v1',
+      }
+      expect((await putVehicles(mkReq('PUT', jar, { garage }))).status).toBe(401)
       expect((await getFuelPrices(fuelReq(jar))).status).toBe(401)
     }
     const texts = h.queryFn.mock.calls.map((c) => String(c[0]))

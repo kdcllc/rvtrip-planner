@@ -70,13 +70,21 @@ vi.mock('../features/trip/TripSelector', () => ({
 vi.mock('../features/trip/VehicleSettingsModal', () => ({ VehicleSettingsModal: () => null }))
 vi.mock('../components/common/ThemeToggle', () => ({ ThemeToggle: () => null }))
 vi.mock('../components/common/FloatingActionButtons', () => ({ FloatingActionButtons: () => null }))
-vi.mock('../hooks/useVehicleSettings', () => ({
+vi.mock('../hooks/useVehicleSettings', () => {
+  const garage = {
+    vehicles: [{ id: 'v1', name: '', fuelType: 'gasoline', mpg: 10, tankGallons: null }],
+    defaultVehicleId: 'v1',
+  }
+  return {
   useVehicleSettingsContext: () => ({
+    garage,
+    debouncedGarage: garage,
     debouncedMpg: 10,
     profile: { name: '', fuelType: 'gasoline', mpg: 10, tankGallons: null },
     debouncedProfile: { name: '', fuelType: 'gasoline', mpg: 10, tankGallons: null },
   }),
-}))
+  }
+})
 vi.mock('../hooks/useVehicleProfileSync', () => ({ useVehicleProfileSync: () => undefined }))
 vi.mock('../services/gas/fuelPriceClient', () => ({
   loadFuelPrices: vi.fn().mockResolvedValue({ kind: 'error', status: 0, error: 'mocked' }),

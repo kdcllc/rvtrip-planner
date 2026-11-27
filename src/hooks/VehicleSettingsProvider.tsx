@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { getDefaultVehicle } from '../domain/vehicle/garage'
 import {
   VehicleSettingsContext,
   type ProfileSyncStatus,
@@ -32,15 +33,39 @@ export const VehicleSettingsProvider = ({
   initialMpg,
   debounceMs = 300,
 }: VehicleSettingsProviderProps) => {
-  const { mpg, setMpg, resetToDefault, profile, setProfile, replaceProfile } =
-    useVehicleSettings(initialMpg)
-  const debouncedMpg = useDebouncedValue(mpg, debounceMs)
-  const debouncedProfile = useDebouncedValue(profile, debounceMs)
+  const {
+    garage,
+    addVehicle,
+    updateVehicle,
+    removeVehicle,
+    setDefaultVehicle,
+    replaceGarage,
+    mpg,
+    setMpg,
+    resetToDefault,
+    profile,
+    setProfile,
+  } = useVehicleSettings(initialMpg)
+  const debouncedGarage = useDebouncedValue(garage, debounceMs)
   const [profileSyncStatus, setProfileSyncStatus] =
     useState<ProfileSyncStatus>('local')
 
+  const debouncedProfile = useMemo(() => {
+    const { name, fuelType, mpg: m, tankGallons } =
+      getDefaultVehicle(debouncedGarage)
+    return { name, fuelType, mpg: m, tankGallons }
+  }, [debouncedGarage])
+  const debouncedMpg = debouncedProfile.mpg
+
   const value = useMemo(
     () => ({
+      garage,
+      debouncedGarage,
+      addVehicle,
+      updateVehicle,
+      removeVehicle,
+      setDefaultVehicle,
+      replaceGarage,
       mpg,
       debouncedMpg,
       setMpg,
@@ -48,11 +73,17 @@ export const VehicleSettingsProvider = ({
       profile,
       debouncedProfile,
       setProfile,
-      replaceProfile,
       profileSyncStatus,
       setProfileSyncStatus,
     }),
     [
+      garage,
+      debouncedGarage,
+      addVehicle,
+      updateVehicle,
+      removeVehicle,
+      setDefaultVehicle,
+      replaceGarage,
       mpg,
       debouncedMpg,
       setMpg,
@@ -60,7 +91,6 @@ export const VehicleSettingsProvider = ({
       profile,
       debouncedProfile,
       setProfile,
-      replaceProfile,
       profileSyncStatus,
     ]
   )

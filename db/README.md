@@ -16,7 +16,7 @@ for rollback safety. Re-running is a no-op. **Run it against Azure SQL before de
 
 ## Migration 003
 
-Adds `vehicle_profiles` (one RV profile per account, served by `/api/vehicle-profile`) and
+Adds `vehicle_profiles` (one row per account; the `data` column holds the whole vehicle garage JSON `{ vehicles, defaultVehicleId }`, served by `/api/vehicles`; legacy single-profile rows are still read and are rewritten in the new shape on the next save, so rolling the API back to the previous release would read those rows as no profile) and
 `fuel_price_weekly` (cache of weekly EIA fuel prices, served by `/api/fuel-prices`). Idempotent; re-running
 is a no-op. **Apply it before deploying the API that uses it**; the deploy workflow applies migrations
 automatically.
