@@ -38,7 +38,9 @@ const routeFetch = (climate: () => Response) =>
   })
 
 const climateCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
-  fetchMock.mock.calls.filter(([input]) => String(input).includes('climate-api.open-meteo.com'))
+  fetchMock.mock.calls.filter(
+    ([input]) => new URL(String(input)).hostname === 'climate-api.open-meteo.com',
+  )
 
 describe('fetchStopForecast climate normals', () => {
   beforeEach(() => {
