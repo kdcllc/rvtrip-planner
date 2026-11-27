@@ -13,6 +13,8 @@ type TripTimelineProps = {
   onStopClick: (stopId: string) => void
   currentStopId: string | null
   actions?: React.ReactNode
+  onStopPreview?: (stopId: string | null) => void
+  onStopDetails?: (stopId: string) => void
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
@@ -29,6 +31,8 @@ export function TripTimeline({
   onStopClick,
   currentStopId,
   actions,
+  onStopPreview,
+  onStopDetails,
 }: TripTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
@@ -146,6 +150,7 @@ export function TripTimeline({
   const readoutBar =
     bars.find((bar) => bar.id === hoveredId) ??
     bars.find((bar) => bar.id === currentStopId)
+  const currentBar = bars.find((bar) => bar.id === currentStopId)
   const readout = readoutBar
     ? `${readoutBar.label} · ${readoutBar.dateRange} · ${describeNights(readoutBar.nights)}`
     : `${bars.length} stops · ${tripLabel}`
@@ -154,6 +159,16 @@ export function TripTimeline({
     <div className="trip-timeline" role="navigation" aria-label="Trip timeline">
       <div className="timeline-header">
         <div className="timeline-readout">{readout}</div>
+        {onStopDetails && currentBar ? (
+          <button
+            type="button"
+            className="timeline-details-button"
+            aria-label={`Show details for ${currentBar.label}`}
+            onClick={() => onStopDetails(currentBar.id)}
+          >
+            Details
+          </button>
+        ) : null}
         <div className="trip-timeline-actions">{actions}</div>
       </div>
       <div className="timeline-scroll" ref={scrollRef}>
@@ -191,10 +206,25 @@ export function TripTimeline({
                   aria-label={`${bar.label}, ${bar.dateRange}, ${describeNights(bar.nights)}`}
                   aria-current={isActive ? 'true' : undefined}
                   onClick={() => onStopClick(bar.id)}
-                  onMouseEnter={() => setHoveredId(bar.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onFocus={() => setHoveredId(bar.id)}
-                  onBlur={() => setHoveredId(null)}
+                  onDoubleClick={
+                    onStopDetails ? () => onStopDetails(bar.id) : undefined
+                  }
+                  onMouseEnter={() => {
+                    setHoveredId(bar.id)
+                    onStopPreview?.(bar.id)
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredId(null)
+                    onStopPreview?.(null)
+                  }}
+                  onFocus={() => {
+                    setHoveredId(bar.id)
+                    onStopPreview?.(bar.id)
+                  }}
+                  onBlur={() => {
+                    setHoveredId(null)
+                    onStopPreview?.(null)
+                  }}
                 >
                   <span className="timeline-stay-label">{bar.label}</span>
                   {bar.nights > 0 ? (

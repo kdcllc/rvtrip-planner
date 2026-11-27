@@ -28,6 +28,36 @@
   white-space: nowrap;
 }
 
+.timeline-details-button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-strong);
+  color: var(--color-accent-dark);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+.timeline-details-button:hover {
+  border-color: var(--color-accent-dark);
+}
+
+.timeline-details-button:focus-visible {
+  outline: 2px solid var(--color-accent-dark);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .timeline-details-button {
+    min-height: 44px;
+  }
+}
+
 .trip-timeline-actions {
   display: flex;
   justify-content: flex-end;

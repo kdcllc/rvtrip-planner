@@ -1082,6 +1082,12 @@
   z-index: 999;
 }
 
+[data-stop-highlight='true'] {
+  outline: 3px solid var(--color-accent-dark);
+  outline-offset: 3px;
+  z-index: 998;
+}
+
 .route-label {
   padding: 4px 8px;
   border-radius: var(--radius-pill);

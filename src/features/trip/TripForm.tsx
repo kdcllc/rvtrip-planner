@@ -23,6 +23,7 @@ import { fetchAutocompleteSuggestions } from '../../services/geocoding/autocompl
 import { geocodeAddress } from '../../services/geocoding/geocodingService'
 import { buildTruckMapPlaceUrl } from '../../utils/truckMapUrl'
 import { TripTimeline } from './TripTimeline'
+import { scrollCarouselToStop } from './carouselScroll'
 
 const STARTING_POINT_LABEL = 'Starting point'
 
@@ -43,6 +44,8 @@ type TripFormProps = {
   autoFocusStopId?: string | null
   autoFocusKey?: string
   onCurrentStopChange?: (stopId: string | null) => void
+  onSelectStop?: (stopId: string) => void
+  onPreviewStop?: (stopId: string | null) => void
 }
 
 type DrawerState = {
@@ -72,6 +75,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   autoFocusStopId,
   autoFocusKey,
   onCurrentStopChange,
+  onSelectStop,
+  onPreviewStop,
 }: TripFormProps, ref) {
   // Add form state (for inline form - now removed, kept for reference)
   // All form state is now managed by drawer component
@@ -115,6 +120,19 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
   const drawerDebounceRef = useRef<number | null>(null)
   const drawerValidationStateRef = useRef<StopFormValidationState>(drawerValidationState)
   const carouselRef = useRef<HTMLDivElement | null>(null)
+  const programmaticScrollRef = useRef(false)
+  const scrollDebounceRef = useRef<number | null>(null)
+  const releaseProgrammaticScrollRef = useRef<(() => void) | null>(null)
+  const programmaticScrollTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (programmaticScrollTimeoutRef.current !== null) {
+        window.clearTimeout(programmaticScrollTimeoutRef.current)
+        programmaticScrollTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     drawerValidationStateRef.current = drawerValidationState
@@ -125,16 +143,15 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       return
     }
 
-    const stopElement = carouselRef.current.querySelector<HTMLElement>(
-      `.stop-item[data-stop-id="${autoFocusStopId}"]`
-    )
+    const carousel = carouselRef.current
+    const stopId = autoFocusStopId
 
-    if (!stopElement) {
+    if (!carousel.querySelector(`.stop-item[data-stop-id="${stopId}"]`)) {
       return
     }
 
     window.requestAnimationFrame(() => {
-      stopElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+      scrollCarouselToStop(carousel, stopId)
     })
   }, [autoFocusKey, autoFocusStopId])
 
@@ -169,6 +186,7 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     const handleStopChange = onCurrentStopChange // Capture in local variable
 
     const updateVisibleStop = () => {
+      if (programmaticScrollRef.current) return
       const stopElements = carousel.querySelectorAll<HTMLElement>('.stop-item')
       if (stopElements.length === 0) return
 
@@ -199,19 +217,37 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     }
 
     // Update on scroll with debouncing for performance
-    let scrollTimeout: number
-    const handleScroll = () => {
-      clearTimeout(scrollTimeout)
-      scrollTimeout = window.setTimeout(updateVisibleStop, 50)
+    const clearScrollDebounce = () => {
+      if (scrollDebounceRef.current !== null) {
+        window.clearTimeout(scrollDebounceRef.current)
+        scrollDebounceRef.current = null
+      }
     }
+    const handleScroll = () => {
+      if (programmaticScrollRef.current) return
+      clearScrollDebounce()
+      scrollDebounceRef.current = window.setTimeout(updateVisibleStop, 50)
+    }
+    const release = () => {
+      programmaticScrollRef.current = false
+      if (programmaticScrollTimeoutRef.current !== null) {
+        window.clearTimeout(programmaticScrollTimeoutRef.current)
+        programmaticScrollTimeoutRef.current = null
+      }
+      clearScrollDebounce()
+    }
+    releaseProgrammaticScrollRef.current = release
 
     carousel.addEventListener('scroll', handleScroll)
+    carousel.addEventListener('scrollend', release)
     // Initial update
     updateVisibleStop()
 
     return () => {
       carousel.removeEventListener('scroll', handleScroll)
-      clearTimeout(scrollTimeout)
+      carousel.removeEventListener('scrollend', release)
+      clearScrollDebounce()
+      releaseProgrammaticScrollRef.current = null
     }
   }, [stops.length, onCurrentStopChange])
 
@@ -470,14 +506,40 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
     )
   }
 
-  // Timeline stop click handler - scrolls carousel to the selected stop
+  // Timeline stop click handler - scrolls carousel sideways only and selects the stop
   const handleTimelineStopClick = (stopId: string) => {
+    if (carouselRef.current) {
+      if (onCurrentStopChange) {
+        programmaticScrollRef.current = true
+        if (programmaticScrollTimeoutRef.current !== null) {
+          window.clearTimeout(programmaticScrollTimeoutRef.current)
+        }
+        programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+          releaseProgrammaticScrollRef.current?.()
+        }, 700)
+      }
+      scrollCarouselToStop(carouselRef.current, stopId)
+    }
+    onCurrentStopChange?.(stopId)
+    onSelectStop?.(stopId)
+  }
+
+  // Timeline details handler - jumps the page to the stop's card
+  const handleTimelineStopDetails = (stopId: string) => {
     const stopElement = carouselRef.current?.querySelector(
       `.stop-item[data-stop-id="${stopId}"]`
     )
     if (stopElement) {
-      stopElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+      const reduceMotion =
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      stopElement.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      })
     }
+    onCurrentStopChange?.(stopId)
   }
 
   // Drawer form field change handler
@@ -925,6 +987,8 @@ export const TripForm = forwardRef<TripFormRef, TripFormProps>(function TripForm
       <TripTimeline
         stops={stops}
         onStopClick={handleTimelineStopClick}
+        onStopDetails={handleTimelineStopDetails}
+        onStopPreview={onPreviewStop}
         currentStopId={currentStopId ?? null}
         actions={
           stops.length > 0 ? (

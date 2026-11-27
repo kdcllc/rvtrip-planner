@@ -141,6 +141,11 @@ function Planner({
   const [selectedStopIds, setSelectedStopIds] = useState<Set<string>>(new Set())
   const [mapBounds, setMapBounds] = useState<MapBounds | undefined>()
   const [currentStopId, setCurrentStopId] = useState<string | null>(null)
+  const [previewStopId, setPreviewStopId] = useState<string | null>(null)
+  const [mapFocusRequest, setMapFocusRequest] = useState<{
+    stopId: string
+    nonce: number
+  } | null>(null)
   const [showVehicleSettings, setShowVehicleSettings] = useState(false)
   const [isMapVisible, setIsMapVisible] = useState(true)
   const [pendingDeleteTripId, setPendingDeleteTripId] = useState<string | null>(null)
@@ -1002,6 +1007,15 @@ function Planner({
     setCurrentStopId(stopId)
   }, [])
 
+  const handleSelectStop = useCallback((stopId: string) => {
+    setCurrentStopId(stopId)
+    setPreviewStopId(null)
+    setMapFocusRequest((previous) => ({
+      stopId,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }))
+  }, [])
+
   const handleStopDoubleClick = useCallback((stopId: string) => {
     setCurrentStopId(stopId)
     
@@ -1664,6 +1678,8 @@ function Planner({
             onBoundsChange={setMapBounds}
             onStopHover={handleStopHover}
             onStopDoubleClick={handleStopDoubleClick}
+            highlightStopId={previewStopId ?? currentStopId}
+            focusRequest={mapFocusRequest}
           />
         </section>
 
@@ -1686,6 +1702,8 @@ function Planner({
             autoFocusStopId={preferredStopId}
             autoFocusKey={stopDateSignature}
             onCurrentStopChange={handleStopHover}
+            onSelectStop={handleSelectStop}
+            onPreviewStop={setPreviewStopId}
           />
         </section>
       </main>

@@ -20,6 +20,8 @@ type TripMapProps = {
   onBoundsChange?: (bounds: MapBounds) => void
   onStopHover?: (stopId: string | null) => void
   onStopDoubleClick?: (stopId: string) => void
+  highlightStopId?: string | null
+  focusRequest?: { stopId: string; nonce: number } | null
 }
 
 const DEFAULT_CENTER: [number, number] = [-115.1398, 36.1699]
@@ -71,7 +73,14 @@ const formatStopInfoContent = (stop: TripStop): string => {
   `
 }
 
-export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick }: TripMapProps) => {
+export const TripMap = ({
+  stops,
+  onBoundsChange,
+  onStopHover,
+  onStopDoubleClick,
+  highlightStopId = null,
+  focusRequest = null,
+}: TripMapProps) => {
   const [routesEnabled, setRoutesEnabled] = useRoutesEnabled()
   const mapRef = useRef<maplibregl.Map | null>(null)
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
@@ -85,6 +94,10 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
   const markerHoveringRef = useRef(false)
   const popupHoveringRef = useRef(false)
   const routeCalculationInFlight = useRef(false)
+  const markerElementsRef = useRef<Map<string, HTMLElement>>(new Map())
+  const highlightStopIdRef = useRef<string | null>(highlightStopId)
+  const stopsRef = useRef<TripStop[]>(stops)
+  const lastFocusNonceRef = useRef<number | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
 
@@ -129,6 +142,14 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
   }, [])
 
   useEffect(() => {
+    highlightStopIdRef.current = highlightStopId
+  }, [highlightStopId])
+
+  useEffect(() => {
+    stopsRef.current = stops
+  }, [stops])
+
+  useEffect(() => {
     if (!mapReady || !mapRef.current) {
       return
     }
@@ -171,6 +192,8 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
 
     markersRef.current.forEach((marker) => marker.remove())
     markersRef.current = []
+    const markerElements = new Map<string, HTMLElement>()
+    markerElementsRef.current = markerElements
 
     routeLabelsRef.current.forEach((label) => label.remove())
     routeLabelsRef.current = []
@@ -285,6 +308,7 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
       })
 
       markersRef.current.push(marker)
+      markerElements.set(stop.id, pin)
       bounds.extend([stop.location.lng, stop.location.lat])
     })
 
@@ -384,6 +408,11 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
       }
     }
 
+    const highlightedElement = highlightStopIdRef.current
+      ? markerElements.get(highlightStopIdRef.current)
+      : undefined
+    highlightedElement?.setAttribute('data-stop-highlight', 'true')
+
     void calculateRoutes()
 
     if (validStops.length === 1) {
@@ -403,6 +432,46 @@ export const TripMap = ({ stops, onBoundsChange, onStopHover, onStopDoubleClick 
       routeCalculationInFlight.current = false
     }
   }, [mapReady, stops, onStopHover, onStopDoubleClick, routesEnabled])
+
+  useEffect(() => {
+    markerElementsRef.current.forEach((element, id) => {
+      if (id === highlightStopId) {
+        element.setAttribute('data-stop-highlight', 'true')
+      } else {
+        element.removeAttribute('data-stop-highlight')
+      }
+    })
+  }, [mapReady, highlightStopId])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !focusRequest) {
+      return
+    }
+    if (lastFocusNonceRef.current === focusRequest.nonce) {
+      return
+    }
+    lastFocusNonceRef.current = focusRequest.nonce
+
+    const location = stopsRef.current.find(
+      (stop) => stop.id === focusRequest.stopId
+    )?.location
+    if (!location) {
+      return
+    }
+
+    const map = mapRef.current
+    if (map.getBounds().contains([location.lng, location.lat])) {
+      return
+    }
+
+    const reduceMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    map.easeTo({
+      center: [location.lng, location.lat],
+      duration: reduceMotion ? 0 : 600,
+    })
+  }, [mapReady, focusRequest])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !onBoundsChange) {

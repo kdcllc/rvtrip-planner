@@ -390,3 +390,75 @@ describe('TripTimeline', () => {
     })
   })
 })
+
+describe('TripTimeline preview, details and select callbacks', () => {
+  const barName = (stop: TripStop, nights: string) =>
+    `${stop.label}, ${rangeOf(stop)}, ${nights}`
+  const alphaBar = () => stayButton(barName(stopA, '4 nights'))
+  const bravoBar = () => stayButton(barName(stopB, '2 nights'))
+
+  it('T7 calls onStopPreview with the id on hover and null on unhover', () => {
+    const onStopPreview = vi.fn()
+    renderTimeline({ onStopPreview })
+    fireEvent.mouseEnter(bravoBar())
+    expect(onStopPreview).toHaveBeenCalledTimes(1)
+    expect(onStopPreview).toHaveBeenLastCalledWith('b')
+    fireEvent.mouseLeave(bravoBar())
+    expect(onStopPreview).toHaveBeenCalledTimes(2)
+    expect(onStopPreview).toHaveBeenLastCalledWith(null)
+  })
+
+  it('T7 calls onStopPreview with the id on focus and null on blur', () => {
+    const onStopPreview = vi.fn()
+    renderTimeline({ onStopPreview })
+    fireEvent.focus(alphaBar())
+    expect(onStopPreview).toHaveBeenCalledTimes(1)
+    expect(onStopPreview).toHaveBeenLastCalledWith('a')
+    fireEvent.blur(alphaBar())
+    expect(onStopPreview).toHaveBeenCalledTimes(2)
+    expect(onStopPreview).toHaveBeenLastCalledWith(null)
+  })
+
+  it('T8 does not throw and renders no Details button without the optional callbacks', () => {
+    renderTimeline({ currentStopId: 'a' })
+    expect(() => {
+      fireEvent.mouseEnter(alphaBar())
+      fireEvent.mouseLeave(alphaBar())
+      fireEvent.focus(alphaBar())
+      fireEvent.blur(alphaBar())
+      fireEvent.doubleClick(alphaBar())
+    }).not.toThrow()
+    expect(screen.queryByRole('button', { name: /Show details for/ })).toBeNull()
+  })
+
+  it('T9 renders a Details button for the active stop that calls onStopDetails once', () => {
+    const onStopDetails = vi.fn()
+    renderTimeline({ onStopDetails, currentStopId: 'b' })
+    const button = screen.getByRole('button', { name: 'Show details for Bravo Park' })
+    fireEvent.click(button)
+    expect(onStopDetails).toHaveBeenCalledTimes(1)
+    expect(onStopDetails).toHaveBeenCalledWith('b')
+  })
+
+  it('T9 renders no Details button when there is no active stop', () => {
+    renderTimeline({ onStopDetails: vi.fn(), currentStopId: null })
+    expect(screen.queryByRole('button', { name: /Show details for/ })).toBeNull()
+  })
+
+  it('T10 double-clicking a bar calls onStopDetails once with that bar id', () => {
+    const onStopDetails = vi.fn()
+    renderTimeline({ onStopDetails })
+    fireEvent.doubleClick(bravoBar())
+    expect(onStopDetails).toHaveBeenCalledTimes(1)
+    expect(onStopDetails).toHaveBeenCalledWith('b')
+  })
+
+  it('T11 a single click calls onStopClick once and not onStopDetails', () => {
+    const onStopDetails = vi.fn()
+    const { onStopClick } = renderTimeline({ onStopDetails })
+    fireEvent.click(bravoBar())
+    expect(onStopClick).toHaveBeenCalledTimes(1)
+    expect(onStopClick).toHaveBeenCalledWith('b')
+    expect(onStopDetails).not.toHaveBeenCalled()
+  })
+})
