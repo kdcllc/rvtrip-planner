@@ -53,12 +53,12 @@
 /* Track holds the absolutely positioned stay bars */
 .timeline-track {
   position: relative;
-  height: 48px;
+  height: calc(var(--timeline-lanes, 1) * 46px + 2px);
 }
 
 .timeline-stay {
   position: absolute;
-  top: 2px;
+  top: calc(2px + var(--timeline-lane, 0) * 46px);
   display: flex;
   align-items: center;
   gap: 6px;

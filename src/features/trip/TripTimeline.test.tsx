@@ -307,4 +307,86 @@ describe('TripTimeline', () => {
       expect(labels[0].textContent).toBeTruthy()
     })
   })
+
+  describe('lanes', () => {
+    const laneOf = (container: HTMLElement, id: string) =>
+      container.querySelector(`[data-stop-id="${id}"]`)!.getAttribute('data-lane')
+    const lanesVar = (container: HTMLElement) =>
+      (container.querySelector('.timeline-track') as HTMLElement).style.getPropertyValue(
+        '--timeline-lanes'
+      )
+
+    it('C9 puts consecutive stays in lane 0 with one lane', () => {
+      const { container } = renderTimeline()
+      for (const id of ['a', 'b', 'c']) expect(laneOf(container, id)).toBe('0')
+      expect(lanesVar(container)).toBe('1')
+    })
+
+    it('C9 puts a 0-night stop on a stay start date in lane 1', () => {
+      const pass = makeStop('p', 'Pass Stop', '2026-06-05', '2026-06-05')
+      const { container } = renderTimeline({ stops: [stopA, pass, stopB, stopC] })
+      expect(laneOf(container, 'p')).toBe('1')
+      expect(laneOf(container, 'a')).toBe('0')
+      expect(laneOf(container, 'b')).toBe('0')
+      expect(lanesVar(container)).toBe('2')
+      expect(
+        (container.querySelector('[data-stop-id="p"]') as HTMLElement).style.getPropertyValue(
+          '--timeline-lane'
+        )
+      ).toBe('1')
+    })
+
+    it('C9 does not offset the stay that starts on a 0-night stop date', () => {
+      const pass = makeStop('p', 'Pass Stop', '2026-06-05', '2026-06-05')
+      const { container } = renderTimeline({ stops: [stopA, pass, stopB, stopC] })
+      const bravo = container.querySelector('[data-stop-id="b"]') as HTMLElement
+      // trip 06-01..06-08 is 7 days; 06-05 is day 4
+      expect(parseFloat(bravo.style.left)).toBeCloseTo((4 / 7) * 100, 2)
+    })
+
+    it('C9 gives two overlapping stays different lanes', () => {
+      const x = makeStop('x', 'X Camp', '2026-06-01', '2026-06-05')
+      const y = makeStop('y', 'Y Camp', '2026-06-03', '2026-06-08')
+      const { container } = renderTimeline({ stops: [x, y] })
+      expect(laneOf(container, 'x')).not.toBe(laneOf(container, 'y'))
+    })
+
+    it('C9 never lets bars in the same lane intersect', () => {
+      const stops = [
+        makeStop('s1', 'S1', '2026-06-01', '2026-06-04'),
+        makeStop('s2', 'S2', '2026-06-04', '2026-06-07'),
+        makeStop('p1', 'P1', '2026-06-04', '2026-06-04'),
+        makeStop('s3', 'S3', '2026-06-07', '2026-06-10'),
+        makeStop('p2', 'P2', '2026-06-07', '2026-06-07'),
+        makeStop('o1', 'O1', '2026-06-08', '2026-06-12'),
+        makeStop('p3', 'P3', '2026-06-12', '2026-06-12'),
+        makeStop('p4', 'P4', '2026-06-12', '2026-06-12'),
+        makeStop('s4', 'S4', '2026-06-12', '2026-06-14'),
+      ]
+      const { container } = renderTimeline({ stops })
+      const duration = 13
+      const spans = stops.map((stop) => {
+        const el = container.querySelector(`[data-stop-id="${stop.id}"]`) as HTMLElement
+        const start = Math.round((parseFloat(el.style.left) / 100) * duration)
+        const nights = Math.round(
+          (Date.parse(`${stop.endDate}T00:00:00`) - Date.parse(`${stop.startDate}T00:00:00`)) /
+            86400000
+        )
+        return {
+          lane: Number(el.getAttribute('data-lane')),
+          start,
+          end: start + (nights > 0 ? nights : 0.65),
+        }
+      })
+      for (let i = 0; i < spans.length; i++) {
+        for (let j = i + 1; j < spans.length; j++) {
+          if (spans[i].lane !== spans[j].lane) continue
+          const disjoint =
+            spans[i].end <= spans[j].start || spans[j].end <= spans[i].start
+          expect(disjoint).toBe(true)
+        }
+      }
+      expect(Math.max(...spans.map((x) => x.lane))).toBeGreaterThanOrEqual(1)
+    })
+  })
 })

@@ -16,6 +16,8 @@ type TripTimelineProps = {
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
+// 44px minimum pass-through width at the 72px narrow day width, rounded up
+const MIN_PASS_THROUGH_DAYS = 0.65
 
 const describeNights = (nights: number) =>
   nights === 0
@@ -44,33 +46,58 @@ export function TripTimeline({
 
     const { startDate, endDate, durationDays } = tripRange
 
-    const bars = validStops.map((stop, index) => {
-      let position = getStopDatePosition(stop.startDate, startDate, durationDays)
-
-      // Offset stops that begin on the same date to reduce overlap
-      for (let i = 0; i < index; i++) {
-        if (validStops[i].startDate === stop.startDate) {
-          position += 2
-        }
-      }
+    const rawBars = validStops.map((stop) => {
+      const position = getStopDatePosition(stop.startDate, startDate, durationDays)
 
       const start = new Date(`${stop.startDate}T00:00:00`)
       const end = new Date(`${stop.endDate}T00:00:00`)
       const nights = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY)
       const widthPercent = nights > 0 ? (nights / durationDays) * 100 : 0
+      const spanStart = Math.round((position / 100) * durationDays)
 
       return {
         id: stop.id,
         label: stop.label,
         dateRange: formatDateRange(stop.startDate, stop.endDate),
-        position: Math.min(position, 100),
+        position,
         nights,
         widthPercent,
+        spanStart,
+        spanEnd: spanStart + (nights > 0 ? nights : MIN_PASS_THROUGH_DAYS),
       }
     })
 
+    // Greedy lane assignment: stays first, then pass-through stops
+    const lanes: Array<Array<{ spanStart: number; spanEnd: number }>> = []
+    const laneById = new Map<string, number>()
+    const order = rawBars
+      .map((bar, index) => ({ bar, index }))
+      .sort((a, b) => {
+        const aPass = a.bar.nights === 0 ? 1 : 0
+        const bPass = b.bar.nights === 0 ? 1 : 0
+        return (
+          aPass - bPass || a.bar.spanStart - b.bar.spanStart || a.index - b.index
+        )
+      })
+    for (const { bar } of order) {
+      let lane = lanes.findIndex((placed) =>
+        placed.every(
+          (other) => bar.spanEnd <= other.spanStart || other.spanEnd <= bar.spanStart
+        )
+      )
+      if (lane === -1) {
+        lane = lanes.length
+        lanes.push([])
+      }
+      lanes[lane].push(bar)
+      laneById.set(bar.id, lane)
+    }
+
+    const bars = rawBars.map((bar) => ({ ...bar, lane: laneById.get(bar.id) ?? 0 }))
+
     return {
       bars,
+      laneCount: Math.max(1, lanes.length),
       dateMarkers: getDateMarkersForRange(startDate, endDate, durationDays),
       durationDays,
       tripLabel: formatDateRange(startDate, endDate),
@@ -114,7 +141,7 @@ export function TripTimeline({
     return actions ? <div className="trip-timeline-actions">{actions}</div> : null
   }
 
-  const { bars, dateMarkers, durationDays, tripLabel } = timelineData
+  const { bars, laneCount, dateMarkers, durationDays, tripLabel } = timelineData
 
   const readoutBar =
     bars.find((bar) => bar.id === hoveredId) ??
@@ -136,7 +163,10 @@ export function TripTimeline({
             width: `max(100%, calc(${durationDays} * var(--timeline-day-width)))`,
           }}
         >
-          <div className="timeline-track">
+          <div
+            className="timeline-track"
+            style={{ '--timeline-lanes': laneCount } as React.CSSProperties}
+          >
             {bars.map((bar) => {
               const isActive = currentStopId === bar.id
               return (
@@ -144,6 +174,7 @@ export function TripTimeline({
                   key={bar.id}
                   type="button"
                   data-stop-id={bar.id}
+                  data-lane={bar.lane}
                   className={[
                     'timeline-stay',
                     bar.nights === 0 ? 'timeline-stay--pass-through' : '',
@@ -154,7 +185,8 @@ export function TripTimeline({
                   style={{
                     left: `${bar.position}%`,
                     width: `${bar.widthPercent}%`,
-                  }}
+                    '--timeline-lane': bar.lane,
+                  } as React.CSSProperties}
                   title={bar.label}
                   aria-label={`${bar.label}, ${bar.dateRange}, ${describeNights(bar.nights)}`}
                   aria-current={isActive ? 'true' : undefined}
