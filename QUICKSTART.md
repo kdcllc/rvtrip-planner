@@ -62,7 +62,8 @@ Create `api/local.settings.json` (git-ignored):
     "SESSION_SECRET": "replace-with-a-long-random-string",
     "APP_BASE_URL": "http://localhost:4280",
     "INVITE_CODE": "local-invite",
-    "ADMIN_EMAILS": "admin@example.com"
+    "ADMIN_EMAILS": "admin@example.com",
+    "EIA_API_KEY": ""
   }
 }
 ```
@@ -76,9 +77,10 @@ Generate a session secret with `node -e "console.log(require('crypto').randomByt
 | `APP_BASE_URL` | yes | Origin the API accepts changes from; also used in emailed links. Must match the URL you browse, `http://localhost:4280` |
 | `INVITE_CODE` | yes | Shared code typed when registering an extra account |
 | `ADMIN_EMAILS` | no | Comma-separated emails of accounts that see "Access requests". Include `admin@example.com` to make the seeded account an admin |
+| `EIA_API_KEY` | no | Free key from eia.gov/opendata for weekly fuel-price history. Leave it empty or omit it and fuel costs use today's national average as before |
 | `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS` | no | Azure Communication Services email. Without them no email is sent: password-reset mail does not arrive, and for invites the admin panel reports "Email not sent" and shows the link to copy |
 
-The same names, with a comment each, are in [.env.example](.env.example). The names come from `api/src/shared/config.ts`.
+The same names, with a comment each, are in [.env.example](.env.example). The names come from `api/src/shared/config.ts`. The optional `EIA_API_KEY` is not yet listed in `.env.example`.
 
 ### 4. Build the API and start the app
 

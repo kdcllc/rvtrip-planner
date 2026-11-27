@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { getDefaultVehicle } from '../domain/vehicle/garage'
 import {
   VehicleSettingsContext,
+  type ProfileSyncStatus,
   useVehicleSettings,
 } from './useVehicleSettings'
 
@@ -31,12 +33,66 @@ export const VehicleSettingsProvider = ({
   initialMpg,
   debounceMs = 300,
 }: VehicleSettingsProviderProps) => {
-  const { mpg, setMpg, resetToDefault } = useVehicleSettings(initialMpg)
-  const debouncedMpg = useDebouncedValue(mpg, debounceMs)
+  const {
+    garage,
+    addVehicle,
+    updateVehicle,
+    removeVehicle,
+    setDefaultVehicle,
+    replaceGarage,
+    mpg,
+    setMpg,
+    resetToDefault,
+    profile,
+    setProfile,
+  } = useVehicleSettings(initialMpg)
+  const debouncedGarage = useDebouncedValue(garage, debounceMs)
+  const [profileSyncStatus, setProfileSyncStatus] =
+    useState<ProfileSyncStatus>('local')
+
+  const debouncedProfile = useMemo(() => {
+    const { name, fuelType, mpg: m, tankGallons } =
+      getDefaultVehicle(debouncedGarage)
+    return { name, fuelType, mpg: m, tankGallons }
+  }, [debouncedGarage])
+  const debouncedMpg = debouncedProfile.mpg
 
   const value = useMemo(
-    () => ({ mpg, debouncedMpg, setMpg, resetToDefault }),
-    [mpg, debouncedMpg, setMpg, resetToDefault]
+    () => ({
+      garage,
+      debouncedGarage,
+      addVehicle,
+      updateVehicle,
+      removeVehicle,
+      setDefaultVehicle,
+      replaceGarage,
+      mpg,
+      debouncedMpg,
+      setMpg,
+      resetToDefault,
+      profile,
+      debouncedProfile,
+      setProfile,
+      profileSyncStatus,
+      setProfileSyncStatus,
+    }),
+    [
+      garage,
+      debouncedGarage,
+      addVehicle,
+      updateVehicle,
+      removeVehicle,
+      setDefaultVehicle,
+      replaceGarage,
+      mpg,
+      debouncedMpg,
+      setMpg,
+      resetToDefault,
+      profile,
+      debouncedProfile,
+      setProfile,
+      profileSyncStatus,
+    ]
   )
 
   return (

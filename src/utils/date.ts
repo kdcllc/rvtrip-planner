@@ -111,7 +111,7 @@ export const getTripDateRange = (
 
   const start = new Date(`${startDate}T00:00:00`)
   const end = new Date(`${endDate}T00:00:00`)
-  const durationDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+  const durationDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
 
   return {
     startDate,
@@ -139,7 +139,7 @@ export const getStopDatePosition = (
   const stop = new Date(`${stopStartDate}T00:00:00`)
   const tripStart = new Date(`${tripStartDate}T00:00:00`)
   // Normalize to integer day boundaries to align with date markers
-  const daysFromStart = Math.floor((stop.getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24))
+  const daysFromStart = Math.round((stop.getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24))
 
   return Math.max(0, Math.min(100, (daysFromStart / tripDurationDays) * 100))
 }
@@ -161,7 +161,7 @@ export const getDaysBetweenStops = (
   const end1 = new Date(`${stop1EndDate}T00:00:00`)
   const start2 = new Date(`${stop2StartDate}T00:00:00`)
   const gapMs = start2.getTime() - end1.getTime()
-  const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24))
+  const gapDays = Math.round(gapMs / (1000 * 60 * 60 * 24))
 
   return Math.max(0, gapDays)
 }
@@ -186,7 +186,7 @@ export const getDateMarkersForRange = (
   const end = new Date(`${endDate}T00:00:00`)
   const durationMs = end.getTime() - start.getTime()
   // Use pre-calculated durationDays if provided to ensure consistency with stop positions
-  const durationDays = knownDurationDays ?? Math.ceil(durationMs / (1000 * 60 * 60 * 24))
+  const durationDays = knownDurationDays ?? Math.round(durationMs / (1000 * 60 * 60 * 24))
 
   if (durationDays <= 0) {
     return []

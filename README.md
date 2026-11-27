@@ -11,7 +11,7 @@ Plan RV routes, add stop dates, and see daily weather forecasts for each stop.
 - **Free Open-Source Mapping:** Uses OpenStreetMap, MapLibre GL JS, and free routing APIs (no API keys required by default)
 - **Resilient Routing:** Automatic fallback between multiple OSRM servers and OpenRouteService
 - Daily weather forecasts per stop (NOAA + historical climate data); stops without dates show "Dates not set" and get no forecast, timeline position or calendar event
-- Fuel cost estimation based on vehicle MPG and gas prices
+- Fuel cost estimation based on vehicle MPG and gas prices; your account keeps a garage of up to 10 vehicles (name, fuel type, MPG, optional tank size) with one default, each trip picks its vehicle, and each stop's cost uses the weekly U.S. EIA price for its area and arrival week
 - Multi-user accounts: register (shared invite code or a single-use invite code, emailed or sent as a link by an admin), log in, log out, and password reset by email
 - Trips are stored per user on the server (Azure SQL) via `/api/trips`
 - Each trip is saved separately; saves retry automatically while the serverless database wakes, with a "Retry now" banner and a prompt to keep your version or load the saved one on a conflict
@@ -80,7 +80,7 @@ npm run dev
 
 This serves the SPA at `http://localhost:5173`. Mapping, routing, geocoding and weather need no API keys, but sign-in, registration and trip storage need the API and a database, so on this port you only get the signed-out landing page.
 
-For the full app (SPA, API and a local SQL Server in Docker), follow [QUICKSTART.md](QUICKSTART.md). The environment variables are listed with a comment each in [.env.example](.env.example).
+For the full app (SPA, API and a local SQL Server in Docker), follow [QUICKSTART.md](QUICKSTART.md). The environment variables are listed with a comment each in [.env.example](.env.example), except the optional `EIA_API_KEY`, which is not yet listed there.
 
 ## npm scripts
 
@@ -136,7 +136,7 @@ The SPA and the managed Azure Functions API in `api/` are deployed to Azure Stat
 - **Azure Static Web App:** Unique name (e.g., `stapp-abc123def456`) in `AZURE_LOCATION` (East US 2 for the live deployment)
 - **Azure SQL server and database** (free offer, serverless, auto-pause) in `AZURE_SQL_LOCATION`, default `centralus`
 - **Azure Communication Services** with an Azure-managed email domain (password-reset, invite and access-request mail), plus an optional custom sender domain (`rvtrip@moedim.dev`) enabled by `USE_CUSTOM_EMAIL_DOMAIN` after DNS verification; see [DEPLOYMENT.md](DEPLOYMENT.md#custom-email-domain)
-- **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`
+- **App settings** on the Static Web App (applied by Bicep): `SQL_CONNECTION_STRING`, `SESSION_SECRET`, `ACS_CONNECTION_STRING`, `ACS_SENDER_ADDRESS`, `APP_BASE_URL`, `INVITE_CODE`, `ADMIN_EMAILS`, plus the optional `EIA_API_KEY` (set only when provided; see [DEPLOYMENT.md](DEPLOYMENT.md))
 - **Default URL:** `https://{name}.azurestaticapps.net`
 - **Custom Domain:** Supports HTTPS with managed certificates (see [DEPLOYMENT.md](DEPLOYMENT.md))
 
@@ -155,7 +155,7 @@ The repository variables and secrets these workflows need are listed in [DEPLOYM
 
 - **Enable Routes:** Route calculations are disabled by default. Click the "Calculate Routes" button in the map panel to enable mapping and distance calculations.
 - **Weather Forecasts:** Weather is pulled for the exact date range you provide per stop (NOAA for near-term, climate data for historical/future). Stops without dates get no forecast.
-- **Fuel Costs:** Estimated based on your vehicle's MPG (configurable in settings) and current gas prices.
+- **Fuel Costs:** Estimated from the trip's vehicle (fuel type and MPG; pick it with the Vehicle select in the trip summary, and use Manage to open the Vehicles dialog, where each vehicle is saved to your account and the dialog shows whether it is saved; trips without a choice use your default vehicle) and weekly U.S. EIA fuel prices for each stop's area and arrival week. Dates after the newest published week use the latest week, and the summary shows the "Fuel price basis". Historical fuel prices need a free EIA API key from eia.gov/opendata (the optional `EIA_API_KEY` server setting); without it fuel costs use today's national average as before.
 - **Data Persistence:** Each trip is saved to your account on the server as its own row. Saves retry automatically while the serverless database wakes, and the browser warns before you close the tab with unsaved changes. Use "Download all trips" for a backup.
 
 ## Architecture

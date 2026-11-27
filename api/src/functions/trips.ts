@@ -11,6 +11,7 @@ import type { HttpRequest, HttpResponseInit } from '@azure/functions'
 import { query, sql } from '../shared/db'
 import { csrfGuard, error, fromException, json } from '../shared/http'
 import { validateSession } from '../shared/session'
+import { VEHICLE_ID_PATTERN } from '../shared/types'
 import type {
   DeleteTripResponse,
   GetTripsResponse,
@@ -53,6 +54,7 @@ function isTrip(v: unknown): v is Trip {
 function sanitizeTrip(t: Trip): Trip {
   const out: Trip = { id: t.id, name: t.name, stops: t.stops, createdAt: t.createdAt, updatedAt: t.updatedAt }
   if (t.vehicleSettings !== undefined) out.vehicleSettings = t.vehicleSettings
+  if (typeof t.vehicleId === 'string' && VEHICLE_ID_PATTERN.test(t.vehicleId)) out.vehicleId = t.vehicleId
   return out
 }
 

@@ -7,6 +7,7 @@ import {
   calculateTripTotalActualMiscCost,
   calculateTripTotalActualCost,
   calculateNights,
+  calculateStopCostsWithPrices,
 } from './costCalculation'
 import type { TripStop } from '../domain/trip/types'
 
@@ -261,6 +262,26 @@ describe('costCalculation', () => {
 
     it('should handle empty stops array', () => {
       expect(calculateTripTotalActualCost([])).toEqual(0)
+    })
+  })
+  describe('calculateStopCostsWithPrices', () => {
+    const stops = [
+      { id: 'a', label: 'A', address: 'A', startDate: '', endDate: '', distanceFromPreviousMeters: 160934.4 },
+      { id: 'b', label: 'B', address: 'B', startDate: '', endDate: '', distanceFromPreviousMeters: 160934.4 },
+      { id: 'c', label: 'C', address: 'C', startDate: '', endDate: '' },
+    ] as TripStop[]
+
+    it('uses each stop price and leaves unpriced stops undefined', () => {
+      const prices = new Map([['a', { price: 3 }], ['c', { price: 9 }]])
+      const result = calculateStopCostsWithPrices(stops, 10, prices)
+      expect(result[0].estimatedFuelCost).toBe(30) // 100 miles / 10 mpg * $3
+      expect(result[1].estimatedFuelCost).toBeUndefined()
+      expect(result[2].estimatedFuelCost).toBeUndefined()
+    })
+
+    it('does not mutate the input stops', () => {
+      calculateStopCostsWithPrices(stops, 10, new Map([['a', { price: 3 }]]))
+      expect(stops[0].estimatedFuelCost).toBeUndefined()
     })
   })
 })

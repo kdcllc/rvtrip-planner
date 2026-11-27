@@ -31,6 +31,77 @@ const getGridData = async (lat: number, lng: number) => {
 const buildNoaaForecastPageUrl = (lat: number, lng: number) =>
   `${NOAA_FORECAST_PAGE_BASE}?lat=${lat}&lon=${lng}`
 
+// Open-Meteo's free climate API rate-limits bursts (HTTP 429). A trip with many stops used to
+// fire one request per stop at once and repeat them on every reload, so climate requests are
+// cached in localStorage, sent one at a time, and retried with backoff on 429.
+const CLIMATE_CACHE_PREFIX = 'climate-normals:v1:'
+const CLIMATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const CLIMATE_REQUEST_SPACING_MS = 250
+const CLIMATE_MAX_RETRIES = 3
+const CLIMATE_RETRY_BASE_MS = 2000
+const CLIMATE_RETRY_MAX_MS = 30000
+
+const makeClimateCacheKey = (lat: number, lng: number, start: string, end: string) =>
+  `${CLIMATE_CACHE_PREFIX}${lat.toFixed(3)},${lng.toFixed(3)}|${start}|${end}`
+
+const readClimateCache = (key: string): DailyForecast[] | null => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const entry = JSON.parse(raw) as { savedAt: number; days: DailyForecast[] }
+    if (!Array.isArray(entry?.days) || Date.now() - entry.savedAt > CLIMATE_CACHE_TTL_MS) {
+      localStorage.removeItem(key)
+      return null
+    }
+    return entry.days
+  } catch {
+    return null
+  }
+}
+
+const writeClimateCache = (key: string, days: DailyForecast[]) => {
+  if (days.length === 0) return
+  try {
+    localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), days }))
+  } catch {
+    // Storage full or unavailable: the result is still returned, just not cached.
+  }
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+let climateQueue: Promise<unknown> = Promise.resolve()
+
+const enqueueClimateRequest = <T>(task: () => Promise<T>): Promise<T> => {
+  const run = climateQueue.then(task)
+  climateQueue = run.catch(() => undefined).then(() => wait(CLIMATE_REQUEST_SPACING_MS))
+  return run
+}
+
+const retryDelayMs = (response: Response, attempt: number) => {
+  const retryAfter = Number(response.headers.get('Retry-After'))
+  const delay =
+    Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : CLIMATE_RETRY_BASE_MS * 2 ** attempt
+  return Math.min(delay, CLIMATE_RETRY_MAX_MS)
+}
+
+const fetchWithRateLimitRetry = async (url: string): Promise<Response> => {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(url)
+    if (response.status !== 429 || attempt >= CLIMATE_MAX_RETRIES) {
+      return response
+    }
+    await wait(retryDelayMs(response, attempt))
+  }
+}
+
+/** Test hook: reset the module-level request queue between tests. */
+export const resetClimateRequestQueueForTests = () => {
+  climateQueue = Promise.resolve()
+}
+
 const getClimateNormals = async (
   lat: number,
   lng: number,
@@ -40,18 +111,28 @@ const getClimateNormals = async (
     return []
   }
 
+  const startDate = dates[0]
+  const endDate = dates[dates.length - 1]
+  const cacheKey = makeClimateCacheKey(lat, lng, startDate, endDate)
+  const cached = readClimateCache(cacheKey)
+  if (cached) {
+    return cached
+  }
+
   const params = new URLSearchParams({
     latitude: lat.toString(),
     longitude: lng.toString(),
-    start_date: dates[0],
-    end_date: dates[dates.length - 1],
+    start_date: startDate,
+    end_date: endDate,
     daily:
       'temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean',
     temperature_unit: 'fahrenheit',
   })
 
   try {
-    const response = await fetch(`${CLIMATE_API_BASE}?${params.toString()}`)
+    const response = await enqueueClimateRequest(() =>
+      fetchWithRateLimitRetry(`${CLIMATE_API_BASE}?${params.toString()}`),
+    )
     if (!response.ok) {
       return []
     }
@@ -61,7 +142,7 @@ const getClimateNormals = async (
       return []
     }
 
-    return data.daily.time.map((date: string, index: number) => {
+    const days: DailyForecast[] = data.daily.time.map((date: string, index: number) => {
       const min = Math.round(data.daily.temperature_2m_min[index])
       const max = Math.round(data.daily.temperature_2m_max[index])
       const precipChance = data.daily.relative_humidity_2m_mean
@@ -78,6 +159,8 @@ const getClimateNormals = async (
         isHistorical: true,
       }
     })
+    writeClimateCache(cacheKey, days)
+    return days
   } catch {
     return []
   }

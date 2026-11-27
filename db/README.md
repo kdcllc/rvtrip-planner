@@ -1,7 +1,7 @@
 # Database (SQL Server / Azure SQL)
 
 Schema lives in `db/migrations/*.sql` (T-SQL, idempotent). Tables: `users`, `sessions`,
-`password_reset_tokens`, `trips` (legacy), `user_trips`, `invite_requests`, `invite_codes`.
+`password_reset_tokens`, `trips` (legacy), `user_trips`, `invite_requests`, `invite_codes`, `vehicle_profiles`, `fuel_price_weekly`.
 `trips.data` stores the `Trip`/`TripsState` shape as JSON text; `user_trips.data` holds one `Trip` per row.
 
 ## Migration 002
@@ -13,6 +13,13 @@ with an id over 128 chars are skipped) and sets `users.current_trip_id` from the
 `currentTripId` only where it is NULL. `dbo.trips` is kept unchanged (legacy, read-only after 002)
 for rollback safety. Re-running is a no-op. **Run it against Azure SQL before deploying the new API**
 (Azure SQL serverless may need time to resume; retry if the first connection times out).
+
+## Migration 003
+
+Adds `vehicle_profiles` (one row per account; the `data` column holds the whole vehicle garage JSON `{ vehicles, defaultVehicleId }`, served by `/api/vehicles`; legacy single-profile rows are still read and are rewritten in the new shape on the next save, so rolling the API back to the previous release would read those rows as no profile) and
+`fuel_price_weekly` (cache of weekly EIA fuel prices, served by `/api/fuel-prices`). Idempotent; re-running
+is a no-op. **Apply it before deploying the API that uses it**; the deploy workflow applies migrations
+automatically.
 
 This file is the database reference. The step-by-step local setup is in [QUICKSTART.md](../QUICKSTART.md); deployment is in [DEPLOYMENT.md](../DEPLOYMENT.md).
 

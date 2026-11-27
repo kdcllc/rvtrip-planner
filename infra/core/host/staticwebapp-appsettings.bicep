@@ -22,6 +22,9 @@ param inviteCode string
 
 param adminEmails string
 
+@secure()
+param eiaApiKey string = ''
+
 resource site 'Microsoft.Web/staticSites@2023-01-01' existing = {
   name: staticSiteName
 }
@@ -33,7 +36,7 @@ resource acs 'Microsoft.Communication/communicationServices@2023-04-01' existing
 resource appSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
   parent: site
   name: 'appsettings'
-  properties: {
+  properties: union({
     // Short timeout so a failed connect surfaces inside the 45 s request ceiling.
     SQL_CONNECTION_STRING: 'Server=tcp:${sqlServerFqdn},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;'
     SESSION_SECRET: sessionSecret
@@ -42,5 +45,5 @@ resource appSettings 'Microsoft.Web/staticSites/config@2023-01-01' = {
     INVITE_CODE: inviteCode
     ACS_SENDER_ADDRESS: acsSenderAddress
     ADMIN_EMAILS: adminEmails
-  }
+  }, empty(eiaApiKey) ? {} : { EIA_API_KEY: eiaApiKey })
 }

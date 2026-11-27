@@ -51,6 +51,8 @@ export type Trip = {
   createdAt: string
   updatedAt: string
   vehicleSettings?: { mpg: number }
+  // The garage vehicle this trip uses; unset or unknown means the default vehicle.
+  vehicleId?: string
 }
 
 // ---- Common ----
@@ -161,3 +163,34 @@ export type InviteSentResponse = { request: AdminInviteRequest; inviteLink: stri
 export type TestEmailResponse = { sentTo: string; sender: string }
 /** Minimum seconds between test emails per admin (429 RATE_LIMITED inside the window). */
 export const TEST_EMAIL_COOLDOWN_SECONDS = 60
+
+// ---- Vehicle profile and fuel price history ----
+export type FuelType = 'gasoline' | 'diesel'
+export type VehicleProfile = { name: string; fuelType: FuelType; mpg: number; tankGallons: number | null }
+export type Vehicle = VehicleProfile & { id: string }
+export type VehicleGarage = { vehicles: Vehicle[]; defaultVehicleId: string }
+// GET /api/vehicles
+export type GetVehiclesResponse = { garage: VehicleGarage | null }
+// PUT /api/vehicles
+export type PutVehiclesRequest = { garage: VehicleGarage }
+export type PutVehiclesResponse = { garage: VehicleGarage }
+export const VEHICLES_MAX = 10
+export const VEHICLE_ID_MAX_LENGTH = 64
+export const VEHICLE_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/
+export const VEHICLES_BODY_MAX_BYTES = 16384
+/** One weekly price: week is YYYY-MM-DD, price is USD per gallon. */
+export type FuelPricePoint = { week: string; price: number }
+// GET /api/fuel-prices
+export type GetFuelPricesResponse = {
+  area: string
+  product: string
+  configured: boolean
+  points: FuelPricePoint[]
+  latest: FuelPricePoint | null
+}
+export const VEHICLE_NAME_MAX_LENGTH = 80
+export const MPG_MIN = 5
+export const MPG_MAX = 100
+export const TANK_GALLONS_MIN = 1
+export const TANK_GALLONS_MAX = 300
+export const FUEL_PRICE_MAX_RANGE_DAYS = 400

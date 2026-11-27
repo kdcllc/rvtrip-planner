@@ -156,6 +156,20 @@ describe('PUT /api/trips/{tripId}', () => {
     expect(JSON.stringify(h.query.mock.calls)).not.toMatch(/victim/)
   })
 
+  it('keeps a valid vehicleId in the stored trip', async () => {
+    h.query.mockResolvedValue({ recordset: [] })
+    const res = await put({ trip: { ...trip, vehicleId: 'veh-1' }, baseVersion: null })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(h.query.mock.calls[0][1].data.value).vehicleId).toBe('veh-1')
+  })
+
+  it.each([['bad id!'], [5]])('drops an invalid vehicleId (%s) and still saves', async (bad) => {
+    h.query.mockResolvedValue({ recordset: [] })
+    const res = await put({ trip: { ...trip, vehicleId: bad }, baseVersion: null })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(h.query.mock.calls[0][1].data.value)).toEqual(trip)
+  })
+
   it('create on an existing row (duplicate key 2627): 409 with current', async () => {
     h.query
       .mockRejectedValueOnce(Object.assign(new Error('dup'), { number: 2627 }))
