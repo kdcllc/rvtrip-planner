@@ -62,6 +62,7 @@ import { createOpenSourceRoutingProvider } from '../services/maps/openSourceRout
 import { setRoutingProvider } from '../services/maps/routesService'
 import { getRelevantStopIdForDate } from '../utils/date'
 import { mergeServerTrips } from '../domain/trip/syncMerge'
+import { getTripStartState } from '../domain/trip/stateCode'
 
 const getTodayKey = () => {
   const now = new Date()
@@ -1348,21 +1349,7 @@ function Planner({
 
   // Extract start state for gas price lookup
   const startState = useMemo(() => {
-    if (!currentStops.length) return null
-
-    const firstStop = currentStops[0]
-    if (!firstStop.location) return null
-
-    // Try to extract state from address
-    const addressParts = firstStop.address.split(',')
-    if (addressParts.length >= 2) {
-      const statePart = addressParts[addressParts.length - 2].trim()
-      // Extract state code (e.g., "NC" from "NC 28110")
-      const stateMatch = statePart.match(/[A-Z]{2}/)
-      return stateMatch ? stateMatch[0] : null
-    }
-
-    return null
+    return getTripStartState(currentStops)
   }, [currentStops])
 
   // Fetch gas price for the trip's start state
